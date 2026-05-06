@@ -4,9 +4,9 @@ from sqlalchemy import or_, text
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
-from app.core.security import create_access_token, verify_password
+from app.core.security import create_access_token, hash_password, verify_password
 from app.db.session import get_db
-from app.models.core import User, UserRole
+from app.models.core import Role, SuperUser, User, UserRole
 from app.schemas.auth import CurrentUserResponse, LoginRequest, TokenResponse
 
 router = APIRouter()
@@ -20,6 +20,72 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
     token = create_access_token(str(user.id))
     return TokenResponse(access_token=token)
+
+
+class SetupAdminRequest(BaseModel):
+    full_name: str
+    email: EmailStr
+    password: str
+
+
+@router.post("/setup-admin")
+def setup_admin(payload: SetupAdminRequest, db: Session = Depends(get_db)):
+    """Create the first real SuperUser/admin for a fresh production database.
+
+    This endpoint is intentionally limited to a fresh install. It is allowed only
+    when the database is empty or contains only the default demo seed accounts
+    created by seed_initial_data(). After a real user exists, it returns 403.
+    """
+    seed_emails = {"admin@example.com", "employee@example.com"}
+    existing_users = db.query(User).all()
+    real_users = [u for u in existing_users if (u.email or "").lower() not in seed_emails]
+    if real_users:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Initial admin setup is already locked because a real user exists.",
+        )
+
+    email = str(payload.email).strip().lower()
+    if not email:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email is required")
+    if len(payload.password or "") < 6:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Password must be at least 6 characters")
+
+    user = db.query(User).filter(User.email == email).first()
+    if user:
+        user.full_name = payload.full_name.strip() or user.full_name
+        user.password_hash = hash_password(payload.password)
+        user.is_active = True
+    else:
+        user = User(
+            full_name=payload.full_name.strip() or "System Administrator",
+            email=email,
+            password_hash=hash_password(payload.password),
+            is_active=True,
+        )
+        db.add(user)
+        db.flush()
+
+    super_role = db.query(Role).filter(Role.name == "SuperUser").first()
+    if not super_role:
+        super_role = Role(name="SuperUser", description="Full system access")
+        db.add(super_role)
+        db.flush()
+
+    existing_role = db.query(UserRole).filter(UserRole.user_id == user.id, UserRole.role_id == super_role.id).first()
+    if not existing_role:
+        db.add(UserRole(user_id=user.id, role_id=super_role.id))
+
+    existing_super = db.query(SuperUser).filter(SuperUser.user_id == user.id).first()
+    if not existing_super:
+        db.add(SuperUser(user_id=user.id, notes="Production setup admin"))
+
+    db.commit()
+    return {
+        "message": "Admin user created. This setup endpoint is now locked for future use.",
+        "email": email,
+        "login_endpoint": "/api/auth/login",
+    }
 
 
 class ForgotPasswordRequest(BaseModel):
