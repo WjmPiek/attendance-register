@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { forgotPassword, registerFranchise } from '../api/client'
 import Card from '../components/Card'
 import InstallPrompt from '../components/InstallPrompt'
@@ -31,10 +31,56 @@ export default function LoginPage({ onLogin, loading, error }) {
   const [forgotMessage, setForgotMessage] = useState('')
   const [forgotLoading, setForgotLoading] = useState(false)
 
+  const addressInputRef = useRef(null)
+  const autocompleteRef = useRef(null)
+
   const submitLogin = (event) => {
     event.preventDefault()
     onLogin(email, password)
   }
+
+  useEffect(() => {
+    const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
+
+    function initAutocomplete() {
+      if (!window.google || !addressInputRef.current) return
+
+      autocompleteRef.current = new window.google.maps.places.Autocomplete(
+        addressInputRef.current,
+        {
+          componentRestrictions: { country: 'za' },
+          fields: ['formatted_address'],
+        }
+      )
+
+      autocompleteRef.current.addListener('place_changed', () => {
+        const place = autocompleteRef.current.getPlace()
+
+        if (place?.formatted_address) {
+          updateRegistration('office_address', place.formatted_address)
+        }
+      })
+    }
+
+    const existingScript = document.querySelector(
+      'script[data-google-places="true"]'
+    )
+
+    if (!window.google && !existingScript) {
+      const script = document.createElement('script')
+
+      script.dataset.googlePlaces = 'true'
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`
+
+      script.async = true
+      script.defer = true
+      script.onload = initAutocomplete
+
+      document.head.appendChild(script)
+    } else {
+      setTimeout(initAutocomplete, 100)
+    }
+  }, [])
 
   const submitForgotPassword = async () => {
     setForgotMessage('')
@@ -125,7 +171,12 @@ export default function LoginPage({ onLogin, loading, error }) {
                 <input value={registration.vat_number} onChange={(e) => updateRegistration('vat_number', e.target.value)} />
               </label>
               <label className="span-2">Office Address
-                <input value={registration.office_address} onChange={(e) => updateRegistration('office_address', e.target.value)} />
+                <input
+                  ref={addressInputRef}
+                  value={registration.office_address}
+                  onChange={(e) => updateRegistration('office_address', e.target.value)}
+                  placeholder="Start typing address..."
+                />
               </label>
               <label className="span-2">Website Address
                 <input value={registration.website} onChange={(e) => updateRegistration('website', e.target.value)} placeholder="https://example.co.za" />
