@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { approveFranchiseRegistration, getFranchiseRegistrations, rejectFranchiseRegistration, updateFranchiseRegistration } from '../api/client'
 import Card from '../components/Card'
 
@@ -11,6 +11,8 @@ export default function FranchiseRegistrationApprovalPage({ me }) {
   const [notes, setNotes] = useState({})
   const [editingId, setEditingId] = useState(null)
   const [editForm, setEditForm] = useState({})
+
+  const addressRef = useRef(null);
 
   const isSuperUser = me.roles.includes('SuperUser')
 
@@ -44,7 +46,44 @@ export default function FranchiseRegistrationApprovalPage({ me }) {
     }
   }
 
+  useEffect(() => {
+    if (!editingId) return
 
+    const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
+
+    function initAutocomplete() {
+      if (!window.google || !addressRef.current) return
+
+      const autocomplete = new window.google.maps.places.Autocomplete(
+        addressRef.current,
+        {
+          componentRestrictions: { country: 'za' },
+          fields: ['formatted_address'],
+        }
+      )
+
+      autocomplete.addListener('place_changed', () => {
+        const place = autocomplete.getPlace()
+        if (place.formatted_address) {
+          updateEdit('office_address', place.formatted_address)
+        }
+      })
+    }
+
+    const existingScript = document.querySelector('script[data-google-places="true"]')
+
+    if (!window.google && !existingScript) {
+      const script = document.createElement('script')
+      script.dataset.googlePlaces = 'true'
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`
+      script.async = true
+      script.defer = true
+      script.onload = initAutocomplete
+      document.head.appendChild(script)
+    } else {
+      setTimeout(initAutocomplete, 100)
+    }
+  }, [editingId])
 
   const beginEdit = (item) => {
     setError('')
@@ -153,7 +192,15 @@ export default function FranchiseRegistrationApprovalPage({ me }) {
                   <label>Trading As<input value={editForm.trading_as || ''} onChange={(e) => updateEdit('trading_as', e.target.value)} /></label>
                   <label>Business Registration<input value={editForm.business_registration_number || ''} onChange={(e) => updateEdit('business_registration_number', e.target.value)} /></label>
                   <label>VAT Nr<input value={editForm.vat_number || ''} onChange={(e) => updateEdit('vat_number', e.target.value)} /></label>
-                  <label className="span-2">Office Address<input value={editForm.office_address || ''} onChange={(e) => updateEdit('office_address', e.target.value)} /></label>
+                  <label className="span-2">
+                    Office Address
+                    <input
+                      ref={addressRef}
+                      value={editForm.office_address || ''}
+                      onChange={(e) => updateEdit('office_address', e.target.value)}
+                      placeholder="Start typing address..."
+                    />
+                  </label>
                   <label className="span-2">Website Address<input value={editForm.website || ''} onChange={(e) => updateEdit('website', e.target.value)} placeholder="https://example.co.za" /></label>
                   <label>Office Number<input value={editForm.office_number || ''} onChange={(e) => updateEdit('office_number', e.target.value)} /></label>
                   <label>24 Hour Number<input value={editForm.twenty_four_hour_number || ''} onChange={(e) => updateEdit('twenty_four_hour_number', e.target.value)} /></label>
