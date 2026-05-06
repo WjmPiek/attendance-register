@@ -40,6 +40,7 @@ export default function LoginPage({ onLogin, loading, error }) {
   }
 
   useEffect(() => {
+    if (mode !== 'register') return
     const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
 
     function initAutocomplete() {
@@ -80,7 +81,7 @@ export default function LoginPage({ onLogin, loading, error }) {
     } else {
       setTimeout(initAutocomplete, 100)
     }
-  }, [])
+  }, [mode])
 
   const submitForgotPassword = async () => {
     setForgotMessage('')
