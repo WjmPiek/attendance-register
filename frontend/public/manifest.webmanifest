@@ -1,0 +1,19 @@
+{
+  "name": "Attendance Register Platform",
+  "short_name": "Attendance",
+  "description": "Mobile and desktop attendance register for franchises, managers and employees.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#f4f1f8",
+  "theme_color": "#bfa3df",
+  "icons": [
+    { "src": "/logo.svg", "sizes": "512x512", "type": "image/svg+xml", "purpose": "any maskable" }
+  ],
+  "categories": ["business", "productivity"],
+  "shortcuts": [
+    { "name": "Sign In / Out", "short_name": "Attendance", "url": "/?tab=attendance", "icons": [{ "src": "/logo.svg", "sizes": "512x512" }] },
+    { "name": "Approvals", "short_name": "Approvals", "url": "/?tab=approvals", "icons": [{ "src": "/logo.svg", "sizes": "512x512" }] }
+  ]
+}

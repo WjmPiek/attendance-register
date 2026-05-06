@@ -1,0 +1,294 @@
+/* =========================================================
+   Global enterprise spacing pass
+   Purpose: every card/block has breathing room and text never
+   touches the block edge. Import after styles.css.
+   ========================================================= */
+:root {
+  --ui-gap-xs: 6px;
+  --ui-gap-sm: 10px;
+  --ui-gap-md: 16px;
+  --ui-gap-lg: 22px;
+  --ui-gap-xl: 30px;
+  --ui-card-pad: clamp(20px, 2vw, 30px);
+  --ui-inner-pad: clamp(14px, 1.4vw, 20px);
+  --ui-radius: 22px;
+}
+
+/* Page rhythm */
+.page,
+.staff-page,
+.irp5-page,
+.leave-page,
+.payroll-page,
+.overview-dashboard {
+  gap: var(--ui-gap-lg) !important;
+}
+
+/* Outer cards / tabs / dashboard blocks */
+.card,
+.form-card,
+.glass-card,
+.hero-panel,
+.status-panel,
+.today-card,
+.section-header,
+.dashboard-list-card,
+.map-card,
+.approval-item,
+.decision-box,
+.install-card,
+.export-user-panel,
+.pdf-preview,
+.detail-panel {
+  padding: var(--ui-card-pad) !important;
+  border-radius: 28px !important;
+  overflow: hidden !important;
+}
+
+/* Any inner panel/list row needs its own inset padding */
+.metric-card,
+.stat-card,
+.today-grid > div,
+.summary-grid > div,
+.hero-metrics > div,
+.detail-grid > div,
+.suggestion-item,
+.notification-row,
+.notification-card,
+.notification-mini-row,
+.user-check,
+.leave-calendar-item,
+.export-user-list > *,
+.table-wrap,
+.signature-box,
+.signature-pad-upgraded,
+.staff-detail-card,
+.document-card,
+.timeline-card,
+.timeline-block,
+.leave-block,
+.red-block,
+.green-block {
+  padding: var(--ui-inner-pad) !important;
+  border-radius: var(--ui-radius) !important;
+}
+
+/* Text spacing inside blocks */
+.card h1,
+.card h2,
+.card h3,
+.card h4,
+.form-card h1,
+.form-card h2,
+.form-card h3,
+.section-header h1,
+.section-header h2,
+.hero-panel h1,
+.hero-panel h2 {
+  margin: 0 0 var(--ui-gap-sm) !important;
+  line-height: 1.12 !important;
+  overflow-wrap: anywhere;
+}
+
+.card p,
+.form-card p,
+.section-header p,
+.hero-panel p,
+.suggestion-item p,
+.notification-row p,
+.notification-card p,
+.detail-grid p,
+.leave-calendar-item p,
+td p {
+  margin: 0 0 var(--ui-gap-sm) !important;
+  line-height: 1.45 !important;
+  overflow-wrap: anywhere;
+}
+
+.card p:last-child,
+.form-card p:last-child,
+.section-header p:last-child,
+.hero-panel p:last-child,
+.suggestion-item p:last-child,
+.notification-row p:last-child,
+.notification-card p:last-child,
+.detail-grid p:last-child,
+.leave-calendar-item p:last-child,
+td p:last-child {
+  margin-bottom: 0 !important;
+}
+
+/* Forms: labels, fields and button rows */
+label,
+.compact-filter,
+.small-label {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+  margin: 0 0 var(--ui-gap-md) !important;
+  line-height: 1.25 !important;
+}
+
+input,
+select,
+textarea {
+  padding: 12px 14px !important;
+  min-height: 42px !important;
+  line-height: 1.3 !important;
+}
+
+textarea {
+  min-height: 96px;
+  resize: vertical;
+}
+
+.button-row,
+.actions,
+.filters,
+.wrap-actions,
+.action-row,
+.login-form-actions,
+.history-toolbar,
+.approval-toolbar,
+.sub-tabs {
+  gap: var(--ui-gap-md) !important;
+}
+
+button,
+.glass-button,
+.link-button,
+.small-button {
+  line-height: 1.25 !important;
+}
+
+/* Grids: consistent gutters */
+.grid,
+.form-grid,
+.staff-form-grid,
+.staff-form-single,
+.history-toolbar,
+.dashboard-metrics,
+.dashboard-two-col,
+.today-grid,
+.summary-grid,
+.stat-grid,
+.stat-grid.mini,
+.hero-metrics,
+.leave-grid,
+.detail-grid,
+.export-user-list,
+.overview-notification-grid {
+  gap: var(--ui-gap-lg) !important;
+}
+
+/* Tables: stop text from hugging borders */
+.table-wrap {
+  margin-top: var(--ui-gap-md) !important;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+table {
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+}
+
+th,
+td {
+  padding: 15px 18px !important;
+  line-height: 1.38 !important;
+  vertical-align: top !important;
+  overflow-wrap: anywhere !important;
+}
+
+th:first-child,
+td:first-child { padding-left: 20px !important; }
+th:last-child,
+td:last-child { padding-right: 20px !important; }
+
+/* Align text/value pairs in dashboard blocks */
+.metric-card,
+.stat-card,
+.today-grid > div,
+.summary-grid > div,
+.hero-metrics > div {
+  display: grid !important;
+  align-content: start !important;
+  gap: 7px !important;
+  min-width: 0;
+}
+
+.metric-card strong,
+.stat-card strong,
+.today-grid strong,
+.summary-grid strong,
+.hero-metrics strong {
+  display: block !important;
+  line-height: 1.05 !important;
+  margin: 0 !important;
+}
+
+.metric-card span,
+.metric-card small,
+.stat-card span,
+.stat-card small,
+.today-grid span,
+.summary-grid span,
+.hero-metrics span,
+.muted,
+.small {
+  line-height: 1.35 !important;
+}
+
+/* Notification and suggestion rows should not look squeezed */
+.notification-row,
+.notification-mini-row {
+  align-items: flex-start !important;
+}
+
+.notification-row > *,
+.notification-mini-row > *,
+.suggestion-item > * {
+  min-width: 0;
+}
+
+/* Keep badges/buttons from colliding with text */
+.badge,
+.status-pill,
+.notification-count {
+  margin: 2px 0;
+}
+
+/* Mobile: keep same margins, just slightly smaller */
+@media (max-width: 760px) {
+  :root {
+    --ui-card-pad: 18px;
+    --ui-inner-pad: 14px;
+    --ui-gap-lg: 16px;
+  }
+
+  .app-shell {
+    padding: 12px !important;
+    gap: 14px !important;
+  }
+
+  .button-row,
+  .actions,
+  .filters,
+  .wrap-actions,
+  .action-row {
+    align-items: stretch !important;
+  }
+
+  .button-row button,
+  .actions button,
+  .filters button,
+  .wrap-actions button,
+  .action-row button {
+    width: 100%;
+  }
+
+  th,
+  td {
+    padding: 12px 14px !important;
+  }
+}

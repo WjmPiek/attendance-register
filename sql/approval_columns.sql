@@ -1,0 +1,10 @@
+ALTER TABLE attendance_events ADD COLUMN IF NOT EXISTS approval_status VARCHAR(30) DEFAULT 'pending';
+ALTER TABLE attendance_events ADD COLUMN IF NOT EXISTS work_location_type VARCHAR(30);
+ALTER TABLE attendance_events ADD COLUMN IF NOT EXISTS employee_note TEXT;
+ALTER TABLE attendance_events ADD COLUMN IF NOT EXISTS manager_note TEXT;
+ALTER TABLE attendance_events ADD COLUMN IF NOT EXISTS approved_by_user_id INT;
+ALTER TABLE attendance_events ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP;
+ALTER TABLE attendance_events ADD COLUMN IF NOT EXISTS rejected_reason TEXT;
+ALTER TABLE attendance_events ADD COLUMN IF NOT EXISTS signature_required BOOLEAN DEFAULT TRUE;
+ALTER TABLE attendance_events ADD COLUMN IF NOT EXISTS signature_status VARCHAR(30);
+ALTER TABLE attendance_events ADD COLUMN IF NOT EXISTS missing_sign_out BOOLEAN DEFAULT FALSE;
