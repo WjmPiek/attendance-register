@@ -278,21 +278,6 @@ export async function declineLeaveApplication(id, note = '') {
   return apiRequest(`/leave/applications/${id}/decline`, { method: 'POST', body: JSON.stringify({ note }) })
 }
 
-export async function getPayrollEmployees() {
-  return apiRequest('/payroll/employees')
-}
-
-export async function savePayrollSettings(payload) {
-  return apiRequest('/payroll/settings', { method: 'PUT', body: JSON.stringify(payload) })
-}
-
-export async function previewPayroll(runMonth, saveRun = false) {
-  return apiRequest('/payroll/preview', { method: 'POST', body: JSON.stringify({ run_month: runMonth, save_run: saveRun }) })
-}
-
-export async function getPayrollRuns() {
-  return apiRequest('/payroll/runs')
-}
 
 export async function importPayrollDocument(file, payrollMonth = '') {
   const token = localStorage.getItem('token')
