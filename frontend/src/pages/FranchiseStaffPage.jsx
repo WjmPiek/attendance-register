@@ -217,6 +217,8 @@ export default function FranchiseStaffPage() {
   const [idPhotoOffset, setIdPhotoOffset] = useState({ x: 0, y: 0 })
   const [selectedOffice, setSelectedOffice] = useState(null);
   const [pickedLocation, setPickedLocation] = useState(null);
+  const staffAddressInputRef = React.useRef(null);
+  const staffAutocompleteRef = React.useRef(null);
 
   const activeManagers = useMemo(() => managers.filter((m) => m.is_active !== false), [managers])
   const isManagerRole = staff.role === 'Manager'
@@ -238,6 +240,61 @@ export default function FranchiseStaffPage() {
   }
 
   useEffect(() => { load() }, [])
+
+  useEffect(() => {
+    if (activeSubTab !== 'add') return;
+
+    const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+
+    function initStaffAddressAutocomplete() {
+      if (!window.google?.maps?.places || !staffAddressInputRef.current) return;
+
+      staffAutocompleteRef.current = new window.google.maps.places.Autocomplete(
+        staffAddressInputRef.current,
+        {
+          componentRestrictions: { country: 'za' },
+          fields: ['formatted_address', 'geometry'],
+        }
+      );
+
+      staffAutocompleteRef.current.addListener('place_changed', () => {
+        const place = staffAutocompleteRef.current.getPlace();
+
+        if (place?.formatted_address) {
+          setStaff((current) => ({
+            ...current,
+            office_address_assigned: place.formatted_address,
+          }));
+        }
+      });
+    }
+
+    if (window.google?.maps?.places) {
+      setTimeout(initStaffAddressAutocomplete, 0);
+      return;
+    }
+
+    if (!apiKey) {
+      console.warn('Missing VITE_GOOGLE_MAPS_API_KEY');
+      return;
+    }
+
+    const existingScript = document.querySelector('script[src*="maps.googleapis.com/maps/api/js"]');
+
+    if (existingScript) {
+      existingScript.addEventListener('load', initStaffAddressAutocomplete, { once: true });
+      setTimeout(initStaffAddressAutocomplete, 500);
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.dataset.googlePlaces = 'true';
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`;
+    script.async = true;
+    script.defer = true;
+    script.onload = initStaffAddressAutocomplete;
+    document.head.appendChild(script);
+  }, [activeSubTab])
 
   const resetForm = () => {
     setStaff(emptyStaff)
@@ -560,7 +617,7 @@ export default function FranchiseStaffPage() {
             <label>Surname<input required value={staff.surname} onChange={(e) => setStaff({ ...staff, surname: e.target.value })} /></label>
             <label>Email Address <span className="optional-note">optional</span><input type="email" value={staff.email || ''} onChange={(e) => setStaff({ ...staff, email: e.target.value })} /></label>
             <label>Contact Number<input value={staff.contact_number || ''} onChange={(e) => setStaff({ ...staff, contact_number: e.target.value })} /></label>
-            <label>Office Address Assigned<textarea value={staff.office_address_assigned || ''} onChange={(e) => setStaff({ ...staff, office_address_assigned: e.target.value })} /></label>
+            <label>Office Address Assigned<input ref={staffAddressInputRef} value={staff.office_address_assigned || ''} onChange={(e) => setStaff({ ...staff, office_address_assigned: e.target.value })} placeholder="Start typing address..." /></label>
             <div className="hours-grid">
               <label>Office Start Time<input type="time" required value={staff.work_start_time || '08:00'} onChange={(e) => setStaff({ ...staff, work_start_time: e.target.value })} /></label>
               <label>Office End Time<input type="time" required value={staff.work_end_time || '17:00'} onChange={(e) => setStaff({ ...staff, work_end_time: e.target.value })} /></label>

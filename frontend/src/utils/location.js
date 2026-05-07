@@ -13,7 +13,7 @@ export const getCurrentLocation = () => {
           accuracy: pos.coords.accuracy,
         })
       },
-      (err) => reject(err.message || 'GPS permission denied'),
+      (err) => reject(new Error(err.message || 'GPS permission denied')),
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
     )
   })
