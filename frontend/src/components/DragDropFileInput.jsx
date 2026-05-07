@@ -22,10 +22,28 @@ export default function DragDropFileInput({
       const name = nextFile.name.toLowerCase()
       const type = (nextFile.type || '').toLowerCase()
       const ok = accepted.some((rule) => {
-        if (rule.endsWith('/*')) return type.startsWith(rule.replace('/*', '/'))
-        if (rule.startsWith('.')) return name.endsWith(rule)
+        if (rule.endsWith('/*')) {
+          return type.startsWith(rule.replace('/*', '/'))
+        }
+
+        if (rule.startsWith('.')) {
+          return name.endsWith(rule.toLowerCase())
+        }
+
+        if (
+          rule === 'application/zip' ||
+          rule === 'application/x-zip-compressed'
+        ) {
+          return (
+            type === 'application/zip' ||
+            type === 'application/x-zip-compressed' ||
+            name.endsWith('.zip')
+          )
+        }
+
         return type === rule
       })
+      
       if (!ok) {
         window.alert('This file type is not allowed for this upload.')
         return

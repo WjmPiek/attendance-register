@@ -3,6 +3,8 @@ import calendar
 import csv
 import io
 import re
+import zipfile
+import pdfplumber
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel, Field
@@ -299,8 +301,41 @@ def _read_payroll_file(file: UploadFile):
         return parsed
     if filename.endswith('.xls'):
         raise HTTPException(status_code=400, detail='Old .xls files are not supported directly. Save the payroll document as .xlsx or CSV, then import again.')
+    if filename.endswith('.zip'):
+        extracted_rows = []
+
+        with zipfile.ZipFile(io.BytesIO(content)) as z:
+            pdf_files = [f for f in z.namelist() if f.lower().endswith('.pdf')]
+
+            if not pdf_files:
+                raise HTTPException(status_code=400, detail='No PDF found inside ZIP file.')
+
+            for pdf_name in pdf_files:
+                with z.open(pdf_name) as pdf_file:
+                    pdf_bytes = io.BytesIO(pdf_file.read())
+
+                    with pdfplumber.open(pdf_bytes) as pdf:
+                        text_content = ''
+
+                        for page in pdf.pages:
+                            text_content += page.extract_text() or ''
+
+                        matches = re.findall(r'EMPL\.?\s*NO\s*:?\s*(\d+)', text_content, re.IGNORECASE)
+
+                        for idx, emp in enumerate(matches, start=1):
+                            extracted_rows.append({
+                                '_row_number': idx,
+                                'empl_no': emp,
+                            })
+
+        return extracted_rows
+
+
     if filename.endswith('.pdf'):
-        raise HTTPException(status_code=400, detail='Automatic payroll allocation works with CSV or Excel files. Convert the PDF payroll report to CSV/XLSX first.')
+        raise HTTPException(
+            status_code=400,
+            detail='Please upload the ZIP payroll export instead of the raw PDF.'
+        )
     text_content = content.decode('utf-8-sig', errors='replace')
     sample = text_content[:2048]
     delimiter = ','

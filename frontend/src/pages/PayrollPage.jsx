@@ -94,7 +94,7 @@ export default function PayrollPage() {
   async function uploadPayrollFile(e) {
     e.preventDefault()
     if (!importFile) {
-      setError('Choose a CSV or Excel payroll file first')
+      setError('Choose a ZIP, CSV or Excel payroll file first')
       return
     }
     setMessage('')
@@ -161,7 +161,7 @@ export default function PayrollPage() {
         <p className="muted">Franchise users and Finance staff can upload a CSV or Excel payroll document. Rows are matched to the correct employee by User ID, email, or full name. Matching rows update employee payroll settings automatically.</p>
         <form onSubmit={uploadPayrollFile} className="payroll-import-form">
           <label>Payroll month<input type="date" value={month} onChange={(e) => setMonth(e.target.value)} /></label>
-          <DragDropFileInput label="Payroll file" accept=".csv,.xlsx,.xlsm" file={importFile} onFile={setImportFile} />
+          <DragDropFileInput label="Payroll file" accept=".csv,.xlsx,.xls,.pdf,.zip,.ZIP,application/zip,application/x-zip-compressed" file={importFile} onFile={setImportFile} />
           <button className="primary-action" type="submit">Import and allocate to employees</button>
         </form>
         {importResult ? (
