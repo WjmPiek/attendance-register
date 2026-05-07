@@ -6,10 +6,10 @@ function loadGoogleMaps() {
   if (window.google?.maps) return Promise.resolve(window.google);
 
   if (!googleMapsPromise) {
-    const key = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+    const apikey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
     googleMapsPromise = new Promise((resolve, reject) => {
       const script = document.createElement('script');
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${key}`;
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${apikey}&libraries=places`;
       script.async = true;
       script.defer = true;
       script.onload = () => resolve(window.google);
