@@ -31,6 +31,7 @@ EMPLOYEE_ROLES = [
 
 
 class CreateManagerRequest(BaseModel):
+    employee_number: str | None = None
     username: str | None = None
     name: str
     surname: str
@@ -60,6 +61,7 @@ class CreateEmployeeRequest(BaseModel):
 
 
 class UpdateManagerRequest(BaseModel):
+    employee_number: str | None = None
     username: str | None = None
     name: str | None = None
     surname: str | None = None
@@ -888,6 +890,7 @@ def list_managers(current_user: User = Depends(get_current_user), db: Session = 
                 mu.id,
                 mu.user_id,
                 mu.franchise_user_id,
+                mu.employee_number,
                 mu.name,
                 mu.surname,
                 mu.email AS email,
@@ -947,6 +950,10 @@ def _ensure_office_hours_columns(db: Session):
         db.execute(text("""
             ALTER TABLE manager_users
             ADD COLUMN IF NOT EXISTS work_start_time VARCHAR(5) DEFAULT '08:00'
+        """))
+        db.execute(text("""
+            ALTER TABLE manager_users
+            ADD COLUMN IF NOT EXISTS employee_number VARCHAR(50) NULL
         """))
         db.execute(text("""
             ALTER TABLE manager_users
@@ -1108,6 +1115,7 @@ def create_manager(payload: CreateManagerRequest, current_user: User = Depends(g
         INSERT INTO manager_users (
             user_id,
             franchise_user_id,
+            employee_number,
             name,
             surname,
             email,
@@ -1122,6 +1130,7 @@ def create_manager(payload: CreateManagerRequest, current_user: User = Depends(g
         VALUES (
             :user_id,
             :franchise_user_id,
+            :employee_number,
             :name,
             :surname,
             :email,
@@ -1137,6 +1146,7 @@ def create_manager(payload: CreateManagerRequest, current_user: User = Depends(g
     """), {
         "user_id": user_id,
         "franchise_user_id": franchise_user_id,
+        "employee_number": payload.employee_number,
         "name": payload.name,
         "surname": payload.surname,
         "email": str(payload.email) if payload.email else None,
@@ -1396,7 +1406,7 @@ def update_manager(manager_id: int, payload: UpdateManagerRequest, current_user:
         values['work_end_time'] = _valid_hhmm(values.get('work_end_time'), '17:00')
     updates = []
     params = {"manager_id": manager_id, "now": datetime.utcnow()}
-    for field in ["name", "surname", "email", "contact_number", "office_address_assigned", "work_start_time", "work_end_time", "is_active"]:
+    for field in ["employee_number", "name", "surname", "email", "contact_number", "office_address_assigned", "work_start_time", "work_end_time", "is_active"]:
         if field in values:
             updates.append(f"{field} = :{field}")
             params[field] = str(values[field]) if field == "email" and values[field] else values[field]

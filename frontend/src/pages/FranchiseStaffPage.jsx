@@ -612,7 +612,14 @@ export default function FranchiseStaffPage() {
             <label>Assign to / Role<select value={staff.role} onChange={(e) => setStaff({ ...staff, role: e.target.value, manager_user_id: e.target.value === 'Manager' ? '' : staff.manager_user_id })}>{staffRoles.map((role) => <option key={role}>{role}</option>)}</select></label>
             {!isManagerRole ? <label>Manager optional<select value={staff.manager_user_id || ''} onChange={(e) => setStaff({ ...staff, manager_user_id: e.target.value })}><option value="">No manager selected</option>{activeManagers.map((m) => <option key={m.id} value={m.id}>{m.name} {m.surname}</option>)}</select></label> : null}
             <label>Username <span className="optional-note">login name if no email</span><input value={staff.username || ''} onChange={(e) => setStaff({ ...staff, username: e.target.value })} placeholder="e.g. manager_northcliff" /></label>
-            {!isManagerRole ? <label>EMPL. NO <span className="optional-note">used for payroll import matching</span><input value={staff.employee_number || ''} onChange={(e) => setStaff({ ...staff, employee_number: e.target.value })} placeholder="e.g. 1234567" /></label> : null}
+            <label>EMPL. NO
+              <span className="optional-note">used for payroll import matching</span>
+              <input
+                value={staff.employee_number || ''}
+                onChange={(e) => setStaff({ ...staff, employee_number: e.target.value })}
+                placeholder="e.g. 1234567"
+              />
+            </label>
             <label>Name<input required value={staff.name} onChange={(e) => setStaff({ ...staff, name: e.target.value })} /></label>
             <label>Surname<input required value={staff.surname} onChange={(e) => setStaff({ ...staff, surname: e.target.value })} /></label>
             <label>Email Address <span className="optional-note">optional</span><input type="email" value={staff.email || ''} onChange={(e) => setStaff({ ...staff, email: e.target.value })} /></label>
