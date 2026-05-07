@@ -22,6 +22,7 @@ const emptyStaff = {
   role: 'Manager',
   manager_user_id: '',
   username: '',
+  employee_number: '',
   name: '',
   surname: '',
   email: '',
@@ -340,6 +341,7 @@ export default function FranchiseStaffPage() {
       work_end_time: item.work_end_time || '17:00',
       password: '',
       username: item.username || '',
+      employee_number: item.employee_number || '',
       is_active: item.is_active !== false,
     })
     setIdPhotoFile(null)
@@ -553,6 +555,7 @@ export default function FranchiseStaffPage() {
             <label>Assign to / Role<select value={staff.role} onChange={(e) => setStaff({ ...staff, role: e.target.value, manager_user_id: e.target.value === 'Manager' ? '' : staff.manager_user_id })}>{staffRoles.map((role) => <option key={role}>{role}</option>)}</select></label>
             {!isManagerRole ? <label>Manager optional<select value={staff.manager_user_id || ''} onChange={(e) => setStaff({ ...staff, manager_user_id: e.target.value })}><option value="">No manager selected</option>{activeManagers.map((m) => <option key={m.id} value={m.id}>{m.name} {m.surname}</option>)}</select></label> : null}
             <label>Username <span className="optional-note">login name if no email</span><input value={staff.username || ''} onChange={(e) => setStaff({ ...staff, username: e.target.value })} placeholder="e.g. manager_northcliff" /></label>
+            {!isManagerRole ? <label>EMPL. NO <span className="optional-note">used for payroll import matching</span><input value={staff.employee_number || ''} onChange={(e) => setStaff({ ...staff, employee_number: e.target.value })} placeholder="e.g. 1234567" /></label> : null}
             <label>Name<input required value={staff.name} onChange={(e) => setStaff({ ...staff, name: e.target.value })} /></label>
             <label>Surname<input required value={staff.surname} onChange={(e) => setStaff({ ...staff, surname: e.target.value })} /></label>
             <label>Email Address <span className="optional-note">optional</span><input type="email" value={staff.email || ''} onChange={(e) => setStaff({ ...staff, email: e.target.value })} /></label>
@@ -701,10 +704,10 @@ export default function FranchiseStaffPage() {
             <h2>My Employees</h2>
             <div className="table-wrap">
               <table>
-                <thead><tr><th>Role</th><th>Name</th><th>Username</th><th>Email</th><th>Contact</th><th>Office</th><th>Office Hours</th><th>Active</th><th>Actions</th></tr></thead>
+                <thead><tr><th>Role</th><th>EMPL. NO</th><th>Name</th><th>Username</th><th>Email</th><th>Contact</th><th>Office</th><th>Office Hours</th><th>Active</th><th>Actions</th></tr></thead>
                 <tbody>
                   {employees.filter((e) => e.is_active !== false && e.login_active !== false).map((e) => <tr key={e.id} className={e.is_active === false ? 'inactive-row' : ''}>
-                    <td>{e.employee_role || '—'}</td><td>{e.name} {e.surname}</td><td>{e.username || '—'}</td><td>{e.email || '—'}</td><td>{e.contact_number || '—'}</td><td>{e.office_name || e.office_address_assigned || '—'}</td><td>{e.work_start_time || '08:00'} - {e.work_end_time || '17:00'}</td><td>{e.is_active === false ? 'No' : 'Yes'}</td>
+                    <td>{e.employee_role || '—'}</td><td>{e.employee_number || '—'}</td><td>{e.name} {e.surname}</td><td>{e.username || '—'}</td><td>{e.email || '—'}</td><td>{e.contact_number || '—'}</td><td>{e.office_name || e.office_address_assigned || '—'}</td><td>{e.work_start_time || '08:00'} - {e.work_end_time || '17:00'}</td><td>{e.is_active === false ? 'No' : 'Yes'}</td>
                     {renderActions('employees', e)}
                   </tr>)}
                   {!employees.length ? <tr><td colSpan="9" className="muted">No employees found.</td></tr> : null}

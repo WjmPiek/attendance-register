@@ -45,6 +45,7 @@ class CreateManagerRequest(BaseModel):
 
 class CreateEmployeeRequest(BaseModel):
     username: str | None = None
+    employee_number: str | None = None
     employee_role: str
     name: str
     surname: str
@@ -78,6 +79,7 @@ class ResetPasswordRequest(BaseModel):
 
 class UpdateEmployeeRequest(BaseModel):
     username: str | None = None
+    employee_number: str | None = None
     employee_role: str | None = None
     name: str | None = None
     surname: str | None = None
@@ -952,6 +954,10 @@ def _ensure_office_hours_columns(db: Session):
         """))
         db.execute(text("""
             ALTER TABLE employee_users
+            ADD COLUMN IF NOT EXISTS employee_number VARCHAR(50) NULL
+        """))
+        db.execute(text("""
+            ALTER TABLE employee_users
             ADD COLUMN IF NOT EXISTS work_start_time VARCHAR(5) DEFAULT '08:00'
         """))
         db.execute(text("""
@@ -975,6 +981,7 @@ def list_employees(current_user: User = Depends(get_current_user), db: Session =
                 eu.franchise_user_id,
                 eu.manager_user_id,
                 eu.employee_role,
+                eu.employee_number,
                 eu.name,
                 eu.surname,
                 eu.email AS email,
@@ -1005,6 +1012,7 @@ def list_employees(current_user: User = Depends(get_current_user), db: Session =
                 eu.franchise_user_id,
                 eu.manager_user_id,
                 eu.employee_role,
+                eu.employee_number,
                 eu.name,
                 eu.surname,
                 eu.email AS email,
@@ -1232,6 +1240,7 @@ def create_employee(payload: CreateEmployeeRequest, current_user: User = Depends
             franchise_user_id,
             manager_user_id,
             employee_role,
+            employee_number,
             name,
             surname,
             email,
@@ -1248,6 +1257,7 @@ def create_employee(payload: CreateEmployeeRequest, current_user: User = Depends
             :franchise_user_id,
             :manager_user_id,
             :employee_role,
+            :employee_number,
             :name,
             :surname,
             :email,
@@ -1265,6 +1275,7 @@ def create_employee(payload: CreateEmployeeRequest, current_user: User = Depends
         "franchise_user_id": franchise_user_id,
         "manager_user_id": payload.manager_user_id,
         "employee_role": payload.employee_role,
+        "employee_number": payload.employee_number,
         "name": payload.name,
         "surname": payload.surname,
         "email": str(payload.email) if payload.email else None,
@@ -1438,7 +1449,7 @@ def update_employee(employee_id: int, payload: UpdateEmployeeRequest, current_us
             raise HTTPException(status_code=400, detail="Selected manager is not under this franchise")
     updates = []
     params = {"employee_id": employee_id, "now": datetime.utcnow()}
-    for field in ["employee_role", "name", "surname", "email", "contact_number", "office_address_assigned", "work_start_time", "work_end_time", "manager_user_id", "is_active"]:
+    for field in ["employee_role", "employee_number", "name", "surname", "email", "contact_number", "office_address_assigned", "work_start_time", "work_end_time", "manager_user_id", "is_active"]:
         if field in values:
             updates.append(f"{field} = :{field}")
             params[field] = str(values[field]) if field == "email" and values[field] else values[field]

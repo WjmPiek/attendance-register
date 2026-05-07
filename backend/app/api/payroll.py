@@ -162,11 +162,13 @@ def _staff_rows(db: Session, current_user: User):
     where, params = _staff_scope_sql(db, current_user)
     rows = db.execute(text(f"""
         WITH staff AS (
-            SELECT u.id AS user_id, e.franchise_user_id, e.name, e.surname, e.employee_role AS role, e.email, 'Employee' AS staff_type
+            SELECT u.id AS user_id, e.franchise_user_id, e.name, e.surname, e.employee_role AS role, e.email,
+                   e.employee_number, 'Employee' AS staff_type
             FROM employee_users e JOIN users u ON u.id = e.user_id
             WHERE COALESCE(e.is_active, TRUE) = TRUE AND COALESCE(u.is_active, TRUE) = TRUE
             UNION ALL
-            SELECT u.id AS user_id, m.franchise_user_id, m.name, m.surname, 'Manager' AS role, m.email, 'Manager' AS staff_type
+            SELECT u.id AS user_id, m.franchise_user_id, m.name, m.surname, 'Manager' AS role, m.email,
+                   NULL::VARCHAR AS employee_number, 'Manager' AS staff_type
             FROM manager_users m JOIN users u ON u.id = m.user_id
             WHERE COALESCE(m.is_active, TRUE) = TRUE AND COALESCE(u.is_active, TRUE) = TRUE
         )
@@ -316,8 +318,13 @@ def _read_payroll_file(file: UploadFile):
     return parsed
 
 
+def _last_7_digits(value) -> str:
+    digits = re.sub(r'\D+', '', str(value or ''))
+    return digits[-7:] if len(digits) >= 7 else ''
+
+
 def _staff_match_maps(staff_rows):
-    by_id, by_email, by_name = {}, {}, {}
+    by_id, by_email, by_name, by_employee_last7 = {}, {}, {}, {}
     for s in staff_rows:
         uid = int(s['user_id'])
         by_id[str(uid)] = s
@@ -327,13 +334,19 @@ def _staff_match_maps(staff_rows):
         full_name = _clean_match_text(' '.join(x for x in [s.get('name'), s.get('surname')] if x))
         if full_name:
             by_name[full_name] = s
-    return by_id, by_email, by_name
+        employee_last7 = _last_7_digits(s.get('employee_number'))
+        if employee_last7:
+            by_employee_last7[employee_last7] = s
+    return by_id, by_email, by_name, by_employee_last7
 
 
-def _match_payroll_staff(row: dict, by_id: dict, by_email: dict, by_name: dict):
-    user_key = str(_first(row, 'user_id', 'employee_id', 'staff_id', 'emp_id', 'personnel_number', 'employee_number')).strip()
+def _match_payroll_staff(row: dict, by_id: dict, by_email: dict, by_name: dict, by_employee_last7: dict):
+    user_key = str(_first(row, 'empl_no', 'empl_no_', 'employee_no', 'employee_number', 'employee_id', 'staff_id', 'emp_id', 'personnel_number', 'user_id')).strip()
     email = str(_first(row, 'email', 'email_address', 'employee_email', 'work_email')).strip().lower()
     employee_name = str(_first(row, 'employee', 'employee_name', 'staff_name', 'name', 'full_name', 'employee_full_name')).strip()
+    user_key_last7 = _last_7_digits(user_key)
+    if user_key_last7 and user_key_last7 in by_employee_last7:
+        return by_employee_last7[user_key_last7], 'employee_number_last_7', user_key, email, employee_name
     if user_key and user_key in by_id:
         return by_id[user_key], 'user_id', user_key, email, employee_name
     if email and email in by_email:
@@ -394,7 +407,7 @@ def import_payroll_document(
     _ensure_tables(db)
     rows = _read_payroll_file(file)
     staff_rows = _staff_rows(db, current_user)
-    by_id, by_email, by_name = _staff_match_maps(staff_rows)
+    by_id, by_email, by_name, by_employee_last7 = _staff_match_maps(staff_rows)
     current_fid = _franchise_id_for_user(db, current_user)
     imported_at = datetime.utcnow()
     month_date = None
@@ -420,7 +433,7 @@ def import_payroll_document(
     matched_count = 0
     for row in rows:
         row_no = int(row.get('_row_number') or len(results) + 1)
-        staff, match_method, user_key, email, employee_name = _match_payroll_staff(row, by_id, by_email, by_name)
+        staff, match_method, user_key, email, employee_name = _match_payroll_staff(row, by_id, by_email, by_name, by_employee_last7)
         basic_salary = _to_float(_first(row, 'basic_salary', 'basic_monthly_salary', 'salary', 'monthly_salary', 'gross_salary'))
         hourly_rate = _to_float(_first(row, 'hourly_rate', 'rate_per_hour'))
         allowances = _to_float(_first(row, 'allowances', 'allowance'))
