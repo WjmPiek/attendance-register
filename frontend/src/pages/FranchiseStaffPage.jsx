@@ -1,5 +1,16 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { apiFetch, resetStaffPassword, uploadIrp5Document, getOfficeQrCodes, downloadOfficeQrPdf, uploadStaffIdPhoto, downloadStaffIdCards, updateOfficeLocation } from '../api/client'
+import {
+  API_BASE,
+  apiFetch,
+  resetStaffPassword,
+  uploadIrp5Document,
+  getOfficeQrCodes,
+  downloadOfficeQrPdf,
+  uploadStaffIdPhoto,
+  downloadStaffIdCards,
+  updateOfficeLocation
+} from '../api/client'
+
 import OfficeLocationMap from '../components/OfficeLocationMap'
 import DragDropFileInput from '../components/DragDropFileInput.jsx'
 import StaffIdCard from '../components/StaffIdCard.jsx'
@@ -206,6 +217,7 @@ export default function FranchiseStaffPage() {
   const [activeSubTab, setActiveSubTab] = useState('view')
   const [managers, setManagers] = useState([])
   const [employees, setEmployees] = useState([])
+  const [myPayslips, setMyPayslips] = useState([])
   const [msg, setMsg] = useState('')
   const [err, setErr] = useState('')
   const [staff, setStaff] = useState(emptyStaff)
@@ -227,14 +239,17 @@ export default function FranchiseStaffPage() {
   const load = async () => {
     setErr('')
     try {
-      const [m, e, qrs] = await Promise.all([
+      const [m, e, qrs, payslips] = await Promise.all([
         apiFetch('/franchise-staff/managers'),
         apiFetch('/franchise-staff/employees'),
         getOfficeQrCodes().catch(() => []),
+        apiFetch('/payroll/my-payslips').catch(() => []),
       ])
+
       setManagers(m)
       setEmployees(e)
       setOfficeQrs(qrs)
+      setMyPayslips(payslips)
     } catch (error) {
       setErr(error.message || 'Failed to load franchise staff')
     }
@@ -596,10 +611,85 @@ export default function FranchiseStaffPage() {
       </div>
 
       <div className="sub-tabs">
-        <button className={activeSubTab === 'view' ? 'active' : ''} onClick={() => setActiveSubTab('view')}>View Staff</button>
-        <button className={activeSubTab === 'add' ? 'active' : ''} onClick={() => { resetForm(); setActiveSubTab('add') }}>Add New Employee</button>
-        <button className={activeSubTab === 'qr' ? 'active' : ''} onClick={() => setActiveSubTab('qr')}>Office QR Codes</button>
+        <button
+          className={activeSubTab === 'view' ? 'active' : ''}
+          onClick={() => setActiveSubTab('view')}
+        >
+          View Staff
+        </button>
+
+        <button
+          className={activeSubTab === 'add' ? 'active' : ''}
+          onClick={() => {
+            resetForm()
+            setActiveSubTab('add')
+          }}
+        >
+          Add New Employee
+        </button>
+
+        <button
+          className={activeSubTab === 'payslips' ? 'active' : ''}
+          onClick={() => setActiveSubTab('payslips')}
+        >
+          My Payslips
+        </button>
+
+        <button
+          className={activeSubTab === 'qr' ? 'active' : ''}
+          onClick={() => setActiveSubTab('qr')}
+        >
+          Office QR Codes
+        </button>
       </div>
+
+      {activeSubTab === 'payslips' ? (
+        <section className="form-card staff-list-card">
+          <h2>My Payslips</h2>
+
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Filename</th>
+                  <th>Date Uploaded</th>
+                  <th>Download</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {myPayslips.map((p) => (
+                  <tr key={p.id}>
+                    <td>{p.original_filename}</td>
+
+                    <td>
+                      {new Date(p.uploaded_at).toLocaleDateString()}
+                    </td>
+
+                    <td>
+                      <a
+                        href={`${API_BASE}/payroll/payslips/${p.id}`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Download
+                      </a>
+                    </td>
+                  </tr>
+                ))}
+
+                {!myPayslips.length ? (
+                  <tr>
+                    <td colSpan="3" className="muted">
+                      No payslips found.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
 
       {msg ? <p className="success">{msg}</p> : null}
       {err ? <p className="muted small">Staff data could not load. Check backend server, then refresh.</p> : null}
@@ -762,10 +852,10 @@ export default function FranchiseStaffPage() {
             <h2>My Managers</h2>
             <div className="table-wrap">
               <table>
-                <thead><tr><th>Name</th><th>Username</th><th>Email</th><th>Contact</th><th>Office</th><th>Office Hours</th><th>Active</th><th>Actions</th></tr></thead>
+                <thead><tr><th>Name</th><th>Username</th><th>EMPL. NO</th><th>Email</th><th>Contact</th><th>Office</th><th>Office Hours</th><th>Active</th><th>Actions</th></tr></thead>
                 <tbody>
                   {managers.filter((m) => m.is_active !== false && m.login_active !== false).map((m) => <tr key={m.id} className={m.is_active === false ? 'inactive-row' : ''}>
-                    <td>{m.name} {m.surname}</td><td>{m.username || '—'}</td><td>{m.email || '—'}</td><td>{m.contact_number || '—'}</td><td>{m.office_name || m.office_address_assigned || '—'}</td><td>{m.work_start_time || '08:00'} - {m.work_end_time || '17:00'}</td><td>{m.is_active === false ? 'No' : 'Yes'}</td>
+                    <td>{m.name} {m.surname}</td><td>{m.username || '—'}</td><td>{m.employee_number || '—'}</td><td>{m.email || '—'}</td><td>{m.contact_number || '—'}</td><td>{m.office_name || m.office_address_assigned || '—'}</td><td>{m.work_start_time || '08:00'} - {m.work_end_time || '17:00'}</td><td>{m.is_active === false ? 'No' : 'Yes'}</td>
                     {renderActions('managers', m)}
                   </tr>)}
                   {!managers.length ? <tr><td colSpan="9" className="muted">No managers found.</td></tr> : null}

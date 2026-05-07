@@ -350,8 +350,10 @@ def import_payroll_document(
     db: Session = Depends(get_db),
 ):
     if not _can_payroll(db, current_user):
-        raise HTTPException(status_code=403, detail='Payroll import access denied')
+        raise HTTPException(status_code=403, detail='Payslip import access denied')
+
     _ensure_tables(db)
+    
     rows = _read_payroll_file(file)
     staff_rows = _staff_rows(db, current_user)
     by_id, by_email, by_name, by_employee_last7, by_employee_code = _staff_match_maps(staff_rows)
@@ -480,9 +482,12 @@ def import_payroll_document(
 
 @router.get('/imports')
 def payroll_imports(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+        
+    _ensure_tables(db)
+    
     if not _can_payroll(db, current_user):
         raise HTTPException(status_code=403, detail='Payroll access denied')
-    _ensure_tables(db)
+    
     roles = _roles(db, current_user)
     fid = _franchise_id_for_user(db, current_user)
     if 'SuperUser' in roles:
@@ -492,7 +497,14 @@ def payroll_imports(current_user: User = Depends(get_current_user), db: Session 
     rows = db.execute(text(f"SELECT * FROM payroll_imports WHERE {where} ORDER BY imported_at DESC LIMIT 25"), params).mappings().all()
     return [dict(r) for r in rows]
 
-
+def _is_staff_user(db: Session, user_id: int) -> bool:
+    row = db.execute(text("""
+        SELECT 1 FROM employee_users WHERE user_id = :uid AND COALESCE(is_active, TRUE)=TRUE
+        UNION ALL
+        SELECT 1 FROM manager_users WHERE user_id = :uid AND COALESCE(is_active, TRUE)=TRUE
+        LIMIT 1
+    """), {"uid": user_id}).first()
+    return bool(row)
 
 
 @router.get('/my-payslips')
@@ -501,6 +513,9 @@ def my_payslips(
     db: Session = Depends(get_db),
 ):
     _ensure_tables(db)
+
+    if not _is_staff_user(db, current_user.id) and not _can_payroll(db, current_user):
+        raise HTTPException(status_code=403, detail='Payslip access denied')
 
     rows = db.execute(text("""
         SELECT
@@ -520,12 +535,16 @@ def my_payslips(
 
 
 @router.get('/payslips/{payslip_id}')
+
 def download_payslip(
     payslip_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     _ensure_tables(db)
+
+    if not _is_staff_user(db, current_user.id) and not _can_payroll(db, current_user):
+        raise HTTPException(status_code=403, detail='Payslip access denied')
 
     row = db.execute(text("""
         SELECT *
@@ -538,6 +557,7 @@ def download_payslip(
         "uid": current_user.id,
     }).mappings().first()
 
+
     if not row:
         raise HTTPException(status_code=404, detail='Payslip not found')
 
@@ -548,3 +568,5 @@ def download_payslip(
             "Content-Disposition": f'attachment; filename="{row["zip_filename"]}"'
         }
     )
+
+

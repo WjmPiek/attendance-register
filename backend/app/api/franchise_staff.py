@@ -925,6 +925,7 @@ def list_managers(current_user: User = Depends(get_current_user), db: Session = 
                 mu.franchise_user_id,
                 mu.name,
                 mu.surname,
+                mu.employee_number,
                 mu.email AS email,
                 mu.contact_number,
                 mu.office_address_assigned,
@@ -1169,43 +1170,7 @@ def create_manager(payload: CreateManagerRequest, current_user: User = Depends(g
     db.commit()
     return {"message": "Manager created", "manager_id": manager_id, "user_id": user_id, "username": login_username, "login_name": login_username if not payload.email else login_email}
 
-def _create_user(db: Session, full_name: str, email: str | None, password: str, role_name: str, username: str | None = None):
-    from app.models.core import User, Role, UserRole
-    from app.core.security import hash_password
 
-    login_value = (email or username or "").strip()
-    if not login_value:
-        raise HTTPException(status_code=400, detail="Email or username is required")
-
-    # Deleted staff records are kept inactive for audit/foreign-key safety, but their
-    # old login must not block creating a new staff member with the same email/login.
-    # When an inactive user has the requested login, move that old login aside and
-    # then create the new active account normally. Active accounts still remain protected.
-    existing = db.query(User).filter(User.email == login_value).first()
-    if existing:
-        if getattr(existing, "is_active", True):
-            raise HTTPException(status_code=400, detail="Login already exists")
-        archived_suffix = f"deleted_{existing.id}_{int(datetime.utcnow().timestamp())}"
-        existing.email = f"{archived_suffix}_{existing.email or 'user'}"[:250]
-        if getattr(existing, "username", None):
-            existing.username = f"{archived_suffix}_{existing.username}"[:100]
-        db.flush()
-
-    user = User(
-        full_name=full_name,
-        email=login_value,
-        password_hash=hash_password(password),
-        is_active=True,
-    )
-    db.add(user)
-    db.flush()
-
-    role = db.query(Role).filter(Role.name == role_name).first()
-    if role:
-        db.add(UserRole(user_id=user.id, role_id=role.id))
-
-    db.flush()
-    return user.id
 
 def _valid_hhmm(value, fallback="08:00"):
     value = (value or fallback or "08:00").strip()
@@ -1249,8 +1214,7 @@ def create_employee(payload: CreateEmployeeRequest, current_user: User = Depends
     full_name = f"{payload.name} {payload.surname}".strip()
     login_email = str(payload.email) if payload.email else _safe_email("employee", payload.name, payload.surname)
     login_username = _unique_username(db, payload.username or _safe_username("employee", payload.name, payload.surname))
-    user_id = _create_user(db, full_name, login_email, payload.password or "Temp123!", "EmployeeUser", login_username)
-
+    
     employee_id = db.execute(text("""
         INSERT INTO employee_users (
             user_id,
@@ -1276,7 +1240,7 @@ def create_employee(payload: CreateEmployeeRequest, current_user: User = Depends
             :manager_user_id,
             :employee_role,
             :employee_number,
-            id_number,
+            :id_number,
             :name,
             :surname,
             :email,
@@ -1416,7 +1380,7 @@ def update_manager(manager_id: int, payload: UpdateManagerRequest, current_user:
         values['work_end_time'] = _valid_hhmm(values.get('work_end_time'), '17:00')
     updates = []
     params = {"manager_id": manager_id, "now": datetime.utcnow()}
-    for field in ["employee_number", "name", "surname", "email", "contact_number", "office_address_assigned", "work_start_time", "work_end_time", "is_active"]:
+    for field in ["employee_number", "id_number", "name", "surname", "email", "contact_number", "office_address_assigned", "work_start_time", "work_end_time", "is_active"]:
         if field in values:
             updates.append(f"{field} = :{field}")
             params[field] = str(values[field]) if field == "email" and values[field] else values[field]
@@ -1469,7 +1433,7 @@ def update_employee(employee_id: int, payload: UpdateEmployeeRequest, current_us
             raise HTTPException(status_code=400, detail="Selected manager is not under this franchise")
     updates = []
     params = {"employee_id": employee_id, "now": datetime.utcnow()}
-    for field in ["employee_role", "employee_number", "name", "surname", "email", "contact_number", "office_address_assigned", "work_start_time", "work_end_time", "manager_user_id", "is_active"]:
+    for field in ["employee_role", "employee_number", "name", "surname", "id_number", "email", "contact_number", "office_address_assigned", "work_start_time", "work_end_time", "manager_user_id", "is_active"]:
         if field in values:
             updates.append(f"{field} = :{field}")
             params[field] = str(values[field]) if field == "email" and values[field] else values[field]
