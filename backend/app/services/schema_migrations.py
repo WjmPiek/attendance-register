@@ -36,6 +36,7 @@ def ensure_runtime_schema() -> None:
         _add_column(db, 'manager_users', 'franchise_user_id', 'INTEGER REFERENCES franchise_users(id)')
         _add_column(db, 'manager_users', 'name', 'VARCHAR(120)')
         _add_column(db, 'manager_users', 'surname', 'VARCHAR(120)')
+        _add_column(db, 'manager_users', 'id_number', 'VARCHAR(30)')
         _add_column(db, 'manager_users', 'email', 'VARCHAR(255)')
         _add_column(db, 'manager_users', 'contact_number', 'VARCHAR(50)')
         _add_column(db, 'manager_users', 'office_address_assigned', 'TEXT')
@@ -47,6 +48,7 @@ def ensure_runtime_schema() -> None:
         _add_column(db, 'employee_users', 'employee_role', 'VARCHAR(80)')
         _add_column(db, 'employee_users', 'name', 'VARCHAR(120)')
         _add_column(db, 'employee_users', 'surname', 'VARCHAR(120)')
+        _add_column(db, 'employee_users', 'id_number', 'VARCHAR(30)')
         _add_column(db, 'employee_users', 'email', 'VARCHAR(255)')
         _add_column(db, 'employee_users', 'contact_number', 'VARCHAR(50)')
         _add_column(db, 'employee_users', 'office_address_assigned', 'TEXT')
@@ -64,6 +66,22 @@ def ensure_runtime_schema() -> None:
 
         # IRP5 manager ownership link.
         _add_column(db, 'irp5_documents', 'manager_user_id', 'INTEGER')
+
+        db.execute(text("""
+        CREATE TABLE IF NOT EXISTS payroll_payslips (
+            id SERIAL PRIMARY KEY,
+            import_id INTEGER NULL REFERENCES payroll_imports(id) ON DELETE SET NULL,
+            user_id INTEGER NOT NULL,
+            franchise_user_id INTEGER NULL,
+            employee_key VARCHAR(255) NULL,
+            original_filename VARCHAR(255) NOT NULL,
+            zip_filename VARCHAR(255) NULL,
+            file_content BYTEA NOT NULL,
+            content_type VARCHAR(120) NOT NULL DEFAULT 'application/zip',
+            uploaded_by_user_id INTEGER NOT NULL,
+            uploaded_at TIMESTAMP NOT NULL DEFAULT NOW()
+        )
+        """))
 
         db.commit()
     except Exception:

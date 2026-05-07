@@ -35,6 +35,7 @@ class CreateManagerRequest(BaseModel):
     username: str | None = None
     name: str
     surname: str
+    id_number: str | None = None
     email: EmailStr | None = None
     contact_number: str | None = None
     office_address_assigned: str | None = None
@@ -50,6 +51,7 @@ class CreateEmployeeRequest(BaseModel):
     employee_role: str
     name: str
     surname: str
+    id_number: str | None = None
     email: EmailStr | None = None
     contact_number: str | None = None
     office_address_assigned: str | None = None
@@ -65,6 +67,7 @@ class UpdateManagerRequest(BaseModel):
     username: str | None = None
     name: str | None = None
     surname: str | None = None
+    id_number: str | None = None
     email: EmailStr | None = None
     contact_number: str | None = None
     office_address_assigned: str | None = None
@@ -85,6 +88,7 @@ class UpdateEmployeeRequest(BaseModel):
     employee_role: str | None = None
     name: str | None = None
     surname: str | None = None
+    id_number: str | None = None
     email: EmailStr | None = None
     contact_number: str | None = None
     office_address_assigned: str | None = None
@@ -579,8 +583,8 @@ def _id_card_staff_rows(db: Session, current_user: User, franchise_id: int | Non
         params['franchise_id'] = fid
     rows = []
     managers = db.execute(text(f"""
-        SELECT 'Manager' AS staff_type, mu.id AS staff_id, mu.user_id, mu.franchise_user_id,
-               'Manager' AS role_label, mu.name, mu.surname, mu.email, mu.contact_number,
+        SELECT 'Manager' AS staff_type, mu.id AS staff_id, mu.user_id, mu.franchise_user_id, mu.id_number,
+               'Manager' AS role_label, mu.name, mu.surname, mu.email, mu.contact_number, mu.id_number,
                mu.office_address_assigned, a.name AS office_name,
                COALESCE(mu.profile_photo, u.profile_photo) AS profile_photo,
                COALESCE(mu.profile_photo_mime, u.profile_photo_mime) AS profile_photo_mime,
@@ -593,8 +597,8 @@ def _id_card_staff_rows(db: Session, current_user: User, franchise_id: int | Non
         WHERE {where_manager}
     """), params).mappings().all()
     employees = db.execute(text(f"""
-        SELECT 'Employee' AS staff_type, eu.id AS staff_id, eu.user_id, eu.franchise_user_id,
-               COALESCE(eu.employee_role, 'Employee') AS role_label, eu.name, eu.surname, eu.email, eu.contact_number,
+        SELECT 'Employee' AS staff_type, eu.id AS staff_id, eu.user_id, eu.franchise_user_id, eu.id_number,
+               COALESCE(eu.employee_role, 'Employee') AS role_label, eu.id_number, eu.name, eu.surname, eu.email, eu.contact_number,
                eu.office_address_assigned, a.name AS office_name,
                COALESCE(eu.profile_photo, u.profile_photo) AS profile_photo,
                COALESCE(eu.profile_photo_mime, u.profile_photo_mime) AS profile_photo_mime,
@@ -1116,6 +1120,7 @@ def create_manager(payload: CreateManagerRequest, current_user: User = Depends(g
             user_id,
             franchise_user_id,
             employee_number,
+            id_number,
             name,
             surname,
             email,
@@ -1131,6 +1136,7 @@ def create_manager(payload: CreateManagerRequest, current_user: User = Depends(g
             :user_id,
             :franchise_user_id,
             :employee_number,
+            :id_number,
             :name,
             :surname,
             :email,
@@ -1147,6 +1153,7 @@ def create_manager(payload: CreateManagerRequest, current_user: User = Depends(g
         "user_id": user_id,
         "franchise_user_id": franchise_user_id,
         "employee_number": payload.employee_number,
+        "id_number": payload.id_number,
         "name": payload.name,
         "surname": payload.surname,
         "email": str(payload.email) if payload.email else None,
@@ -1251,6 +1258,7 @@ def create_employee(payload: CreateEmployeeRequest, current_user: User = Depends
             manager_user_id,
             employee_role,
             employee_number,
+            id_number,
             name,
             surname,
             email,
@@ -1268,6 +1276,7 @@ def create_employee(payload: CreateEmployeeRequest, current_user: User = Depends
             :manager_user_id,
             :employee_role,
             :employee_number,
+            id_number,
             :name,
             :surname,
             :email,
@@ -1286,6 +1295,7 @@ def create_employee(payload: CreateEmployeeRequest, current_user: User = Depends
         "manager_user_id": payload.manager_user_id,
         "employee_role": payload.employee_role,
         "employee_number": payload.employee_number,
+        "id_number": payload.id_number,
         "name": payload.name,
         "surname": payload.surname,
         "email": str(payload.email) if payload.email else None,

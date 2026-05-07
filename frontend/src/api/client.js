@@ -206,7 +206,15 @@ export async function markNotificationRead(notificationId) {
   return apiRequest(`/alerts/notifications/${notificationId}/read`, { method: 'POST' })
 }
 
+export async function getMyPayslips() {
+  return apiRequest('/payroll/my-payslips')
+}
 
+export async function downloadPayslip(id) {
+  return apiBlob(`/payroll/payslips/${id}`)
+}
+
+  
 export async function getIrp5Employees() {
   return apiRequest('/irp5/employees')
 }

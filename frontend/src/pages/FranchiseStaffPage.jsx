@@ -25,6 +25,7 @@ const emptyStaff = {
   employee_number: '',
   name: '',
   surname: '',
+  id_number: '',
   email: '',
   contact_number: '',
   office_address_assigned: '',
@@ -391,6 +392,7 @@ export default function FranchiseStaffPage() {
       manager_user_id: item.manager_user_id || '',
       name: item.name || '',
       surname: item.surname || '',
+      id_number: item.id_number || '',
       email: item.email || '',
       contact_number: item.contact_number || '',
       office_address_assigned: item.office_address_assigned || '',
@@ -618,6 +620,14 @@ export default function FranchiseStaffPage() {
                 value={staff.employee_number || ''}
                 onChange={(e) => setStaff({ ...staff, employee_number: e.target.value })}
                 placeholder="e.g. 1234567"
+              />
+            </label>
+            <label>ID Number
+              <span className="optional-note">used as ZIP password to open payslip</span>
+              <input
+                value={staff.id_number || ''}
+                onChange={(e) => setStaff({ ...staff, id_number: e.target.value })}
+                placeholder="e.g. 8001015009087"
               />
             </label>
             <label>Name<input required value={staff.name} onChange={(e) => setStaff({ ...staff, name: e.target.value })} /></label>

@@ -99,13 +99,15 @@ class ManagerUser(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), unique=True)
     manager_code: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-
+    id_number: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
+    employee_number: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
 
 class EmployeeUser(Base, TimestampMixin):
     __tablename__ = "employee_users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), unique=True)
+    id_number: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
     employee_number: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
 
 

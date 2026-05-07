@@ -3,8 +3,8 @@ import calendar
 import csv
 import io
 import re
-import zipfile
-import pdfplumber
+import pyzipper
+from fastapi.responses import Response
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel, Field
@@ -128,6 +128,24 @@ def _ensure_tables(db: Session):
             created_at TIMESTAMP NOT NULL DEFAULT NOW()
         )
     """))
+
+    db.execute(text("""
+        CREATE TABLE IF NOT EXISTS payroll_payslips (
+            id SERIAL PRIMARY KEY,
+            import_id INTEGER NULL REFERENCES payroll_imports(id) ON DELETE SET NULL,
+            user_id INTEGER NOT NULL,
+            franchise_user_id INTEGER NULL,
+            employee_key VARCHAR(255) NULL,
+            original_filename VARCHAR(255) NOT NULL,
+            zip_filename VARCHAR(255) NULL,
+            file_content BYTEA NOT NULL,
+            content_type VARCHAR(120) NOT NULL DEFAULT 'application/zip',
+            uploaded_by_user_id INTEGER NOT NULL,
+            uploaded_at TIMESTAMP NOT NULL DEFAULT NOW()
+        )
+    """))
+
+    
     for stmt in [
         "ALTER TABLE payroll_settings ADD COLUMN IF NOT EXISTS overtime_multiplier NUMERIC(5,2) NOT NULL DEFAULT 1.50",
         "ALTER TABLE payroll_settings ADD COLUMN IF NOT EXISTS allowances NUMERIC(12,2) NOT NULL DEFAULT 0",
@@ -170,7 +188,7 @@ def _staff_rows(db: Session, current_user: User):
             WHERE COALESCE(e.is_active, TRUE) = TRUE AND COALESCE(u.is_active, TRUE) = TRUE
             UNION ALL
             SELECT u.id AS user_id, m.franchise_user_id, m.name, m.surname, 'Manager' AS role, m.email,
-                   NULL::VARCHAR AS employee_number, 'Manager' AS staff_type
+                   m.employee_number AS employee_number, 'Manager' AS staff_type
             FROM manager_users m JOIN users u ON u.id = m.user_id
             WHERE COALESCE(m.is_active, TRUE) = TRUE AND COALESCE(u.is_active, TRUE) = TRUE
         )
@@ -301,32 +319,26 @@ def _read_payroll_file(file: UploadFile):
         return parsed
     if filename.endswith('.xls'):
         raise HTTPException(status_code=400, detail='Old .xls files are not supported directly. Save the payroll document as .xlsx or CSV, then import again.')
+    
     if filename.endswith('.zip'):
         extracted_rows = []
 
-        with zipfile.ZipFile(io.BytesIO(content)) as z:
+        with pyzipper.AESZipFile(io.BytesIO(content)) as z:
             pdf_files = [f for f in z.namelist() if f.lower().endswith('.pdf')]
 
             if not pdf_files:
                 raise HTTPException(status_code=400, detail='No PDF found inside ZIP file.')
 
-            for pdf_name in pdf_files:
-                with z.open(pdf_name) as pdf_file:
-                    pdf_bytes = io.BytesIO(pdf_file.read())
+            for idx, pdf_name in enumerate(pdf_files, start=1):
+                code = pdf_name.split('/')[-1].replace('.PDF', '').replace('.pdf', '')
+                employee_code = code[-6:]  # example: 102-NOR020 -> NOR020
 
-                    with pdfplumber.open(pdf_bytes) as pdf:
-                        text_content = ''
-
-                        for page in pdf.pages:
-                            text_content += page.extract_text() or ''
-
-                        matches = re.findall(r'EMPL\.?\s*NO\s*:?\s*(\d+)', text_content, re.IGNORECASE)
-
-                        for idx, emp in enumerate(matches, start=1):
-                            extracted_rows.append({
-                                '_row_number': idx,
-                                'empl_no': emp,
-                            })
+                extracted_rows.append({
+                    '_row_number': idx,
+                    'empl_no': employee_code,
+                    'payslip_filename': pdf_name,
+                    'payslip_zip_bytes': content,
+                })
 
         return extracted_rows
 
@@ -408,6 +420,7 @@ def save_payroll_setting(payload: PayrollSettingIn, current_user: User = Depends
     if int(payload.user_id) not in staff:
         raise HTTPException(status_code=404, detail='Selected employee is not in your payroll scope')
     fid = staff[int(payload.user_id)].get('franchise_user_id')
+    
     db.execute(text("""
         INSERT INTO payroll_settings (user_id, franchise_user_id, pay_frequency, basic_salary, hourly_rate, overtime_multiplier,
             allowances, deductions, uif_percent, paye_percent, is_active, created_at, updated_at)
@@ -483,6 +496,33 @@ def import_payroll_document(
         msg = f'Payroll settings updated by {match_method}' if staff else 'No matching employee in your allowed franchise scope'
         matched_user_id = int(staff['user_id']) if staff else None
         if staff:
+            payslip_bytes = row.get('payslip_zip_bytes')
+            payslip_filename = row.get('payslip_filename')
+
+            if payslip_bytes and payslip_filename:
+                db.execute(text("""
+                    INSERT INTO payroll_payslips (
+                        import_id, user_id, franchise_user_id, employee_key,
+                        original_filename, zip_filename, file_content,
+                        content_type, uploaded_by_user_id, uploaded_at
+                    )
+                    VALUES (
+                        :import_id, :user_id, :franchise_user_id, :employee_key,
+                        :original_filename, :zip_filename, :file_content,
+                        :content_type, :uploaded_by_user_id, :uploaded_at
+                    )
+                """), {
+                    'import_id': import_id,
+                    'user_id': matched_user_id,
+                    'franchise_user_id': staff.get('franchise_user_id'),
+                    'employee_key': user_key,
+                    'original_filename': payslip_filename,
+                    'zip_filename': file.filename or 'payroll.zip',
+                    'file_content': payslip_bytes,
+                    'content_type': 'application/zip',
+                    'uploaded_by_user_id': current_user.id,
+                    'uploaded_at': imported_at,
+                })
             matched_count += 1
             existing = db.execute(text("SELECT * FROM payroll_settings WHERE user_id = :uid"), {'uid': matched_user_id}).mappings().first() or {}
             db.execute(text("""
@@ -553,6 +593,8 @@ def import_payroll_document(
             'overtime_multiplier': overtime_multiplier,
             'match_method': match_method,
         })
+
+        
     db.execute(text("UPDATE payroll_imports SET rows_total = :total, rows_matched = :matched WHERE id = :id"), {
         'total': len(results), 'matched': matched_count, 'id': import_id
     })
@@ -619,3 +661,57 @@ def payroll_runs(current_user: User = Depends(get_current_user), db: Session = D
         LIMIT 500
     """), params).mappings().all()
     return [dict(r) for r in rows]
+
+@router.get('/my-payslips')
+def my_payslips(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _ensure_tables(db)
+
+    rows = db.execute(text("""
+        SELECT
+            id,
+            employee_key,
+            original_filename,
+            zip_filename,
+            uploaded_at
+        FROM payroll_payslips
+        WHERE user_id = :uid
+        ORDER BY uploaded_at DESC
+    """), {
+        "uid": current_user.id
+    }).mappings().all()
+
+    return [dict(r) for r in rows]
+
+
+@router.get('/payslips/{payslip_id}')
+def download_payslip(
+    payslip_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _ensure_tables(db)
+
+    row = db.execute(text("""
+        SELECT *
+        FROM payroll_payslips
+        WHERE id = :id
+          AND user_id = :uid
+        LIMIT 1
+    """), {
+        "id": payslip_id,
+        "uid": current_user.id,
+    }).mappings().first()
+
+    if not row:
+        raise HTTPException(status_code=404, detail='Payslip not found')
+
+    return Response(
+        content=row["file_content"],
+        media_type='application/zip',
+        headers={
+            "Content-Disposition": f'attachment; filename="{row["zip_filename"]}"'
+        }
+    )

@@ -1,5 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
-import { getPayrollEmployees, getPayrollRuns, previewPayroll, savePayrollSettings, importPayrollDocument, getPayrollImports } from '../api/client'
+import {
+  getPayrollEmployees,
+  getPayrollRuns,
+  previewPayroll,
+  savePayrollSettings,
+  importPayrollDocument,
+  getPayrollImports,
+  getMyPayslips,
+  downloadPayslip,
+} from '../api/client'
 import DragDropFileInput from '../components/DragDropFileInput.jsx'
 
 function money(value) {
@@ -15,6 +24,7 @@ export default function PayrollPage() {
   const [employees, setEmployees] = useState([])
   const [runs, setRuns] = useState([])
   const [imports, setImports] = useState([])
+  const [payslips, setPayslips] = useState([])
   const [importFile, setImportFile] = useState(null)
   const [importResult, setImportResult] = useState(null)
   const [selectedUserId, setSelectedUserId] = useState('')
@@ -35,10 +45,18 @@ export default function PayrollPage() {
   async function load() {
     setError('')
     try {
-      const [staff, savedRuns, importRows] = await Promise.all([getPayrollEmployees(), getPayrollRuns(), getPayrollImports()])
+      const [staff, savedRuns, importRows, payslipRows] = await Promise.all([
+        getPayrollEmployees(),
+        getPayrollRuns(),
+        getPayrollImports(),
+        getMyPayslips().catch(() => []),
+      ])
+
       setEmployees(staff)
       setRuns(savedRuns)
       setImports(importRows)
+      setPayslips(payslipRows)
+      
       if (!selectedUserId && staff.length) setSelectedUserId(String(staff[0].user_id))
     } catch (e) {
       setError(e.message || 'Failed to load payroll')
@@ -111,6 +129,29 @@ export default function PayrollPage() {
     }
   }
 
+  async function handleDownloadPayslip(payslip) {
+    setMessage('')
+    setError('')
+
+    try {
+      const blob = await downloadPayslip(payslip.id)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+
+      a.href = url
+      a.download = payslip.zip_filename || payslip.original_filename || 'payslip.zip'
+
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+
+      setMessage('Payslip downloaded. Open it with your ID Number as the ZIP password.')
+    } catch (err) {
+      setError(err.message || 'Could not download payslip')
+    }
+  }
+
   return (
     <div className="payroll-page">
       {message ? <p className="success">{message}</p> : null}
@@ -155,7 +196,47 @@ export default function PayrollPage() {
           ) : <p className="muted">Preview a month to calculate gross pay, deductions and net pay.</p>}
         </section>
       </section>
+      <section className="form-card staff-list-card">
+        <h2>My Payslips</h2>
+        <p className="muted">
+          Payslips are saved as password-protected ZIP files. Use your ID Number as the password when opening the file.
+        </p>
 
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Payslip</th>
+                <th>Payroll ZIP</th>
+                <th>Employee Code</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {payslips.map((p) => (
+                <tr key={p.id}>
+                  <td>{p.uploaded_at ? new Date(p.uploaded_at).toLocaleDateString('en-ZA') : '-'}</td>
+                  <td>{p.original_filename}</td>
+                  <td>{p.zip_filename || '-'}</td>
+                  <td>{p.employee_key || '-'}</td>
+                  <td>
+                    <button type="button" className="glass-button" onClick={() => handleDownloadPayslip(p)}>
+                      Download / View
+                    </button>
+                  </td>
+                </tr>
+              ))}
+
+              {!payslips.length ? (
+                <tr>
+                  <td colSpan="5" className="muted">No payslips uploaded yet.</td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+      </section>
       <section className="form-card staff-list-card payroll-import-card">
         <h2>Import payroll document</h2>
         <p className="muted">Franchise users and Finance staff can upload a CSV or Excel payroll document. Rows are matched to the correct employee by User ID, email, or full name. Matching rows update employee payroll settings automatically.</p>
