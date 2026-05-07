@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import {
-  API_BASE,
   apiFetch,
   resetStaffPassword,
   uploadIrp5Document,
@@ -667,13 +666,37 @@ export default function FranchiseStaffPage() {
                     </td>
 
                     <td>
-                      <a
-                        href={`${API_BASE}/payroll/payslips/${p.id}`}
-                        target="_blank"
-                        rel="noreferrer"
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            const blob = await fetch(
+                              `${import.meta.env.VITE_API_BASE_URL || 'https://attendance-register-backend.onrender.com/api'}/payroll/payslips/${p.id}`,
+                              {
+                                headers: {
+                                  Authorization: `Bearer ${localStorage.getItem('token')}`,
+                                },
+                              }
+                            ).then((r) => r.blob())
+
+                            const url = window.URL.createObjectURL(blob)
+
+                            const a = document.createElement('a')
+                            a.href = url
+                            a.download = p.original_filename || 'payslip.zip'
+
+                            document.body.appendChild(a)
+                            a.click()
+                            a.remove()
+
+                            window.URL.revokeObjectURL(url)
+                          } catch (err) {
+                            alert('Failed to download payslip')
+                          }
+                        }}
                       >
                         Download
-                      </a>
+                      </button>
                     </td>
                   </tr>
                 ))}
