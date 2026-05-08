@@ -110,6 +110,9 @@ def _ensure_tables(db: Session):
         "ALTER TABLE payroll_import_rows ADD COLUMN IF NOT EXISTS status VARCHAR(40) NOT NULL DEFAULT 'unmatched'",
         "ALTER TABLE payroll_import_rows ADD COLUMN IF NOT EXISTS message TEXT NULL",
         "ALTER TABLE payroll_import_rows ADD COLUMN IF NOT EXISTS match_method VARCHAR(80) NULL",
+        "ALTER TABLE payroll_payslips ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE",
+        "ALTER TABLE payroll_payslips ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP NULL",
+        "ALTER TABLE payroll_payslips ADD COLUMN IF NOT EXISTS deleted_by_user_id INTEGER NULL",
     ]:
         db.execute(text(stmt))
     db.commit()
@@ -497,6 +500,32 @@ def payroll_imports(current_user: User = Depends(get_current_user), db: Session 
     rows = db.execute(text(f"SELECT * FROM payroll_imports WHERE {where} ORDER BY imported_at DESC LIMIT 25"), params).mappings().all()
     return [dict(r) for r in rows]
 
+
+def _payslip_scope_filter(db: Session, current_user: User, alias: str = 'p'):
+    roles = _roles(db, current_user)
+    if 'SuperUser' in roles:
+        return '1=1', {}
+    fid = _franchise_id_for_user(db, current_user)
+    if _can_payroll(db, current_user) and fid:
+        return f'{alias}.franchise_user_id = :fid', {'fid': fid}
+    return f'{alias}.user_id = :uid', {'uid': current_user.id}
+
+
+def _get_scoped_payslip(db: Session, current_user: User, payslip_id: int):
+    where, params = _payslip_scope_filter(db, current_user, 'p')
+    params['id'] = payslip_id
+    row = db.execute(text(f"""
+        SELECT p.*
+        FROM payroll_payslips p
+        WHERE p.id = :id
+          AND COALESCE(p.is_active, TRUE) = TRUE
+          AND {where}
+        LIMIT 1
+    """), params).mappings().first()
+    if not row:
+        raise HTTPException(status_code=404, detail='Payslip not found')
+    return row
+
 def _is_staff_user(db: Session, user_id: int) -> bool:
     row = db.execute(text("""
         SELECT 1 FROM employee_users WHERE user_id = :uid AND COALESCE(is_active, TRUE)=TRUE
@@ -505,6 +534,27 @@ def _is_staff_user(db: Session, user_id: int) -> bool:
         LIMIT 1
     """), {"uid": user_id}).first()
     return bool(row)
+
+
+@router.get('/payslips')
+def scoped_payslips(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _ensure_tables(db)
+    if not _is_staff_user(db, current_user.id) and not _can_payroll(db, current_user):
+        raise HTTPException(status_code=403, detail='Payslip access denied')
+    where, params = _payslip_scope_filter(db, current_user, 'p')
+    rows = db.execute(text(f"""
+        SELECT p.id, p.employee_key, p.original_filename, p.zip_filename, p.uploaded_at,
+               p.user_id, p.franchise_user_id,
+               COALESCE(e.name || ' ' || e.surname, m.name || ' ' || m.surname, u.full_name, u.email) AS staff_name
+        FROM payroll_payslips p
+        LEFT JOIN users u ON u.id = p.user_id
+        LEFT JOIN employee_users e ON e.user_id = p.user_id
+        LEFT JOIN manager_users m ON m.user_id = p.user_id
+        WHERE COALESCE(p.is_active, TRUE) = TRUE AND {where}
+        ORDER BY p.uploaded_at DESC
+        LIMIT 500
+    """), params).mappings().all()
+    return [dict(r) for r in rows]
 
 
 @router.get('/my-payslips')
@@ -525,7 +575,7 @@ def my_payslips(
             zip_filename,
             uploaded_at
         FROM payroll_payslips
-        WHERE user_id = :uid
+        WHERE user_id = :uid AND COALESCE(is_active, TRUE) = TRUE
         ORDER BY uploaded_at DESC
     """), {
         "uid": current_user.id
@@ -546,20 +596,7 @@ def download_payslip(
     if not _is_staff_user(db, current_user.id) and not _can_payroll(db, current_user):
         raise HTTPException(status_code=403, detail='Payslip access denied')
 
-    row = db.execute(text("""
-        SELECT *
-        FROM payroll_payslips
-        WHERE id = :id
-          AND user_id = :uid
-        LIMIT 1
-    """), {
-        "id": payslip_id,
-        "uid": current_user.id,
-    }).mappings().first()
-
-
-    if not row:
-        raise HTTPException(status_code=404, detail='Payslip not found')
+    row = _get_scoped_payslip(db, current_user, payslip_id)
 
     return Response(
         content=row["file_content"],
@@ -570,3 +607,18 @@ def download_payslip(
     )
 
 
+
+
+@router.delete('/payslips/{payslip_id}')
+def delete_payslip(payslip_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _ensure_tables(db)
+    if not _can_payroll(db, current_user):
+        raise HTTPException(status_code=403, detail='Only SuperUser, FranchiseUser or Finance users can delete payslips')
+    _get_scoped_payslip(db, current_user, payslip_id)
+    db.execute(text("""
+        UPDATE payroll_payslips
+        SET is_active = FALSE, deleted_at = :deleted_at, deleted_by_user_id = :deleted_by
+        WHERE id = :id
+    """), {'id': payslip_id, 'deleted_at': datetime.utcnow(), 'deleted_by': current_user.id})
+    db.commit()
+    return {'message': 'Payslip deleted'}

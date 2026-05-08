@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { downloadIrp5Document, getIrp5Employees, getMyIrp5Documents, uploadIrp5Document } from '../api/client'
+import { deleteIrp5Document, downloadIrp5Document, getIrp5Documents, getIrp5Employees, getMyIrp5Documents, uploadIrp5Document } from '../api/client'
 import DragDropFileInput from '../components/DragDropFileInput.jsx'
 
 function saveBlob(blob, filename) {
@@ -17,6 +17,7 @@ export default function Irp5DocumentsPage({ me }) {
   const isFinance = (me.employee_role || '').trim().toLowerCase().includes('finance')
   const canUpload = me.roles.includes('SuperUser') || me.roles.includes('FranchiseUser') || isFinance
   const isEmployee = me.roles.includes('EmployeeUser')
+  const canDelete = canUpload
   const [employees, setEmployees] = useState([])
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('')
   const [taxYear, setTaxYear] = useState(new Date().getFullYear().toString())
@@ -33,7 +34,7 @@ export default function Irp5DocumentsPage({ me }) {
     setErr('')
     try {
       if (canUpload) setEmployees(await getIrp5Employees())
-      if (isEmployee) setDocs(await getMyIrp5Documents())
+      setDocs(canUpload ? await getIrp5Documents() : (isEmployee ? await getMyIrp5Documents() : []))
     } catch (error) {
       setErr(error.message || 'Failed to load IRP5 documents')
     }
@@ -57,7 +58,7 @@ export default function Irp5DocumentsPage({ me }) {
       const uploadType = selectedEmployee?.staff_type === 'manager' ? 'managers' : 'employees'
       const uploadId = selectedEmployee?.staff_id || selectedEmployee?.employee_user_id
       await uploadIrp5Document(uploadType, uploadId, file, taxYear, notes)
-      setMsg(`IRP5 uploaded and linked to ${selectedEmployee?.name || 'staff member'}. Only that user can view or print it.`)
+      setMsg(`IRP5 uploaded and linked to ${selectedEmployee?.name || 'staff member'}.`)
       setFile(null)
       setNotes('')
       await load()
@@ -88,6 +89,24 @@ export default function Irp5DocumentsPage({ me }) {
     }
   }
 
+  const remove = async (doc) => {
+    setMsg('')
+    setErr('')
+    if (!window.confirm(`Delete IRP5 document ${doc.original_filename || doc.id}?`)) return
+    try {
+      await deleteIrp5Document(doc.id)
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl)
+        setPreviewUrl('')
+        setPreviewName('')
+      }
+      setMsg('IRP5 document deleted.')
+      await load()
+    } catch (error) {
+      setErr(error.message || 'Delete failed')
+    }
+  }
+
   const printPreview = () => {
     if (!previewUrl) return
     const win = window.open(previewUrl, '_blank')
@@ -98,11 +117,12 @@ export default function Irp5DocumentsPage({ me }) {
     <div className="irp5-page no-top-gap">
       <div className="section-header compact-header">
         <p className="eyebrow">IRP 5 Documents</p>
-        <h2>{isEmployee ? 'My Tax Documents' : 'Employee Tax Documents'}</h2>
-        <p className="muted">IRP 5 uploads are linked to the selected employee or manager user. Only that user can view, download or print the document.</p>
+        <h2>{canUpload ? 'Employee Tax Documents' : 'My Tax Documents'}</h2>
+        <p className="muted">IRP 5 uploads are linked to selected employees or managers. Franchise and Finance users can view, download or delete documents inside their allowed scope.</p>
       </div>
       {msg ? <p className="success">{msg}</p> : null}
       {err ? <p className="error">{err}</p> : null}
+
       {canUpload ? (
         <section className="form-card staff-card">
           <h2>Upload IRP 5 for Employee / Manager</h2>
@@ -115,13 +135,14 @@ export default function Irp5DocumentsPage({ me }) {
           </form>
         </section>
       ) : null}
-      {isEmployee ? (
+
+      {(isEmployee || canUpload) ? (
         <section className="form-card staff-list-card">
-          <div className="list-header"><div><h2>My IRP 5 Documents</h2><p className="muted">Preview PDF in the app, download it, or print a clean copy.</p></div><label>Tax year<select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)}><option value="">All years</option>{years.map((y) => <option key={y} value={y}>{y}</option>)}</select></label></div>
+          <div className="list-header"><div><h2>{canUpload ? 'IRP 5 Documents' : 'My IRP 5 Documents'}</h2><p className="muted">Preview PDF in the app, download it, print it, or delete it if your user role allows deleting.</p></div><label>Tax year<select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)}><option value="">All years</option>{years.map((y) => <option key={y} value={y}>{y}</option>)}</select></label></div>
           {Object.keys(groupedDocs).map((year) => (
-            <div key={year} className="year-group"><h3>{year}</h3><div className="table-wrap"><table><thead><tr><th>File</th><th>Uploaded</th><th>Notes</th><th>Action</th></tr></thead><tbody>{groupedDocs[year].map((doc) => <tr key={doc.id}><td>{doc.original_filename}</td><td>{doc.created_at ? new Date(doc.created_at).toLocaleString('en-ZA', { timeZone: 'Africa/Johannesburg', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}</td><td>{doc.notes || '—'}</td><td><div className="action-row"><button className="link-button" onClick={() => preview(doc)}>Preview</button><button className="link-button" onClick={() => download(doc)}>Download</button></div></td></tr>)}</tbody></table></div></div>
+            <div key={year} className="year-group"><h3>{year}</h3><div className="table-wrap"><table><thead><tr><th>Employee</th><th>File</th><th>Uploaded</th><th>Notes</th><th>Action</th></tr></thead><tbody>{groupedDocs[year].map((doc) => <tr key={doc.id}><td>{doc.staff_name || 'My document'}</td><td>{doc.original_filename}</td><td>{doc.created_at ? new Date(doc.created_at).toLocaleString('en-ZA', { timeZone: 'Africa/Johannesburg', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}</td><td>{doc.notes || '—'}</td><td><div className="action-row"><button className="link-button" onClick={() => preview(doc)}>View</button><button className="link-button" onClick={() => download(doc)}>Download</button>{canDelete ? <button className="link-button danger-button" onClick={() => remove(doc)}>Delete</button> : null}</div></td></tr>)}</tbody></table></div></div>
           ))}
-          {!filteredDocs.length ? <p className="muted">No IRP 5 documents linked to your user yet.</p> : null}
+          {!filteredDocs.length ? <p className="muted">No IRP 5 documents found.</p> : null}
           {previewUrl ? <div className="pdf-preview"><div className="list-header"><h3>Preview: {previewName}</h3><button className="primary-action" onClick={printPreview}>Print IRP5</button></div><iframe title="IRP5 PDF Preview" src={previewUrl} /></div> : null}
         </section>
       ) : null}

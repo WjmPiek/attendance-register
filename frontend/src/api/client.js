@@ -210,8 +210,16 @@ export async function getMyPayslips() {
   return apiRequest('/payroll/my-payslips')
 }
 
+export async function getPayrollPayslips() {
+  return apiRequest('/payroll/payslips')
+}
+
 export async function downloadPayslip(id) {
   return apiBlob(`/payroll/payslips/${id}`)
+}
+
+export async function deletePayslip(id) {
+  return apiRequest(`/payroll/payslips/${id}`, { method: 'DELETE' })
 }
 
   
@@ -247,8 +255,16 @@ export async function getMyIrp5Documents() {
   return apiRequest('/irp5/my-documents')
 }
 
+export async function getIrp5Documents() {
+  return apiRequest('/irp5/documents')
+}
+
 export async function downloadIrp5Document(documentId) {
   return apiBlob(`/irp5/documents/${documentId}/download`)
+}
+
+export async function deleteIrp5Document(documentId) {
+  return apiRequest(`/irp5/documents/${documentId}`, { method: 'DELETE' })
 }
 
 export async function previewIrp5Document(documentId) {

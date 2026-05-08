@@ -1515,3 +1515,12 @@ h3 { font-size: 1.25rem; }
   border-color: var(--lilac-strong);
   box-shadow: 0 0 0 3px rgba(191,163,223,.18);
 }
+
+.danger-button {
+  border-color: rgba(220, 38, 38, 0.35) !important;
+  color: #b91c1c !important;
+}
+
+.danger-button:hover {
+  background: rgba(220, 38, 38, 0.08) !important;
+}

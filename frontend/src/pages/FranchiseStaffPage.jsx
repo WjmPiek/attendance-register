@@ -652,7 +652,7 @@ export default function FranchiseStaffPage() {
                 <tr>
                   <th>Filename</th>
                   <th>Date Uploaded</th>
-                  <th>Download</th>
+                  <th>Action</th>
                 </tr>
               </thead>
 
@@ -666,37 +666,64 @@ export default function FranchiseStaffPage() {
                     </td>
 
                     <td>
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          try {
-                            const blob = await fetch(
-                              `${import.meta.env.VITE_API_BASE_URL || 'https://attendance-register-backend.onrender.com/api'}/payroll/payslips/${p.id}`,
-                              {
-                                headers: {
-                                  Authorization: `Bearer ${localStorage.getItem('token')}`,
-                                },
-                              }
-                            ).then((r) => r.blob())
-
-                            const url = window.URL.createObjectURL(blob)
-
-                            const a = document.createElement('a')
-                            a.href = url
-                            a.download = p.original_filename || 'payslip.zip'
-
-                            document.body.appendChild(a)
-                            a.click()
-                            a.remove()
-
-                            window.URL.revokeObjectURL(url)
-                          } catch (err) {
-                            alert('Failed to download payslip')
-                          }
-                        }}
-                      >
-                        Download
-                      </button>
+                      <div className="action-row">
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              const blob = await fetch(
+                                `${import.meta.env.VITE_API_BASE_URL || 'https://attendance-register-backend.onrender.com/api'}/payroll/payslips/${p.id}`,
+                                { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
+                              ).then((r) => r.blob())
+                              const url = window.URL.createObjectURL(blob)
+                              window.open(url, '_blank', 'noopener,noreferrer')
+                              setTimeout(() => window.URL.revokeObjectURL(url), 60000)
+                            } catch (err) {
+                              alert('Failed to view payslip')
+                            }
+                          }}
+                        >
+                          View
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              const blob = await fetch(
+                                `${import.meta.env.VITE_API_BASE_URL || 'https://attendance-register-backend.onrender.com/api'}/payroll/payslips/${p.id}`,
+                                { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
+                              ).then((r) => r.blob())
+                              const url = window.URL.createObjectURL(blob)
+                              const a = document.createElement('a')
+                              a.href = url
+                              a.download = p.original_filename || 'payslip.zip'
+                              document.body.appendChild(a)
+                              a.click()
+                              a.remove()
+                              window.URL.revokeObjectURL(url)
+                            } catch (err) {
+                              alert('Failed to download payslip')
+                            }
+                          }}
+                        >
+                          Download
+                        </button>
+                        <button
+                          type="button"
+                          className="danger-button"
+                          onClick={async () => {
+                            if (!window.confirm(`Delete payslip ${p.original_filename || p.id}?`)) return
+                            try {
+                              await apiFetch(`/payroll/payslips/${p.id}`, { method: 'DELETE' })
+                              setMyPayslips((rows) => rows.filter((row) => row.id !== p.id))
+                            } catch (err) {
+                              alert('Failed to delete payslip')
+                            }
+                          }}
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
