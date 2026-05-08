@@ -120,7 +120,7 @@ export default function Irp5DocumentsPage({ me }) {
       <div className="section-header compact-header">
         <p className="eyebrow">IRP 5 Documents</p>
         <h2>{canUpload ? 'Employee Tax Documents' : 'My Tax Documents'}</h2>
-        <p className="muted">IRP 5 uploads are linked to selected employees or managers. Franchise and Finance users can view, download or delete documents inside their allowed scope.</p>
+        <p className="muted">IRP 5 uploads are linked to selected employees or managers. Employees and managers only see their own documents. Admin, franchise and finance users can manage documents they are allowed to manage.</p>
       </div>
       {msg ? <p className="success">{msg}</p> : null}
       {err ? <p className="error">{err}</p> : null}

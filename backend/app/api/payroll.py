@@ -52,6 +52,18 @@ def _can_payroll(db: Session, user: User) -> bool:
     return "SuperUser" in r or "FranchiseUser" in r or _is_finance_employee(db, user.id)
 
 
+def _is_superuser(db: Session, user: User) -> bool:
+    return "SuperUser" in _roles(db, user)
+
+
+def _is_franchise_user(db: Session, user: User) -> bool:
+    return "FranchiseUser" in _roles(db, user)
+
+
+def _is_finance_user(db: Session, user: User) -> bool:
+    return _is_finance_employee(db, user.id)
+
+
 def _ensure_tables(db: Session):
     
     db.execute(text("""
@@ -134,6 +146,11 @@ def _ensure_tables(db: Session):
 def _staff_scope_sql(db: Session, current_user: User):
     roles = _roles(db, current_user)
     if "SuperUser" in roles:
+        return "1=1", {}
+    # Finance users handle payroll documents and must be able to allocate imports
+    # to every manager/employee record. Franchise users remain scoped to their
+    # own franchise staff.
+    if _is_finance_employee(db, current_user.id):
         return "1=1", {}
     fid = _franchise_id_for_user(db, current_user)
     if not fid:
@@ -273,6 +290,20 @@ def _last_7_digits(value) -> str:
     return digits[-7:] if len(digits) >= 7 else ''
 
 
+def _code_variants(value) -> set[str]:
+    raw = str(value or '').strip().upper()
+    compact = re.sub(r'[^A-Z0-9]+', '', raw)
+    digits = re.sub(r'\D+', '', raw)
+    variants = {raw, compact, raw[-6:], raw[-7:], compact[-6:], compact[-7:]}
+    variants.update(t for t in re.split(r'[^A-Z0-9]+', raw) if t)
+    if '-' in raw:
+        variants.add(raw.split('-')[0])
+        variants.add(raw.split('-')[-1])
+    if digits:
+        variants.update({digits, digits[-6:], digits[-7:]})
+    return {v for v in variants if v}
+
+
 def _staff_match_maps(staff_rows):
     by_id, by_email, by_name = {}, {}, {}
     by_employee_last7 = {}
@@ -295,14 +326,8 @@ def _staff_match_maps(staff_rows):
         employee_number = str(s.get('employee_number') or '').strip().upper()
 
         if employee_number:
-            variants = {employee_number, employee_number[-6:], employee_number[-7:]}
-            variants.update(t for t in re.split(r'[^A-Z0-9]+', employee_number) if t)
-            if '-' in employee_number:
-                variants.add(employee_number.split('-')[0])
-                variants.add(employee_number.split('-')[-1])
-            for variant in variants:
-                if variant:
-                    by_employee_code[variant] = s
+            for variant in _code_variants(employee_number):
+                by_employee_code[variant] = s
 
         employee_last7 = _last_7_digits(employee_number)
         if employee_last7:
@@ -350,12 +375,7 @@ def _match_payroll_staff(
         'employee_full_name'
     )).strip()
 
-    raw_user_key = user_key.upper()
-    user_key_variants = {raw_user_key, raw_user_key[-6:], raw_user_key[-7:]}
-    user_key_variants.update(t for t in re.split(r'[^A-Z0-9]+', raw_user_key) if t)
-    if '-' in raw_user_key:
-        user_key_variants.add(raw_user_key.split('-')[0])
-        user_key_variants.add(raw_user_key.split('-')[-1])
+    user_key_variants = _code_variants(user_key)
 
     for variant in user_key_variants:
         if variant and variant in by_employee_code:
@@ -522,25 +542,45 @@ def import_payroll_document(
 def payroll_imports(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _ensure_tables(db)
 
-    # Show the payroll import register to every signed-in account. This keeps the
-    # uploaded ZIP visible on admin, franchise, finance, manager and employee
-    # logins. Edit/delete is still restricted in the write endpoints.
-    rows = db.execute(text("""
-        SELECT *
-        FROM payroll_imports
-        WHERE deleted_at IS NULL
-        ORDER BY imported_at DESC
-        LIMIT 100
-    """)).mappings().all()
+    if _can_payroll(db, current_user):
+        where, params = _payslip_management_filter(db, current_user, 'p')
+        rows = db.execute(text(f"""
+            SELECT DISTINCT i.*
+            FROM payroll_imports i
+            LEFT JOIN payroll_payslips p ON p.import_id = i.id AND COALESCE(p.is_active, TRUE) = TRUE
+            WHERE i.deleted_at IS NULL AND ({where})
+            ORDER BY i.imported_at DESC
+            LIMIT 100
+        """), params).mappings().all()
+    else:
+        rows = db.execute(text("""
+            SELECT DISTINCT i.*
+            FROM payroll_imports i
+            JOIN payroll_import_rows r ON r.import_id = i.id
+            WHERE i.deleted_at IS NULL AND r.matched_user_id = :uid
+            ORDER BY i.imported_at DESC
+            LIMIT 100
+        """), {'uid': current_user.id}).mappings().all()
     return [dict(r) for r in rows]
 
 
 def _get_visible_import(db: Session, current_user: User, import_id: int):
-    row = db.execute(text("""
-        SELECT * FROM payroll_imports
-        WHERE id = :id AND deleted_at IS NULL
-        LIMIT 1
-    """), {'id': import_id}).mappings().first()
+    if _can_payroll(db, current_user):
+        where, params = _payslip_management_filter(db, current_user, 'p')
+        params['id'] = import_id
+        row = db.execute(text(f"""
+            SELECT DISTINCT i.* FROM payroll_imports i
+            LEFT JOIN payroll_payslips p ON p.import_id = i.id AND COALESCE(p.is_active, TRUE) = TRUE
+            WHERE i.id = :id AND i.deleted_at IS NULL AND ({where})
+            LIMIT 1
+        """), params).mappings().first()
+    else:
+        row = db.execute(text("""
+            SELECT DISTINCT i.* FROM payroll_imports i
+            JOIN payroll_import_rows r ON r.import_id = i.id
+            WHERE i.id = :id AND i.deleted_at IS NULL AND r.matched_user_id = :uid
+            LIMIT 1
+        """), {'id': import_id, 'uid': current_user.id}).mappings().first()
     if not row:
         raise HTTPException(status_code=404, detail='Payroll import not found')
     return row
@@ -556,13 +596,19 @@ def _get_manageable_import(db: Session, current_user: User, import_id: int):
 def payroll_import_detail(import_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _ensure_tables(db)
     imp = dict(_get_visible_import(db, current_user, import_id))
-    rows = db.execute(text("""
+    if _can_payroll(db, current_user):
+        row_where = 'import_id = :id'
+        row_params = {'id': import_id}
+    else:
+        row_where = 'import_id = :id AND matched_user_id = :uid'
+        row_params = {'id': import_id, 'uid': current_user.id}
+    rows = db.execute(text(f"""
         SELECT id, row_number, matched_user_id, employee_key, employee_name, email,
                match_method, status, message, created_at
         FROM payroll_import_rows
-        WHERE import_id = :id
+        WHERE {row_where}
         ORDER BY row_number ASC, id ASC
-    """), {'id': import_id}).mappings().all()
+    """), row_params).mappings().all()
     imp['rows'] = [dict(r) for r in rows]
     return imp
 
@@ -608,24 +654,23 @@ def delete_payroll_import(import_id: int, current_user: User = Depends(get_curre
     return {'message': 'Payroll import and linked payslips deleted'}
 
 
-def _payslip_scope_filter(db: Session, current_user: User, alias: str = 'p'):
-    # Privacy rule: payslip files are personal documents. No role may list,
-    # view, or download another user's payslip from the document endpoints.
-    # Admin/franchise/finance users can manage payroll import records, but the
-    # actual payslip file remains visible only to the linked account.
-    return f'{alias}.user_id = :uid', {'uid': current_user.id}
-
-
-
-
 def _payslip_management_filter(db: Session, current_user: User, alias: str = 'p'):
     roles = _roles(db, current_user)
-    if 'SuperUser' in roles:
+    if 'SuperUser' in roles or _is_finance_employee(db, current_user.id):
         return '1=1', {}
     fid = _franchise_id_for_user(db, current_user)
-    if _can_payroll(db, current_user) and fid:
+    if 'FranchiseUser' in roles and fid:
         return f'{alias}.franchise_user_id = :fid', {'fid': fid}
     return '1=0', {}
+
+
+def _payslip_scope_filter(db: Session, current_user: User, alias: str = 'p'):
+    # Managers and employees can ONLY see their own payslip documents.
+    # Admin/franchise/finance users may manage linked manager/employee documents
+    # through the same endpoints, scoped by role.
+    if _can_payroll(db, current_user):
+        return _payslip_management_filter(db, current_user, alias)
+    return f'{alias}.user_id = :uid', {'uid': current_user.id}
 
 
 def _get_manageable_payslip(db: Session, current_user: User, payslip_id: int):

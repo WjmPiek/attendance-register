@@ -107,6 +107,16 @@ def _current_finance_employee(db: Session, current_user: User):
     """), {'uid': current_user.id}).mappings().first()
 
 
+def _is_finance_user(db: Session, current_user: User) -> bool:
+    finance = _current_finance_employee(db, current_user)
+    return bool(finance and 'finance' in (finance.get('employee_role') or '').strip().lower())
+
+
+def _can_manage_documents(db: Session, current_user: User) -> bool:
+    roles = set(_roles(db, current_user))
+    return 'SuperUser' in roles or 'FranchiseUser' in roles or _is_finance_user(db, current_user)
+
+
 def _can_upload_for(db: Session, current_user: User, employee: dict) -> bool:
     roles = set(_roles(db, current_user))
     if 'SuperUser' in roles:
@@ -120,7 +130,7 @@ def _can_upload_for(db: Session, current_user: User, employee: dict) -> bool:
         return bool(franchise and int(franchise['id']) == int(employee['franchise_user_id']))
     finance = _current_finance_employee(db, current_user)
     if finance and 'finance' in (finance.get('employee_role') or '').strip().lower():
-        return int(finance['franchise_user_id']) == int(employee['franchise_user_id'])
+        return True
     return False
 
 
@@ -129,28 +139,24 @@ def _safe_name(filename: str) -> str:
     return ''.join(ch for ch in name if ch.isalnum() or ch in '._-') or 'document.pdf'
 
 
-def _document_scope_filter(db: Session, current_user: User, alias: str = 'd'):
-    # Privacy rule: IRP5 files are personal tax documents. No role may list,
-    # view, or download another user's IRP5 from the document endpoints.
-    # Admin/franchise/finance users may upload/manage records via the upload
-    # workflow, but downloads are limited to the linked user account.
-    return f'{alias}.target_user_id = :uid', {'uid': current_user.id}
-
-
-
-
 def _document_management_filter(db: Session, current_user: User, alias: str = 'd'):
     roles = set(_roles(db, current_user))
-    if 'SuperUser' in roles:
+    if 'SuperUser' in roles or _is_finance_user(db, current_user):
         return '1=1', {}
     if 'FranchiseUser' in roles:
         franchise = db.execute(text('SELECT id FROM franchise_users WHERE user_id = :uid AND COALESCE(is_active, TRUE) = TRUE LIMIT 1'), {'uid': current_user.id}).mappings().first()
         if franchise:
             return f'{alias}.franchise_user_id = :fid', {'fid': franchise['id']}
-    finance = _current_finance_employee(db, current_user)
-    if finance and 'finance' in (finance.get('employee_role') or '').strip().lower():
-        return f'{alias}.franchise_user_id = :fid', {'fid': finance['franchise_user_id']}
     return '1=0', {}
+
+
+def _document_scope_filter(db: Session, current_user: User, alias: str = 'd'):
+    # Managers and employees can ONLY see their own IRP5 documents.
+    # Admin/franchise/finance users may view/download/delete manager and
+    # employee IRP5 documents they are allowed to manage.
+    if _can_manage_documents(db, current_user):
+        return _document_management_filter(db, current_user, alias)
+    return f'{alias}.target_user_id = :uid', {'uid': current_user.id}
 
 
 def _get_manageable_document(db: Session, current_user: User, document_id: int):
@@ -202,8 +208,7 @@ def visible_employees_for_irp5(current_user: User = Depends(get_current_user), d
         finance = _current_finance_employee(db, current_user)
         if not finance or 'finance' not in (finance.get('employee_role') or '').strip().lower():
             raise HTTPException(status_code=403, detail='Only FranchiseUser, SuperUser or Finance employees can upload IRP5 documents')
-        where += ' AND eu.franchise_user_id = :fid'
-        params['fid'] = finance['franchise_user_id']
+        # Finance users can allocate IRP5 documents to any manager/employee on the system.
     rows = db.execute(text(f"""
         WITH staff AS (
             SELECT eu.id AS staff_id, eu.id AS employee_user_id, eu.user_id, eu.name, eu.surname,
@@ -219,7 +224,7 @@ def visible_employees_for_irp5(current_user: User = Depends(get_current_user), d
             FROM manager_users mu
             JOIN users u ON u.id = mu.user_id
             WHERE COALESCE(mu.is_active, TRUE) = TRUE AND COALESCE(u.is_active, TRUE) = TRUE
-              {'' if 'SuperUser' in roles else 'AND mu.franchise_user_id = :fid'}
+              {'' if ('SuperUser' in roles or _is_finance_user(db, current_user)) else 'AND mu.franchise_user_id = :fid'}
         )
         SELECT * FROM staff
         ORDER BY name, surname
@@ -352,10 +357,7 @@ def download_irp5(document_id: int, current_user: User = Depends(get_current_use
 @router.delete('/documents/{document_id}')
 def delete_irp5_document(document_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _ensure_table(db)
-    roles = set(_roles(db, current_user))
-    finance = _current_finance_employee(db, current_user)
-    can_delete = 'SuperUser' in roles or 'FranchiseUser' in roles or bool(finance and 'finance' in (finance.get('employee_role') or '').strip().lower())
-    if not can_delete:
+    if not _can_manage_documents(db, current_user):
         raise HTTPException(status_code=403, detail='Only SuperUser, FranchiseUser or Finance users can delete IRP5 documents')
     _get_manageable_document(db, current_user, document_id)
     db.execute(text("""
