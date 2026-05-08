@@ -6,6 +6,9 @@ import {
   getMyPayslips,
   downloadPayslip,
   deletePayslip,
+  getPayrollImportDetail,
+  updatePayrollImport,
+  deletePayrollImport,
 } from '../api/client'
 import DragDropFileInput from '../components/DragDropFileInput.jsx'
 
@@ -41,6 +44,7 @@ export default function PayrollPage({ me }) {
   const [month, setMonth] = useState(currentMonthStart())
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const [selectedImport, setSelectedImport] = useState(null)
 
   async function load() {
     setError('')
@@ -117,6 +121,49 @@ export default function PayrollPage({ me }) {
     }
   }
 
+
+  async function handleViewImport(row) {
+    setMessage('')
+    setError('')
+    try {
+      setSelectedImport(await getPayrollImportDetail(row.id))
+    } catch (err) {
+      setError(err.message || 'Could not open import details')
+    }
+  }
+
+  async function handleEditImport(row) {
+    setMessage('')
+    setError('')
+    const currentMonth = row.payroll_month ? String(row.payroll_month).slice(0, 10) : month
+    const payrollMonth = window.prompt('Payroll month (YYYY-MM-DD)', currentMonth)
+    if (payrollMonth === null) return
+    const status = window.prompt('Import status', row.status || 'processed')
+    if (status === null) return
+    try {
+      await updatePayrollImport(row.id, { payroll_month: payrollMonth, status })
+      setMessage('Payroll import updated.')
+      await load()
+      if (selectedImport?.id === row.id) setSelectedImport(await getPayrollImportDetail(row.id))
+    } catch (err) {
+      setError(err.message || 'Could not update import')
+    }
+  }
+
+  async function handleDeleteImport(row) {
+    setMessage('')
+    setError('')
+    if (!window.confirm(`Delete import ${row.filename || row.id}? This will hide the linked payslips too.`)) return
+    try {
+      await deletePayrollImport(row.id)
+      setMessage('Payroll import deleted and linked payslips hidden.')
+      if (selectedImport?.id === row.id) setSelectedImport(null)
+      await load()
+    } catch (err) {
+      setError(err.message || 'Could not delete import')
+    }
+  }
+
   return (
     <div className="payroll-page">
       {message ? <p className="success">{message}</p> : null}
@@ -170,7 +217,8 @@ export default function PayrollPage({ me }) {
         </form>
         {importResult ? <div className="import-result"><p className="success">Imported {importResult.rows_matched} of {importResult.rows_total} payroll rows.</p></div> : null}
         <h3>Recent payroll imports</h3>
-        <div className="table-wrap"><table><thead><tr><th>Date</th><th>File</th><th>Rows</th><th>Matched</th><th>Status</th></tr></thead><tbody>{imports.map((r) => <tr key={r.id}><td>{new Date(r.imported_at).toLocaleString('en-ZA', { timeZone: 'Africa/Johannesburg', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</td><td>{r.filename}</td><td>{r.rows_total}</td><td>{r.rows_matched}</td><td>{r.status}</td></tr>)}{!imports.length ? <tr><td colSpan="5" className="muted">No payroll imports yet.</td></tr> : null}</tbody></table></div>
+        <div className="table-wrap"><table><thead><tr><th>Date</th><th>File</th><th>Rows</th><th>Matched</th><th>Status</th><th>Action</th></tr></thead><tbody>{imports.map((r) => <tr key={r.id}><td>{new Date(r.imported_at).toLocaleString('en-ZA', { timeZone: 'Africa/Johannesburg', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</td><td>{r.filename}</td><td>{r.rows_total}</td><td>{r.rows_matched}</td><td>{r.status}</td><td><div className="action-row"><button type="button" className="glass-button" onClick={() => handleViewImport(r)}>View</button><button type="button" className="glass-button" onClick={() => handleEditImport(r)}>Edit</button><button type="button" className="glass-button danger-button" onClick={() => handleDeleteImport(r)}>Delete</button></div></td></tr>)}{!imports.length ? <tr><td colSpan="6" className="muted">No payroll imports yet.</td></tr> : null}</tbody></table></div>
+        {selectedImport ? <div className="import-result"><div className="list-header"><div><h3>Import details: {selectedImport.filename}</h3><p className="muted">Matched {selectedImport.rows_matched} of {selectedImport.rows_total} rows.</p></div><button type="button" className="glass-button" onClick={() => setSelectedImport(null)}>Close</button></div><div className="table-wrap"><table><thead><tr><th>Row</th><th>Employee Code</th><th>Employee</th><th>Matched User</th><th>Method</th><th>Status</th><th>Message</th></tr></thead><tbody>{(selectedImport.rows || []).map((row) => <tr key={row.id}><td>{row.row_number}</td><td>{row.employee_key || '-'}</td><td>{row.employee_name || row.email || '-'}</td><td>{row.matched_user_id || '-'}</td><td>{row.match_method || '-'}</td><td>{row.status}</td><td>{row.message || '-'}</td></tr>)}</tbody></table></div></div> : null}
       </section> : null}
     </div>
   )

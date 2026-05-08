@@ -316,6 +316,18 @@ export async function getPayrollImports() {
   return apiRequest('/payroll/imports')
 }
 
+export async function getPayrollImportDetail(id) {
+  return apiRequest(`/payroll/imports/${id}`)
+}
+
+export async function updatePayrollImport(id, payload) {
+  return apiRequest(`/payroll/imports/${id}`, { method: 'PUT', body: JSON.stringify(payload) })
+}
+
+export async function deletePayrollImport(id) {
+  return apiRequest(`/payroll/imports/${id}`, { method: 'DELETE' })
+}
+
 
 export async function uploadStaffIdPhoto(type, id, file) {
   const token = localStorage.getItem('token')

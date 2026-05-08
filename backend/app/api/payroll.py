@@ -213,24 +213,33 @@ def _read_payroll_file(file: UploadFile):
     
     if filename.endswith('.zip'):
         extracted_rows = []
+        outer_name = (file.filename or '').rsplit('/', 1)[-1].rsplit('\\', 1)[-1]
+        outer_stem = re.sub(r'\.zip$', '', outer_name, flags=re.IGNORECASE)
 
         with pyzipper.AESZipFile(io.BytesIO(content)) as z:
             pdf_files = [f for f in z.namelist() if f.lower().endswith('.pdf')]
-
             if not pdf_files:
-                raise HTTPException(status_code=400, detail='No PDF found inside ZIP file.')
-
+                pdf_files = [outer_name]
             for idx, pdf_name in enumerate(pdf_files, start=1):
-                code = pdf_name.split('/')[-1].replace('.PDF', '').replace('.pdf', '')
-                employee_code = code[-6:]  # example: 102-NOR020 -> NOR020
-
+                base = pdf_name.split('/')[-1].replace('.PDF', '').replace('.pdf', '')
+                tokens = []
+                for c in [base, outer_stem]:
+                    c = str(c or '').strip()
+                    tokens.append(c)
+                    tokens.extend(re.split(r'[^A-Za-z0-9]+', c))
+                    if '-' in c:
+                        tokens.extend([c.split('-')[0], c.split('-')[-1]])
+                employee_code = next((t for t in tokens if t and re.search(r'[A-Za-z]', t) and re.search(r'\d', t)), '')
+                if not employee_code:
+                    employee_code = next((t for t in tokens if t and re.search(r'\d', t)), outer_stem)
                 extracted_rows.append({
                     '_row_number': idx,
                     'empl_no': employee_code,
-                    'payslip_filename': pdf_name,
+                    'employee_number': employee_code,
+                    'employee_id': employee_code,
+                    'payslip_filename': pdf_name if pdf_name.lower().endswith('.pdf') else outer_name,
                     'payslip_zip_bytes': content,
                 })
-
         return extracted_rows
 
 
@@ -283,7 +292,14 @@ def _staff_match_maps(staff_rows):
         employee_number = str(s.get('employee_number') or '').strip().upper()
 
         if employee_number:
-            by_employee_code[employee_number[-6:]] = s
+            variants = {employee_number, employee_number[-6:], employee_number[-7:]}
+            variants.update(t for t in re.split(r'[^A-Z0-9]+', employee_number) if t)
+            if '-' in employee_number:
+                variants.add(employee_number.split('-')[0])
+                variants.add(employee_number.split('-')[-1])
+            for variant in variants:
+                if variant:
+                    by_employee_code[variant] = s
 
         employee_last7 = _last_7_digits(employee_number)
         if employee_last7:
@@ -331,10 +347,16 @@ def _match_payroll_staff(
         'employee_full_name'
     )).strip()
 
-    user_key_code = user_key.upper()[-6:]
+    raw_user_key = user_key.upper()
+    user_key_variants = {raw_user_key, raw_user_key[-6:], raw_user_key[-7:]}
+    user_key_variants.update(t for t in re.split(r'[^A-Z0-9]+', raw_user_key) if t)
+    if '-' in raw_user_key:
+        user_key_variants.add(raw_user_key.split('-')[0])
+        user_key_variants.add(raw_user_key.split('-')[-1])
 
-    if user_key_code and user_key_code in by_employee_code:
-        return by_employee_code[user_key_code], 'employee_code', user_key, email, employee_name
+    for variant in user_key_variants:
+        if variant and variant in by_employee_code:
+            return by_employee_code[variant], 'employee_code', user_key, email, employee_name
 
     user_key_last7 = _last_7_digits(user_key)
 
@@ -507,8 +529,85 @@ def payroll_imports(current_user: User = Depends(get_current_user), db: Session 
         where, params = '1=1', {}
     else:
         where, params = 'franchise_user_id = :fid', {'fid': fid}
-    rows = db.execute(text(f"SELECT * FROM payroll_imports WHERE {where} ORDER BY imported_at DESC LIMIT 25"), params).mappings().all()
+    rows = db.execute(text(f"SELECT * FROM payroll_imports WHERE deleted_at IS NULL AND {where} ORDER BY imported_at DESC LIMIT 25"), params).mappings().all()
     return [dict(r) for r in rows]
+
+
+
+def _get_scoped_import(db: Session, current_user: User, import_id: int):
+    if not _can_payroll(db, current_user):
+        raise HTTPException(status_code=403, detail='Payroll import access denied')
+    roles = _roles(db, current_user)
+    fid = _franchise_id_for_user(db, current_user)
+    if 'SuperUser' in roles:
+        where, params = '1=1', {}
+    else:
+        where, params = 'franchise_user_id = :fid', {'fid': fid}
+    params['id'] = import_id
+    row = db.execute(text(f"""
+        SELECT * FROM payroll_imports
+        WHERE id = :id AND deleted_at IS NULL AND {where}
+        LIMIT 1
+    """), params).mappings().first()
+    if not row:
+        raise HTTPException(status_code=404, detail='Payroll import not found')
+    return row
+
+
+@router.get('/imports/{import_id}')
+def payroll_import_detail(import_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _ensure_tables(db)
+    imp = dict(_get_scoped_import(db, current_user, import_id))
+    rows = db.execute(text("""
+        SELECT id, row_number, matched_user_id, employee_key, employee_name, email,
+               match_method, status, message, created_at
+        FROM payroll_import_rows
+        WHERE import_id = :id
+        ORDER BY row_number ASC, id ASC
+    """), {'id': import_id}).mappings().all()
+    imp['rows'] = [dict(r) for r in rows]
+    return imp
+
+
+@router.put('/imports/{import_id}')
+def update_payroll_import(import_id: int, payload: dict, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _ensure_tables(db)
+    _get_scoped_import(db, current_user, import_id)
+    payroll_month = payload.get('payroll_month') or None
+    status = str(payload.get('status') or 'processed')[:40]
+    month_date = None
+    if payroll_month:
+        try:
+            parsed_month = date.fromisoformat(str(payroll_month)[:10])
+            month_date = date(parsed_month.year, parsed_month.month, 1)
+        except ValueError:
+            raise HTTPException(status_code=400, detail='Invalid payroll month')
+    db.execute(text("""
+        UPDATE payroll_imports
+        SET payroll_month = :payroll_month, status = :status, updated_at = :updated_at
+        WHERE id = :id
+    """), {'id': import_id, 'payroll_month': month_date, 'status': status, 'updated_at': datetime.utcnow()})
+    db.commit()
+    return {'message': 'Payroll import updated'}
+
+
+@router.delete('/imports/{import_id}')
+def delete_payroll_import(import_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _ensure_tables(db)
+    _get_scoped_import(db, current_user, import_id)
+    now = datetime.utcnow()
+    db.execute(text("""
+        UPDATE payroll_payslips
+        SET is_active = FALSE, deleted_at = :deleted_at, deleted_by_user_id = :deleted_by
+        WHERE import_id = :id
+    """), {'id': import_id, 'deleted_at': now, 'deleted_by': current_user.id})
+    db.execute(text("""
+        UPDATE payroll_imports
+        SET deleted_at = :deleted_at, deleted_by_user_id = :deleted_by, status = 'deleted'
+        WHERE id = :id
+    """), {'id': import_id, 'deleted_at': now, 'deleted_by': current_user.id})
+    db.commit()
+    return {'message': 'Payroll import and linked payslips deleted'}
 
 
 def _payslip_scope_filter(db: Session, current_user: User, alias: str = 'p'):
