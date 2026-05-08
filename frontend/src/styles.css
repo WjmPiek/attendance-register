@@ -1770,3 +1770,85 @@ button,
     -webkit-overflow-scrolling: touch;
   }
 }
+
+/* Global responsive typography update: base 12px, headings scale by viewport */
+:root {
+  font-size: clamp(11px, 0.72vw + 7.5px, 12px);
+  --font-body: clamp(12px, 0.16vw + 11.2px, 13px);
+  --font-small: clamp(10.5px, 0.12vw + 10px, 12px);
+  --font-button: clamp(12px, 0.18vw + 11px, 13.5px);
+  --font-h1: clamp(24px, 1.7vw + 14px, 42px);
+  --font-h2: clamp(20px, 1.25vw + 12px, 32px);
+  --font-h3: clamp(17px, 0.9vw + 11px, 24px);
+  --font-h4: clamp(15px, 0.55vw + 10px, 20px);
+}
+html, body, #root {
+  font-size: var(--font-body);
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+body, button, input, select, textarea, table, th, td, label, p, a, span, div {
+  font-size: var(--font-body);
+  line-height: 1.45;
+}
+h1 { font-size: var(--font-h1) !important; line-height: 1.08; letter-spacing: -0.045em; }
+h2 { font-size: var(--font-h2) !important; line-height: 1.12; letter-spacing: -0.035em; }
+h3, .card > h3 { font-size: var(--font-h3) !important; line-height: 1.18; }
+h4 { font-size: var(--font-h4) !important; line-height: 1.22; }
+small, .small, .muted, .optional-note, .eyebrow, th, .badge, .user-chip small, .brand-block span, .brand-mini span, .hero-metrics span, .today-grid span, .summary-grid span, .detail-grid span {
+  font-size: var(--font-small) !important;
+  line-height: 1.35;
+}
+button, .tab-button, .glass-button, .link-button, input, select, textarea {
+  font-size: var(--font-button) !important;
+  line-height: 1.25;
+}
+.tab-button, button, .glass-button {
+  min-height: 44px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.brand-block strong, .topbar-title strong {
+  font-size: clamp(15px, 0.6vw + 12px, 22px) !important;
+  line-height: 1.15;
+}
+label, strong, th {
+  line-height: 1.25;
+}
+td, th {
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+.card, .form-card, .hero-panel, .topbar, .section-header, .glass-card {
+  overflow: visible;
+}
+.table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+@media (max-width: 640px) {
+  :root {
+    font-size: 12px;
+    --font-body: 12px;
+    --font-small: 11px;
+    --font-button: 12px;
+    --font-h1: clamp(22px, 6vw, 30px);
+    --font-h2: clamp(19px, 5vw, 26px);
+    --font-h3: clamp(16px, 4vw, 21px);
+    --font-h4: clamp(14px, 3.5vw, 18px);
+  }
+  .app-shell { padding: 12px; gap: 14px; }
+  .sidebar { padding: 16px; gap: 14px; }
+  .sidebar-tabs { gap: 9px; }
+  .tab-button, button, .glass-button { padding: 11px 14px; min-height: 46px; }
+  .brand-block { gap: 12px; }
+  .brand-block img { width: 78px; height: 46px; }
+  .card, .form-card, .hero-panel, .topbar, .section-header { padding: 16px; }
+  input, select, textarea { padding: 12px 13px; }
+}
+@media (min-width: 1200px) {
+  :root {
+    --font-body: clamp(12px, 0.18vw + 10px, 14px);
+    --font-button: clamp(12px, 0.2vw + 10px, 14px);
+  }
+}

@@ -1,19 +1,108 @@
 {
-  "name": "Attendance Register Platform",
-  "short_name": "Attendance",
-  "description": "Mobile and desktop attendance register for franchises, managers and employees.",
-  "start_url": "/",
+  "name": "ATTENDANCE",
+  "short_name": "ATTENDANCE",
+  "description": "ATTENDANCE",
+  "id": "/",
+  "start_url": "/?source=pwa",
   "scope": "/",
   "display": "standalone",
-  "orientation": "portrait-primary",
-  "background_color": "#f4f1f8",
-  "theme_color": "#bfa3df",
-  "icons": [
-    { "src": "/logo.svg", "sizes": "512x512", "type": "image/svg+xml", "purpose": "any maskable" }
+  "display_override": [
+    "standalone",
+    "minimal-ui"
   ],
-  "categories": ["business", "productivity"],
+  "orientation": "portrait-primary",
+  "background_color": "#00000000",
+  "theme_color": "#9b6bd3",
+  "categories": [
+    "business",
+    "productivity"
+  ],
+  "icons": [
+    {
+      "src": "/icon-72.png",
+      "sizes": "72x72",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-96.png",
+      "sizes": "96x96",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-128.png",
+      "sizes": "128x128",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-144.png",
+      "sizes": "144x144",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-152.png",
+      "sizes": "152x152",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-180.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-384.png",
+      "sizes": "384x384",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-1024.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
   "shortcuts": [
-    { "name": "Sign In / Out", "short_name": "Attendance", "url": "/?tab=attendance", "icons": [{ "src": "/logo.svg", "sizes": "512x512" }] },
-    { "name": "Approvals", "short_name": "Approvals", "url": "/?tab=approvals", "icons": [{ "src": "/logo.svg", "sizes": "512x512" }] }
+    {
+      "name": "Mobile Sign In",
+      "short_name": "Sign In",
+      "url": "/?tab=attendance",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Payslips",
+      "short_name": "Payslips",
+      "url": "/?tab=payslips",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    }
   ]
 }

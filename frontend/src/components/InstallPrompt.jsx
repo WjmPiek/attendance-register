@@ -39,10 +39,10 @@ export default function InstallPrompt() {
   return (
     <div className="install-card glass-card">
       <div className="brand-mini">
-        <img src="/logo.png" alt="Attendance logo" />
+        <img src="/logo.png" alt="ATTENDANCE logo" />
         <div>
-          <strong>Install Attendance</strong>
-          <span>{installed ? 'Installed as an app' : 'Desktop and mobile app mode ready'}</span>
+          <strong>Install ATTENDANCE</strong>
+          <span>{installed ? 'Installed as an app' : 'Install on mobile or desktop'}</span>
         </div>
       </div>
       {deferredPrompt ? (
