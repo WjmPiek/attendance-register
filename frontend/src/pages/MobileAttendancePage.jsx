@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Card from '../components/Card'
 import { getAttendanceStatus, submitAttendance, validateOfficeQr } from '../api/client'
 import SignaturePad from '../components/SignaturePad'
@@ -15,6 +15,10 @@ export default function MobileAttendancePage({ me }) {
   const [qrValue, setQrValue] = useState('')
   const [qrOffice, setQrOffice] = useState(null)
   const [scanning, setScanning] = useState(false)
+  const [cameraOpen, setCameraOpen] = useState(false)
+  const [cameraStream, setCameraStream] = useState(null)
+  const videoRef = useRef(null)
+  const fileCaptureRef = useRef(null)
 
   const loadStatus = async () => {
     try {
@@ -45,6 +49,19 @@ export default function MobileAttendancePage({ me }) {
     )
   })
 
+
+  const stopCamera = () => {
+    setScanning(false)
+    setCameraOpen(false)
+    setCameraStream((current) => {
+      if (current) current.getTracks().forEach((track) => track.stop())
+      return null
+    })
+    if (videoRef.current) videoRef.current.srcObject = null
+  }
+
+  useEffect(() => () => stopCamera(), [])
+
   const validateQr = async (value) => {
     if (!value?.trim()) throw new Error('Please scan or enter the office QR code first.')
     const office = await validateOfficeQr(value.trim())
@@ -56,36 +73,51 @@ export default function MobileAttendancePage({ me }) {
   const startQrScan = async () => {
     setError('')
     setMessage('')
-    if (!('BarcodeDetector' in window)) {
-      setError('This browser does not support camera QR scanning. Type or paste the QR code into the manual field below.')
+    if (workLocationType !== 'office') return
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setError('Camera access is not available in this browser. Use the manual QR code field below.')
+      if (fileCaptureRef.current) fileCaptureRef.current.click()
       return
     }
-    let stream
     try {
+      setCameraOpen(true)
       setScanning(true)
-      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-      const video = document.createElement('video')
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false,
+      })
+      setCameraStream(stream)
+      const video = videoRef.current
+      if (!video) throw new Error('Camera preview is not ready. Please try again.')
       video.srcObject = stream
       video.setAttribute('playsinline', 'true')
+      video.muted = true
       await video.play()
+
+      if (!('BarcodeDetector' in window)) {
+        setScanning(false)
+        setMessage('Camera is open. This browser cannot auto-read QR codes, so scan with a supported mobile browser or type the QR code below.')
+        return
+      }
+
       const detector = new window.BarcodeDetector({ formats: ['qr_code'] })
-      const deadline = Date.now() + 20000
+      const deadline = Date.now() + 30000
       while (Date.now() < deadline) {
         const codes = await detector.detect(video).catch(() => [])
         if (codes.length) {
           const raw = codes[0].rawValue || ''
           await validateQr(raw)
           setMessage('Office QR scanned and linked.')
+          stopCamera()
           return
         }
-        await new Promise((resolve) => setTimeout(resolve, 350))
+        await new Promise((resolve) => setTimeout(resolve, 250))
       }
-      throw new Error('No QR code detected. Try again closer to the printed code, or enter it manually.')
-    } catch (err) {
-      setError(err.message || 'QR scan failed')
-    } finally {
-      if (stream) stream.getTracks().forEach((track) => track.stop())
       setScanning(false)
+      setError('Camera opened but no QR code was detected. Hold the phone closer to the office QR code or enter it manually.')
+    } catch (err) {
+      stopCamera()
+      setError(err.message || 'Camera permission is required to scan the office QR code.')
     }
   }
 
@@ -146,7 +178,7 @@ export default function MobileAttendancePage({ me }) {
       </div>
 
       <div className="qr-scan-card">
-        <div className="detail-header">
+        <div className="detail-header mobile-qr-header">
           <div>
             <h3>Office QR code</h3>
             <p className="muted small">Scan the printed office QR code before signing in or out. This links the attendance record to the office address.</p>
@@ -154,6 +186,12 @@ export default function MobileAttendancePage({ me }) {
           <button type="button" onClick={startQrScan} disabled={scanning || workLocationType !== 'office'}>
             {scanning ? 'Scanning...' : 'Scan QR'}
           </button>
+        </div>
+        <input ref={fileCaptureRef} type="file" accept="image/*" capture="environment" hidden />
+        <div className={`qr-camera-panel ${cameraOpen ? 'open' : ''}`}>
+          <video ref={videoRef} className="qr-camera-preview" playsInline muted />
+          <div className="qr-camera-frame" aria-hidden="true" />
+          {cameraOpen ? <button type="button" className="secondary-action" onClick={stopCamera}>Close camera</button> : null}
         </div>
         <label>
           Manual QR code entry

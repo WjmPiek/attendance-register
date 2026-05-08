@@ -384,7 +384,6 @@ def _format_leave(r: dict):
         'leave_end': str(r.get('end_date')),
         'return_date': return_date,
         'reason': r.get('reason') or 'No reason supplied',
-        'days_requested': float(r.get('days_requested') or 0),
         'status_code': status,
         'status_label': status.title(),
     }
@@ -441,9 +440,7 @@ def alerts_summary(current_user: User = Depends(get_current_user), db: Session =
         'low_accuracy': len([i for i in lists['gps_issues'] if i['status_code'] == 'accuracy_too_low']),
         'completed': completed,
         'pending_leave': len(lists['pending_leave']),
-        'pending_leave_days': float(sum(float(x.get('days_requested') or 0) for x in lists['pending_leave'])),
         'approved_leave': len(lists['approved_leave']),
-        'approved_leave_days': float(sum(float(x.get('days_requested') or 0) for x in lists['approved_leave'])),
     }
 
     suggestions = []

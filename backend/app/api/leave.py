@@ -56,14 +56,6 @@ def _ensure_tables(db: Session):
         "ALTER TABLE leave_applications ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NULL",
     ]:
         db.execute(text(stmt))
-    db.execute(text('''
-        CREATE TABLE IF NOT EXISTS leave_balances (
-            user_id INTEGER PRIMARY KEY,
-            annual_days_allocated NUMERIC(8,2) NOT NULL DEFAULT 15,
-            annual_days_taken NUMERIC(8,2) NOT NULL DEFAULT 0,
-            updated_at TIMESTAMP NULL
-        )
-    '''))
     db.commit()
 
 
@@ -97,21 +89,6 @@ def _calc_days(start_date: date, end_date: date) -> float:
     if end_date < start_date:
         raise HTTPException(status_code=400, detail='End date cannot be before start date')
     return float((end_date - start_date).days + 1)
-
-
-def _balance_row(db: Session, user_id: int):
-    db.execute(text('''
-        INSERT INTO leave_balances (user_id, annual_days_allocated, annual_days_taken, updated_at)
-        VALUES (:uid, 15, 0, :now)
-        ON CONFLICT (user_id) DO NOTHING
-    '''), {'uid': user_id, 'now': now_sa_naive()})
-    db.commit()
-    row = db.execute(text('''
-        SELECT annual_days_allocated, annual_days_taken,
-               annual_days_allocated - annual_days_taken AS days_remaining
-        FROM leave_balances WHERE user_id = :uid
-    '''), {'uid': user_id}).mappings().first()
-    return dict(row) if row else {'annual_days_allocated': 15, 'annual_days_taken': 0, 'days_remaining': 15}
 
 
 def _franchise_notification_context(db: Session, franchise_user_id: int | None):
@@ -151,7 +128,6 @@ def _notify_franchise_leave_event(db: Session, application_id: int, notification
     message = (
         f"{staff_name} - {app.get('leave_type') or 'Leave'}\n"
         f"Dates: {format_sa_date(app.get('start_date'))} to {format_sa_date(app.get('end_date'))}\n"
-        f"Days requested: {float(app.get('days_requested') or 0):g}\n"
         f"Status: {app.get('status')}\n"
         f"Reason: {app.get('reason') or 'n/a'}"
     )
@@ -183,11 +159,6 @@ class LeaveDecisionRequest(BaseModel):
     note: str | None = None
 
 
-@router.get('/balance')
-def leave_balance(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    _ensure_tables(db)
-    balance = _balance_row(db, current_user.id)
-    return {'user_id': current_user.id, **balance}
 
 
 @router.post('/apply')
@@ -301,12 +272,6 @@ def _decision(application_id: int, decision: str, payload: LeaveDecisionRequest,
             updated_at = :now
         WHERE id = :id
     '''), {'status': decision, 'note': payload.note, 'decider': current_user.id, 'now': now, 'id': application_id})
-    if decision == 'approved':
-        _balance_row(db, int(app['applicant_user_id']))
-        db.execute(text('''
-            UPDATE leave_balances SET annual_days_taken = annual_days_taken + :days, updated_at = :now
-            WHERE user_id = :uid
-        '''), {'days': app['days_requested'], 'now': now, 'uid': app['applicant_user_id']})
     db.commit()
     _notify_franchise_leave_event(db, application_id, f'leave_{decision}', f'Leave application {decision}')
     return {'message': f'Leave application {decision}', 'application_id': application_id}

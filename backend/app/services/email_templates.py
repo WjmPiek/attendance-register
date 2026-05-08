@@ -29,7 +29,6 @@ def branded_email(
             <td>{r['name']} {r['surname']}</td>
             <td>{r['leave_type']}</td>
             <td>{r['start_date']} → {r['end_date']}</td>
-            <td>{r['days_requested']}</td>
             <td>{str(r['status']).title()}</td>
         </tr>
         """
@@ -78,12 +77,11 @@ def branded_email(
               <th align="left">Employee</th>
               <th align="left">Type</th>
               <th align="left">Dates</th>
-              <th align="left">Days</th>
               <th align="left">Status</th>
             </tr>
           </thead>
           <tbody>
-            {leave_html or '<tr><td colspan="5">No leave records</td></tr>'}
+            {leave_html or '<tr><td colspan="4">No leave records</td></tr>'}
           </tbody>
         </table>
 

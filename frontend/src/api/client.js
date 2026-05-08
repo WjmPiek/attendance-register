@@ -271,9 +271,6 @@ export async function previewIrp5Document(documentId) {
   return apiBlob(`/irp5/documents/${documentId}/download`)
 }
 
-export async function getLeaveBalance() {
-  return apiRequest('/leave/balance')
-}
 
 export async function applyLeave(payload) {
   return apiRequest('/leave/apply', { method: 'POST', body: JSON.stringify(payload) })

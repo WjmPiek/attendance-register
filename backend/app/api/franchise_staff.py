@@ -316,9 +316,6 @@ def _delete_staff_related_records(db: Session, staff_type: str, staff_id: int, u
             deleted["leave"] += result.rowcount or 0
             deleted["overview"] += result.rowcount or 0
 
-    if _table_exists(db, "leave_balances"):
-        result = db.execute(text("DELETE FROM leave_balances WHERE user_id = :user_id"), params)
-        deleted["leave"] += result.rowcount or 0
 
     payroll_rows_cols = _table_columns(db, "payroll_import_rows")
     if "matched_user_id" in payroll_rows_cols:

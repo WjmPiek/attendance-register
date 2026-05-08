@@ -1524,3 +1524,74 @@ h3 { font-size: 1.25rem; }
 .danger-button:hover {
   background: rgba(220, 38, 38, 0.08) !important;
 }
+
+/* Mobile sign-in fit and QR camera fixes */
+.mobile-qr-header {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+.mobile-qr-header button { flex: 0 0 auto; }
+.qr-camera-panel {
+  display: none;
+  position: relative;
+  margin: 12px 0;
+  border-radius: 18px;
+  overflow: hidden;
+  background: #151020;
+  border: 1px solid rgba(150, 102, 210, 0.22);
+}
+.qr-camera-panel.open { display: block; }
+.qr-camera-preview {
+  display: block;
+  width: 100%;
+  max-height: min(58vh, 460px);
+  object-fit: cover;
+  background: #151020;
+}
+.qr-camera-frame {
+  position: absolute;
+  left: 50%;
+  top: 45%;
+  width: min(62vw, 260px);
+  height: min(62vw, 260px);
+  transform: translate(-50%, -50%);
+  border: 3px solid rgba(255,255,255,.86);
+  border-radius: 20px;
+  box-shadow: 0 0 0 999px rgba(0,0,0,.24);
+  pointer-events: none;
+}
+.qr-camera-panel .secondary-action {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  margin: 0;
+  background: rgba(255,255,255,.92);
+}
+.leave-grid.single { grid-template-columns: 1fr; }
+@media (max-width: 720px) {
+  html, body, #root { width: 100%; max-width: 100%; overflow-x: hidden; }
+  .app-shell, .content-panel, .card, .form-card, .section-header, .qr-scan-card, .status-panel {
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+  .content-panel { padding: 12px; }
+  .card, .form-card, .section-header { padding: 14px; border-radius: 22px; }
+  .status-panel { display: grid; grid-template-columns: 1fr; gap: 8px; padding: 12px; }
+  .history-toolbar.one-column { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .history-toolbar label, .qr-scan-card label { width: 100%; min-width: 0; }
+  input, select, textarea, button { max-width: 100%; box-sizing: border-box; }
+  .qr-scan-card { padding: 14px; margin: 14px 0; }
+  .mobile-qr-header { display: grid; grid-template-columns: 1fr; }
+  .mobile-qr-header button, .secondary-action, .mobile-actions button { width: 100%; min-height: 44px; }
+  .mobile-actions { display: grid; grid-template-columns: 1fr; gap: 10px; }
+  .signature-pad, .signature-canvas-wrap, canvas { max-width: 100%; }
+}
+@media (max-width: 390px) {
+  .content-panel { padding: 8px; }
+  .card, .form-card, .section-header, .qr-scan-card { padding: 12px; border-radius: 18px; }
+  h1 { font-size: 1.9rem; }
+  h2 { font-size: 1.45rem; }
+}

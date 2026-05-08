@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { applyLeave, approveLeaveApplication, declineLeaveApplication, getLeaveApplications, getLeaveBalance } from '../api/client'
+import { applyLeave, approveLeaveApplication, declineLeaveApplication, getLeaveApplications } from '../api/client'
 
 const leaveTypes = ['Annual Leave', 'Sick Leave', 'Family Responsibility Leave', 'Unpaid Leave', 'Study Leave']
 
@@ -135,7 +135,6 @@ function LeaveReturnTimeline({ items = [] }) {
 export default function LeavePage({ me }) {
   const canDecide = me.roles.includes('SuperUser') || me.roles.includes('FranchiseUser') || me.roles.includes('ManagerUser')
   const canApply = me.roles.includes('EmployeeUser') || me.roles.includes('ManagerUser')
-  const [balance, setBalance] = useState(null)
   const [apps, setApps] = useState([])
   const [form, setForm] = useState({ leave_type: 'Annual Leave', start_date_display: '', end_date_display: '', reason: '' })
   const [status, setStatus] = useState('')
@@ -145,7 +144,6 @@ export default function LeavePage({ me }) {
   const load = async () => {
     setErr('')
     try {
-      if (canApply) setBalance(await getLeaveBalance())
       setApps(await getLeaveApplications(status))
     } catch (e) {
       setErr(e.message || 'Failed to load leave information')
@@ -153,13 +151,6 @@ export default function LeavePage({ me }) {
   }
 
   useEffect(() => { load() }, [status])
-
-  const daysRequested = useMemo(() => {
-    const start = parseDdMmYyyy(form.start_date_display)
-    const end = parseDdMmYyyy(form.end_date_display)
-    if (!start || !end || end < start) return 0
-    return Math.round((end - start) / 86400000) + 1
-  }, [form.start_date_display, form.end_date_display])
 
   const submit = async (e) => {
     e.preventDefault()
@@ -171,7 +162,9 @@ export default function LeavePage({ me }) {
       setErr('Please enter dates as dd/mm/yyyy, for example 07/05/2026.')
       return
     }
-    if (!daysRequested) {
+    const startDate = parseDdMmYyyy(form.start_date_display)
+    const endDate = parseDdMmYyyy(form.end_date_display)
+    if (!startDate || !endDate || endDate < startDate) {
       setErr('End date cannot be before start date.')
       return
     }
@@ -210,21 +203,12 @@ export default function LeavePage({ me }) {
       {err ? <p className="error">{err}</p> : null}
 
       {canApply ? (
-        <section className="leave-grid">
-          <div className="form-card">
-            <h2>Leave days accumulated</h2>
-            <div className="stat-grid mini">
-              <div className="stat-card"><strong>{Number(balance?.annual_days_allocated || 0)}</strong><span>Allocated days</span></div>
-              <div className="stat-card"><strong>{Number(balance?.annual_days_taken || 0)}</strong><span>Days taken</span></div>
-              <div className="stat-card"><strong>{Number(balance?.days_remaining || 0)}</strong><span>Days available</span></div>
-            </div>
-          </div>
+        <section className="leave-grid single">
           <form className="form-card staff-form-single" onSubmit={submit}>
             <h2>Apply for leave</h2>
             <label>Leave type<select value={form.leave_type} onChange={(e) => setForm({ ...form, leave_type: e.target.value })}>{leaveTypes.map((t) => <option key={t}>{t}</option>)}</select></label>
             <label>Start date<input inputMode="numeric" placeholder="dd/mm/yyyy" value={form.start_date_display} onChange={(e) => setForm({ ...form, start_date_display: e.target.value })} required /></label>
             <label>End date<input inputMode="numeric" placeholder="dd/mm/yyyy" value={form.end_date_display} onChange={(e) => setForm({ ...form, end_date_display: e.target.value })} required /></label>
-            <label>Days requested<input value={daysRequested || ''} readOnly /></label>
             <label className="wide">Reason<textarea value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} placeholder="Optional reason" /></label>
             <button className="primary-action">Submit leave application</button>
           </form>
@@ -235,7 +219,7 @@ export default function LeavePage({ me }) {
 
       <section className="form-card staff-list-card">
         <div className="list-header"><h2>{canDecide ? 'Leave applications to review' : 'My leave applications'}</h2><label>Status<select value={status} onChange={(e) => setStatus(e.target.value)}><option value="">All</option><option value="pending">Pending</option><option value="approved">Approved</option><option value="declined">Declined</option></select></label></div>
-        <div className="table-wrap"><table><thead><tr><th>Employee</th><th>Type</th><th>Dates</th><th>Days</th><th>Status</th><th>Reason</th><th>Decision</th></tr></thead><tbody>{apps.map((a) => <tr key={a.id}><td><strong>{a.name || a.full_name} {a.surname || ''}</strong><small>{a.role || a.email}</small></td><td>{a.leave_type}</td><td>{formatDate(a.start_date)} to {formatDate(a.end_date)}</td><td>{Number(a.days_requested || 0)}</td><td><span className={`status-pill ${a.status}`}>{a.status}</span></td><td>{a.reason || '—'}</td><td>{canDecide && a.status === 'pending' ? <div className="action-row"><button type="button" className="link-button" onClick={() => decide(a.id, 'approve')}>Accept</button><button type="button" className="link-button danger" onClick={() => decide(a.id, 'decline')}>Decline</button></div> : (a.decision_note || '—')}</td></tr>)}{!apps.length ? <tr><td colSpan="7" className="muted">No leave applications found.</td></tr> : null}</tbody></table></div>
+        <div className="table-wrap"><table><thead><tr><th>Employee</th><th>Type</th><th>Approved leave / return dates</th><th>Status</th><th>Reason</th><th>Decision</th></tr></thead><tbody>{apps.map((a) => <tr key={a.id}><td><strong>{a.name || a.full_name} {a.surname || ''}</strong><small>{a.role || a.email}</small></td><td>{a.leave_type}</td><td>{formatDate(a.start_date)} to {formatDate(a.end_date)}<br /><small>Return: {a.return_date ? formatDate(a.return_date) : 'after leave'}</small></td><td><span className={`status-pill ${a.status}`}>{a.status}</span></td><td>{a.reason || '—'}</td><td>{canDecide && a.status === 'pending' ? <div className="action-row"><button type="button" className="link-button" onClick={() => decide(a.id, 'approve')}>Accept</button><button type="button" className="link-button danger" onClick={() => decide(a.id, 'decline')}>Decline</button></div> : (a.decision_note || '—')}</td></tr>)}{!apps.length ? <tr><td colSpan="6" className="muted">No leave applications found.</td></tr> : null}</tbody></table></div>
       </section>
     </div>
   )

@@ -25,7 +25,7 @@ function OverviewMetricRail({ metrics = {}, lists = {} }) {
         <StatBlock title="Active staff" value={metrics.total_staff || 0} subtitle="In current scope" />
         <StatBlock title="Completed" value={goodCount} subtitle="Signed in and out" tone="success" />
         <StatBlock title="Open issues" value={totalIssues} subtitle="Needs review" tone={totalIssues ? 'danger' : 'success'} />
-        <StatBlock title="Leave pending" value={metrics.pending_leave || 0} subtitle={`${metrics.pending_leave_days || 0} day(s)`} tone={metrics.pending_leave ? 'warning' : ''} />
+        <StatBlock title="Leave pending" value={metrics.pending_leave || 0} subtitle="Applications to review" tone={metrics.pending_leave ? 'warning' : ''} />
       </div>
     </section>
   )
@@ -143,7 +143,7 @@ function OverviewNotifications({ lists = {}, metrics = {}, onNavigate }) {
         items={lists.pending_leave || []}
         emptyText="No pending leave applications."
         tone="info"
-        renderDetail={(item) => `${item.days_requested || 0} day(s) · ${item.reason || 'No reason'}`}
+        renderDetail={(item) => `${item.leave_start || ''}${item.leave_end ? ` to ${item.leave_end}` : ''} · ${item.reason || 'No reason'}`}
         actionLabel="Open leave approvals"
         onOpen={() => go('leave')}
       />
@@ -184,7 +184,7 @@ function LeaveList({ title, items = [], emptyText, statusFilter = 'all', onStatu
       </div>
       <div className="table-wrap compact-table">
         <table>
-          <thead><tr><th>Name</th><th>Leave type</th><th>Leave dates</th><th>Back at work</th><th>Days</th><th>Status</th><th>Reason</th></tr></thead>
+          <thead><tr><th>Name</th><th>Leave type</th><th>Approved leave</th><th>Return date</th><th>Status</th><th>Reason</th></tr></thead>
           <tbody>
             {filtered.map((item) => (
               <tr key={`${title}-${item.application_id || item.user_id}`}>
@@ -192,12 +192,11 @@ function LeaveList({ title, items = [], emptyText, statusFilter = 'all', onStatu
                 <td>{item.leave_type || 'Leave'}</td>
                 <td>{item.leave_start || ''}{item.leave_end ? ` to ${item.leave_end}` : ''}</td>
                 <td><span className="status-pill approved_leave">{item.return_date || 'After leave'}</span></td>
-                <td>{item.days_requested || '—'}</td>
                 <td><span className={`status-pill ${item.status_code || ''}`}>{item.status_label || item.status_code || 'Pending'}</span></td>
                 <td>{item.reason || 'No reason supplied'}</td>
               </tr>
             ))}
-            {!filtered.length ? <tr><td colSpan="7" className="muted">{emptyText}</td></tr> : null}
+            {!filtered.length ? <tr><td colSpan="6" className="muted">{emptyText}</td></tr> : null}
           </tbody>
         </table>
       </div>
@@ -324,7 +323,7 @@ function LeaveCalendar({ items = [] }) {
           <div className="leave-calendar-item" key={`calendar-${item.application_id}`}>
             <strong>{item.full_name}</strong>
             <div><div className="leave-bar" /><small>{item.leave_start} to {item.leave_end} · Back {item.return_date}</small></div>
-            <span className="status-pill approved">{item.days_requested} day(s)</span>
+            <span className="status-pill approved">Back {item.return_date}</span>
           </div>
         ))}
         {!approved.length ? <p className="muted">No approved current or upcoming leave found.</p> : null}
