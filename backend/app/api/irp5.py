@@ -130,6 +130,16 @@ def _safe_name(filename: str) -> str:
 
 
 def _document_scope_filter(db: Session, current_user: User, alias: str = 'd'):
+    # Privacy rule: IRP5 files are personal tax documents. No role may list,
+    # view, or download another user's IRP5 from the document endpoints.
+    # Admin/franchise/finance users may upload/manage records via the upload
+    # workflow, but downloads are limited to the linked user account.
+    return f'{alias}.target_user_id = :uid', {'uid': current_user.id}
+
+
+
+
+def _document_management_filter(db: Session, current_user: User, alias: str = 'd'):
     roles = set(_roles(db, current_user))
     if 'SuperUser' in roles:
         return '1=1', {}
@@ -140,8 +150,23 @@ def _document_scope_filter(db: Session, current_user: User, alias: str = 'd'):
     finance = _current_finance_employee(db, current_user)
     if finance and 'finance' in (finance.get('employee_role') or '').strip().lower():
         return f'{alias}.franchise_user_id = :fid', {'fid': finance['franchise_user_id']}
-    return f'{alias}.target_user_id = :uid', {'uid': current_user.id}
+    return '1=0', {}
 
+
+def _get_manageable_document(db: Session, current_user: User, document_id: int):
+    where, params = _document_management_filter(db, current_user, 'd')
+    params['id'] = document_id
+    row = db.execute(text(f"""
+        SELECT d.id
+        FROM irp5_documents d
+        WHERE d.id = :id
+          AND COALESCE(d.is_active, TRUE) = TRUE
+          AND {where}
+        LIMIT 1
+    """), params).mappings().first()
+    if not row:
+        raise HTTPException(status_code=404, detail='Document not found')
+    return row
 
 def _get_scoped_document(db: Session, current_user: User, document_id: int):
     where, params = _document_scope_filter(db, current_user, 'd')
@@ -332,7 +357,7 @@ def delete_irp5_document(document_id: int, current_user: User = Depends(get_curr
     can_delete = 'SuperUser' in roles or 'FranchiseUser' in roles or bool(finance and 'finance' in (finance.get('employee_role') or '').strip().lower())
     if not can_delete:
         raise HTTPException(status_code=403, detail='Only SuperUser, FranchiseUser or Finance users can delete IRP5 documents')
-    _get_scoped_document(db, current_user, document_id)
+    _get_manageable_document(db, current_user, document_id)
     db.execute(text("""
         UPDATE irp5_documents
         SET is_active = FALSE, updated_at = :updated_at

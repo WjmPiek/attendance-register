@@ -609,14 +609,39 @@ def delete_payroll_import(import_id: int, current_user: User = Depends(get_curre
 
 
 def _payslip_scope_filter(db: Session, current_user: User, alias: str = 'p'):
+    # Privacy rule: payslip files are personal documents. No role may list,
+    # view, or download another user's payslip from the document endpoints.
+    # Admin/franchise/finance users can manage payroll import records, but the
+    # actual payslip file remains visible only to the linked account.
+    return f'{alias}.user_id = :uid', {'uid': current_user.id}
+
+
+
+
+def _payslip_management_filter(db: Session, current_user: User, alias: str = 'p'):
     roles = _roles(db, current_user)
     if 'SuperUser' in roles:
         return '1=1', {}
     fid = _franchise_id_for_user(db, current_user)
     if _can_payroll(db, current_user) and fid:
         return f'{alias}.franchise_user_id = :fid', {'fid': fid}
-    return f'{alias}.user_id = :uid', {'uid': current_user.id}
+    return '1=0', {}
 
+
+def _get_manageable_payslip(db: Session, current_user: User, payslip_id: int):
+    where, params = _payslip_management_filter(db, current_user, 'p')
+    params['id'] = payslip_id
+    row = db.execute(text(f"""
+        SELECT p.id
+        FROM payroll_payslips p
+        WHERE p.id = :id
+          AND COALESCE(p.is_active, TRUE) = TRUE
+          AND {where}
+        LIMIT 1
+    """), params).mappings().first()
+    if not row:
+        raise HTTPException(status_code=404, detail='Payslip not found')
+    return row
 
 def _get_scoped_payslip(db: Session, current_user: User, payslip_id: int):
     where, params = _payslip_scope_filter(db, current_user, 'p')
@@ -721,7 +746,7 @@ def delete_payslip(payslip_id: int, current_user: User = Depends(get_current_use
     _ensure_tables(db)
     if not _can_payroll(db, current_user):
         raise HTTPException(status_code=403, detail='Only SuperUser, FranchiseUser or Finance users can delete payslips')
-    _get_scoped_payslip(db, current_user, payslip_id)
+    _get_manageable_payslip(db, current_user, payslip_id)
     db.execute(text("""
         UPDATE payroll_payslips
         SET is_active = FALSE, deleted_at = :deleted_at, deleted_by_user_id = :deleted_by

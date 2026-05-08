@@ -12,7 +12,6 @@ import {
 
 import OfficeLocationMap from '../components/OfficeLocationMap'
 import DragDropFileInput from '../components/DragDropFileInput.jsx'
-import StaffIdCard from '../components/StaffIdCard.jsx'
 import { getCurrentLocation } from "../utils/location";
 import { getDistance } from "../utils/distance";
 
@@ -162,8 +161,6 @@ function StaffDetail({ title, item, onClose, onEdit }) {
           <button type="button" className="link-button" onClick={onClose}>Close</button>
         </div>
       </div>
-
-      <StaffIdCard item={item} />
 
       <div className="staff-detail-with-photo">
         <div className="id-photo-placeholder readonly-photo">

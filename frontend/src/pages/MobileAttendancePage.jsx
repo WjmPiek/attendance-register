@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react'
 import Card from '../components/Card'
 import { getAttendanceStatus, submitAttendance, validateOfficeQr } from '../api/client'
 import SignaturePad from '../components/SignaturePad'
-import DigitalIdCard from '../components/DigitalIdCard'
 
 export default function MobileAttendancePage({ me }) {
   const [status, setStatus] = useState(null)
@@ -154,7 +153,6 @@ export default function MobileAttendancePage({ me }) {
 
   return (
     <Card title="Mobile Employee Attendance">
-      <DigitalIdCard />
       <p className="muted">Sign in/out with GPS and signature. Choose On road when working away from the assigned office.</p>
       <div className="status-panel">
         <div><strong>User:</strong> {me.full_name}</div>
