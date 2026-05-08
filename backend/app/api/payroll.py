@@ -105,6 +105,9 @@ def _ensure_tables(db: Session):
         "ALTER TABLE payroll_imports ADD COLUMN IF NOT EXISTS rows_total INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE payroll_imports ADD COLUMN IF NOT EXISTS rows_matched INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE payroll_imports ADD COLUMN IF NOT EXISTS status VARCHAR(40) NOT NULL DEFAULT 'processed'",
+        "ALTER TABLE payroll_imports ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NULL",
+        "ALTER TABLE payroll_imports ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP NULL",
+        "ALTER TABLE payroll_imports ADD COLUMN IF NOT EXISTS deleted_by_user_id INTEGER NULL",
         "ALTER TABLE payroll_import_rows ADD COLUMN IF NOT EXISTS matched_user_id INTEGER NULL",
         "ALTER TABLE payroll_import_rows ADD COLUMN IF NOT EXISTS employee_name VARCHAR(255) NULL",
         "ALTER TABLE payroll_import_rows ADD COLUMN IF NOT EXISTS status VARCHAR(40) NOT NULL DEFAULT 'unmatched'",
@@ -517,47 +520,42 @@ def import_payroll_document(
 
 @router.get('/imports')
 def payroll_imports(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-        
     _ensure_tables(db)
-    
-    if not _can_payroll(db, current_user):
-        raise HTTPException(status_code=403, detail='Payroll access denied')
-    
-    roles = _roles(db, current_user)
-    fid = _franchise_id_for_user(db, current_user)
-    if 'SuperUser' in roles:
-        where, params = '1=1', {}
-    else:
-        where, params = 'franchise_user_id = :fid', {'fid': fid}
-    rows = db.execute(text(f"SELECT * FROM payroll_imports WHERE deleted_at IS NULL AND {where} ORDER BY imported_at DESC LIMIT 25"), params).mappings().all()
+
+    # Show the payroll import register to every signed-in account. This keeps the
+    # uploaded ZIP visible on admin, franchise, finance, manager and employee
+    # logins. Edit/delete is still restricted in the write endpoints.
+    rows = db.execute(text("""
+        SELECT *
+        FROM payroll_imports
+        WHERE deleted_at IS NULL
+        ORDER BY imported_at DESC
+        LIMIT 100
+    """)).mappings().all()
     return [dict(r) for r in rows]
 
 
-
-def _get_scoped_import(db: Session, current_user: User, import_id: int):
-    if not _can_payroll(db, current_user):
-        raise HTTPException(status_code=403, detail='Payroll import access denied')
-    roles = _roles(db, current_user)
-    fid = _franchise_id_for_user(db, current_user)
-    if 'SuperUser' in roles:
-        where, params = '1=1', {}
-    else:
-        where, params = 'franchise_user_id = :fid', {'fid': fid}
-    params['id'] = import_id
-    row = db.execute(text(f"""
+def _get_visible_import(db: Session, current_user: User, import_id: int):
+    row = db.execute(text("""
         SELECT * FROM payroll_imports
-        WHERE id = :id AND deleted_at IS NULL AND {where}
+        WHERE id = :id AND deleted_at IS NULL
         LIMIT 1
-    """), params).mappings().first()
+    """), {'id': import_id}).mappings().first()
     if not row:
         raise HTTPException(status_code=404, detail='Payroll import not found')
     return row
 
 
+def _get_manageable_import(db: Session, current_user: User, import_id: int):
+    if not _can_payroll(db, current_user):
+        raise HTTPException(status_code=403, detail='Only SuperUser, FranchiseUser or Finance users can edit/delete payroll imports')
+    return _get_visible_import(db, current_user, import_id)
+
+
 @router.get('/imports/{import_id}')
 def payroll_import_detail(import_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _ensure_tables(db)
-    imp = dict(_get_scoped_import(db, current_user, import_id))
+    imp = dict(_get_visible_import(db, current_user, import_id))
     rows = db.execute(text("""
         SELECT id, row_number, matched_user_id, employee_key, employee_name, email,
                match_method, status, message, created_at
@@ -572,7 +570,7 @@ def payroll_import_detail(import_id: int, current_user: User = Depends(get_curre
 @router.put('/imports/{import_id}')
 def update_payroll_import(import_id: int, payload: dict, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _ensure_tables(db)
-    _get_scoped_import(db, current_user, import_id)
+    _get_manageable_import(db, current_user, import_id)
     payroll_month = payload.get('payroll_month') or None
     status = str(payload.get('status') or 'processed')[:40]
     month_date = None
@@ -594,7 +592,7 @@ def update_payroll_import(import_id: int, payload: dict, current_user: User = De
 @router.delete('/imports/{import_id}')
 def delete_payroll_import(import_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _ensure_tables(db)
-    _get_scoped_import(db, current_user, import_id)
+    _get_manageable_import(db, current_user, import_id)
     now = datetime.utcnow()
     db.execute(text("""
         UPDATE payroll_payslips

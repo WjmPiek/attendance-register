@@ -49,16 +49,21 @@ export default function PayrollPage({ me }) {
   async function load() {
     setError('')
     try {
+      const importRowsPromise = getPayrollImports().catch(() => [])
       if (canManagePayroll) {
         const [importRows, payslipRows] = await Promise.all([
-          getPayrollImports(),
+          importRowsPromise,
           getPayrollPayslips().catch(() => getMyPayslips().catch(() => [])),
         ])
         setImports(importRows)
         setPayslips(payslipRows)
       } else {
-        setImports([])
-        setPayslips(await getMyPayslips())
+        const [importRows, payslipRows] = await Promise.all([
+          importRowsPromise,
+          getMyPayslips(),
+        ])
+        setImports(importRows)
+        setPayslips(payslipRows)
       }
     } catch (e) {
       setError(e.message || 'Failed to load payslips')
@@ -207,7 +212,8 @@ export default function PayrollPage({ me }) {
         </div>
       </section>
 
-      {canManagePayroll ? <section className="form-card staff-list-card payroll-import-card">
+      <section className="form-card staff-list-card payroll-import-card">
+        {canManagePayroll ? <>
         <h2>Import payslip ZIP</h2>
         <p className="muted">Finance users can upload a password-protected payslip ZIP. Files are matched to employees by EMPL. NO and saved under each employee's Payslip tab.</p>
         <form onSubmit={uploadPayrollFile} className="payroll-import-form">
@@ -216,10 +222,11 @@ export default function PayrollPage({ me }) {
           <button className="primary-action" type="submit">Import payslips</button>
         </form>
         {importResult ? <div className="import-result"><p className="success">Imported {importResult.rows_matched} of {importResult.rows_total} payroll rows.</p></div> : null}
+        </> : <><h2>Payroll imports</h2><p className="muted">Payroll ZIP imports uploaded on the system.</p></>}
         <h3>Recent payroll imports</h3>
-        <div className="table-wrap"><table><thead><tr><th>Date</th><th>File</th><th>Rows</th><th>Matched</th><th>Status</th><th>Action</th></tr></thead><tbody>{imports.map((r) => <tr key={r.id}><td>{new Date(r.imported_at).toLocaleString('en-ZA', { timeZone: 'Africa/Johannesburg', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</td><td>{r.filename}</td><td>{r.rows_total}</td><td>{r.rows_matched}</td><td>{r.status}</td><td><div className="action-row"><button type="button" className="glass-button" onClick={() => handleViewImport(r)}>View</button><button type="button" className="glass-button" onClick={() => handleEditImport(r)}>Edit</button><button type="button" className="glass-button danger-button" onClick={() => handleDeleteImport(r)}>Delete</button></div></td></tr>)}{!imports.length ? <tr><td colSpan="6" className="muted">No payroll imports yet.</td></tr> : null}</tbody></table></div>
+        <div className="table-wrap"><table><thead><tr><th>Date</th><th>File</th><th>Rows</th><th>Matched</th><th>Status</th><th>Action</th></tr></thead><tbody>{imports.map((r) => <tr key={r.id}><td>{new Date(r.imported_at).toLocaleString('en-ZA', { timeZone: 'Africa/Johannesburg', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</td><td>{r.filename}</td><td>{r.rows_total}</td><td>{r.rows_matched}</td><td>{r.status}</td><td><div className="action-row"><button type="button" className="glass-button" onClick={() => handleViewImport(r)}>View</button>{canManagePayroll ? <button type="button" className="glass-button" onClick={() => handleEditImport(r)}>Edit</button> : null}{canManagePayroll ? <button type="button" className="glass-button danger-button" onClick={() => handleDeleteImport(r)}>Delete</button> : null}</div></td></tr>)}{!imports.length ? <tr><td colSpan="6" className="muted">No payroll imports yet.</td></tr> : null}</tbody></table></div>
         {selectedImport ? <div className="import-result"><div className="list-header"><div><h3>Import details: {selectedImport.filename}</h3><p className="muted">Matched {selectedImport.rows_matched} of {selectedImport.rows_total} rows.</p></div><button type="button" className="glass-button" onClick={() => setSelectedImport(null)}>Close</button></div><div className="table-wrap"><table><thead><tr><th>Row</th><th>Employee Code</th><th>Employee</th><th>Matched User</th><th>Method</th><th>Status</th><th>Message</th></tr></thead><tbody>{(selectedImport.rows || []).map((row) => <tr key={row.id}><td>{row.row_number}</td><td>{row.employee_key || '-'}</td><td>{row.employee_name || row.email || '-'}</td><td>{row.matched_user_id || '-'}</td><td>{row.match_method || '-'}</td><td>{row.status}</td><td>{row.message || '-'}</td></tr>)}</tbody></table></div></div> : null}
-      </section> : null}
+      </section>
     </div>
   )
 }
