@@ -1852,3 +1852,30 @@ td, th {
     --font-button: clamp(12px, 0.2vw + 10px, 14px);
   }
 }
+
+/* Calendar date fields: use native date/month/year picker and keep text readable on all screen sizes */
+input[type="date"],
+.calendar-date-input {
+  min-height: 42px;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  font-size: clamp(12px, 1.7vw, 14px);
+  line-height: 1.4;
+  padding: 0.65rem 0.75rem;
+}
+
+input[type="date"]::-webkit-date-and-time-value,
+.calendar-date-input::-webkit-date-and-time-value {
+  min-height: 1.4em;
+  text-align: left;
+}
+
+@media (max-width: 520px) {
+  input[type="date"],
+  .calendar-date-input {
+    min-height: 46px;
+    font-size: 12px;
+    padding: 0.7rem 0.65rem;
+  }
+}

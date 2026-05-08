@@ -228,7 +228,7 @@ export default function PayrollPage({ me }) {
           <h2>Import payslip ZIP</h2>
           <p className="muted">Admin, franchise and finance users can upload a password-protected payslip ZIP. Files are matched to employees by EMPL. NO and saved under each employee's Payslip tab.</p>
           <form onSubmit={uploadPayrollFile} className="payroll-import-form">
-            <label>Payroll month<input type="date" value={month} onChange={(e) => setMonth(e.target.value)} /></label>
+            <label>Payroll month<input type="date" className="calendar-date-input" value={month} onChange={(e) => setMonth(e.target.value)} /></label>
             <DragDropFileInput label="Payroll file" accept=".csv,.xlsx,.xls,.pdf,.zip,.ZIP,application/zip,application/x-zip-compressed" file={importFile} onFile={setImportFile} />
             <button className="primary-action" type="submit">Import payslips</button>
           </form>

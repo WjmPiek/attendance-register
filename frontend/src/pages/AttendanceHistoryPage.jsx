@@ -214,6 +214,7 @@ export default function AttendanceHistoryPage({ me }) {
           From
           <input
             type="date"
+            className="calendar-date-input"
             value={filters.fromDate}
             onChange={(event) => setFilters({ ...filters, fromDate: event.target.value })}
           />
@@ -222,6 +223,7 @@ export default function AttendanceHistoryPage({ me }) {
           To
           <input
             type="date"
+            className="calendar-date-input"
             value={filters.toDate}
             onChange={(event) => setFilters({ ...filters, toDate: event.target.value })}
           />

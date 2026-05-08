@@ -136,7 +136,7 @@ export default function LeavePage({ me }) {
   const canDecide = me.roles.includes('SuperUser') || me.roles.includes('FranchiseUser') || me.roles.includes('ManagerUser')
   const canApply = me.roles.includes('EmployeeUser') || me.roles.includes('ManagerUser')
   const [apps, setApps] = useState([])
-  const [form, setForm] = useState({ leave_type: 'Annual Leave', start_date_display: '', end_date_display: '', reason: '' })
+  const [form, setForm] = useState({ leave_type: 'Annual Leave', start_date: '', end_date: '', reason: '' })
   const [status, setStatus] = useState('')
   const [msg, setMsg] = useState('')
   const [err, setErr] = useState('')
@@ -156,14 +156,14 @@ export default function LeavePage({ me }) {
     e.preventDefault()
     setMsg('')
     setErr('')
-    const startIso = isoFromDdMmYyyy(form.start_date_display)
-    const endIso = isoFromDdMmYyyy(form.end_date_display)
+    const startIso = form.start_date
+    const endIso = form.end_date
     if (!startIso || !endIso) {
-      setErr('Please enter dates as dd/mm/yyyy, for example 07/05/2026.')
+      setErr('Please choose a start date and end date from the calendar.')
       return
     }
-    const startDate = parseDdMmYyyy(form.start_date_display)
-    const endDate = parseDdMmYyyy(form.end_date_display)
+    const startDate = toDateOnly(startIso)
+    const endDate = toDateOnly(endIso)
     if (!startDate || !endDate || endDate < startDate) {
       setErr('End date cannot be before start date.')
       return
@@ -171,7 +171,7 @@ export default function LeavePage({ me }) {
     try {
       await applyLeave({ leave_type: form.leave_type, start_date: startIso, end_date: endIso, reason: form.reason })
       setMsg('Leave application submitted for approval.')
-      setForm({ leave_type: 'Annual Leave', start_date_display: '', end_date_display: '', reason: '' })
+      setForm({ leave_type: 'Annual Leave', start_date: '', end_date: '', reason: '' })
       await load()
     } catch (error) {
       setErr(error.message || 'Could not submit leave application')
@@ -207,8 +207,8 @@ export default function LeavePage({ me }) {
           <form className="form-card staff-form-single" onSubmit={submit}>
             <h2>Apply for leave</h2>
             <label>Leave type<select value={form.leave_type} onChange={(e) => setForm({ ...form, leave_type: e.target.value })}>{leaveTypes.map((t) => <option key={t}>{t}</option>)}</select></label>
-            <label>Start date<input inputMode="numeric" placeholder="dd/mm/yyyy" value={form.start_date_display} onChange={(e) => setForm({ ...form, start_date_display: e.target.value })} required /></label>
-            <label>End date<input inputMode="numeric" placeholder="dd/mm/yyyy" value={form.end_date_display} onChange={(e) => setForm({ ...form, end_date_display: e.target.value })} required /></label>
+            <label>Start date<input type="date" className="calendar-date-input" value={form.start_date} onChange={(e) => setForm({ ...form, start_date: e.target.value })} required /></label>
+            <label>End date<input type="date" className="calendar-date-input" value={form.end_date} onChange={(e) => setForm({ ...form, end_date: e.target.value })} required /></label>
             <label className="wide">Reason<textarea value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} placeholder="Optional reason" /></label>
             <button className="primary-action">Submit leave application</button>
           </form>
