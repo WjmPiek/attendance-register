@@ -32,6 +32,16 @@ export default function Irp5DocumentsPage({ me }) {
   const [msg, setMsg] = useState('')
   const [err, setErr] = useState('')
 
+  function askDocumentPassword() {
+    if (canUpload) return ''
+    const password = window.prompt('Enter your account password to open this private document')
+    if (!password) {
+      setErr('Password is required to open this private document.')
+      return null
+    }
+    return password
+  }
+
   const load = async () => {
     setErr('')
     try {
@@ -72,7 +82,9 @@ export default function Irp5DocumentsPage({ me }) {
   const download = async (doc) => {
     setErr('')
     try {
-      const blob = await downloadIrp5Document(doc.id)
+      const password = askDocumentPassword()
+      if (password === null) return
+      const blob = await downloadIrp5Document(doc.id, password)
       saveBlob(blob, doc.original_filename || `irp5-${doc.id}.pdf`)
     } catch (error) {
       setErr(error.message || 'Download failed')
@@ -82,7 +94,9 @@ export default function Irp5DocumentsPage({ me }) {
   const preview = async (doc) => {
     setErr('')
     try {
-      const blob = await downloadIrp5Document(doc.id)
+      const password = askDocumentPassword()
+      if (password === null) return
+      const blob = await downloadIrp5Document(doc.id, password)
       if (previewUrl) URL.revokeObjectURL(previewUrl)
       setPreviewUrl(URL.createObjectURL(blob))
       setPreviewName(doc.original_filename || `IRP5 ${doc.tax_year || ''}`)

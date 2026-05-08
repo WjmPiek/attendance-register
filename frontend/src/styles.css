@@ -1696,3 +1696,77 @@ h3 { font-size: 1.25rem; }
     border-radius: 24px;
   }
 }
+
+
+/* Mobile document and menu readability fixes */
+button,
+.glass-button,
+.primary-action,
+.link-button,
+.tab-button,
+.logout-button {
+  line-height: 1.25 !important;
+  min-height: 44px;
+  white-space: normal;
+  word-break: normal;
+  overflow-wrap: break-word;
+}
+
+.table-wrap th,
+.table-wrap td {
+  line-height: 1.35 !important;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+  body,
+  input,
+  select,
+  textarea,
+  button,
+  table,
+  p,
+  li,
+  label,
+  td,
+  th {
+    font-size: clamp(14px, 3.7vw, 16px) !important;
+    line-height: 1.35 !important;
+  }
+
+  h1 { font-size: clamp(1.55rem, 7vw, 2.05rem) !important; line-height: 1.12 !important; }
+  h2 { font-size: clamp(1.35rem, 6vw, 1.8rem) !important; line-height: 1.15 !important; }
+  h3 { font-size: clamp(1.05rem, 4.8vw, 1.35rem) !important; line-height: 1.2 !important; }
+
+  .mobile-staff-menu-shell .tab-button,
+  .mobile-staff-menu-shell .logout-button,
+  .mobile-staff-content-shell .glass-button,
+  .action-row button,
+  .action-row .glass-button,
+  .action-row .link-button {
+    min-height: 48px !important;
+    padding: 12px 16px !important;
+    line-height: 1.2 !important;
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+  }
+
+  .action-row {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+    align-items: stretch !important;
+  }
+
+  .action-row button,
+  .action-row .glass-button,
+  .action-row .link-button {
+    width: 100% !important;
+  }
+
+  .table-wrap {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+}

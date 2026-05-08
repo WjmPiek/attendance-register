@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user
 from app.db.session import get_db
 from app.models.core import User, UserRole
+from app.core.security import verify_password
 
 router = APIRouter()
 UPLOAD_DIR = Path(__file__).resolve().parents[2] / 'uploads' / 'irp5'
@@ -158,6 +159,16 @@ def _document_scope_filter(db: Session, current_user: User, alias: str = 'd'):
         return _document_management_filter(db, current_user, alias)
     return f'{alias}.target_user_id = :uid', {'uid': current_user.id}
 
+
+
+
+def _require_document_password_for_staff(db: Session, current_user: User, x_document_password: str | None):
+    # Manager/employee self-service users must re-enter their login password before private IRP5 files are streamed.
+    # Admin, franchise and finance users keep management access through role-scoped checks.
+    if _can_manage_documents(db, current_user):
+        return
+    if not x_document_password or not verify_password(x_document_password, current_user.password_hash):
+        raise HTTPException(status_code=403, detail='Incorrect password for this private document')
 
 def _get_manageable_document(db: Session, current_user: User, document_id: int):
     where, params = _document_management_filter(db, current_user, 'd')
@@ -345,9 +356,10 @@ def my_irp5_documents(current_user: User = Depends(get_current_user), db: Sessio
 
 
 @router.get('/documents/{document_id}/download')
-def download_irp5(document_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def download_irp5(document_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db), x_document_password: str | None = Header(default=None)):
     _ensure_table(db)
     row = _get_scoped_document(db, current_user, document_id)
+    _require_document_password_for_staff(db, current_user, x_document_password)
     path = UPLOAD_DIR / row['stored_filename']
     if not path.exists():
         raise HTTPException(status_code=404, detail='Stored document file is missing')

@@ -6,7 +6,7 @@ import re
 import pyzipper
 from fastapi.responses import Response
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Header
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user
 from app.db.session import get_db
 from app.models.core import User, UserRole
+from app.core.security import verify_password
 
 router = APIRouter()
 
@@ -703,6 +704,36 @@ def _get_scoped_payslip(db: Session, current_user: User, payslip_id: int):
         raise HTTPException(status_code=404, detail='Payslip not found')
     return row
 
+
+
+def _require_document_password_for_staff(db: Session, current_user: User, x_document_password: str | None):
+    # Admin/franchise/finance users may manage documents without the extra file-password prompt.
+    # Manager/employee self-service users must enter the payslip document password before streaming the file.
+    if _can_payroll(db, current_user):
+        return
+    if not x_document_password:
+        raise HTTPException(status_code=403, detail='Document password is required')
+
+
+def _open_payslip_for_staff(row, x_document_password: str | None):
+    content_type = (row.get('content_type') or '').lower()
+    original_name = row.get('original_filename') or 'payslip.pdf'
+    content = row['file_content']
+    if 'zip' not in content_type and not str(row.get('zip_filename') or '').lower().endswith('.zip'):
+        return content, content_type or 'application/octet-stream', original_name
+    try:
+        with pyzipper.AESZipFile(io.BytesIO(content)) as zf:
+            names = [n for n in zf.namelist() if not n.endswith('/')]
+            preferred = next((n for n in names if n.split('/')[-1].lower() == str(original_name).split('/')[-1].lower()), None)
+            pdf_name = preferred or next((n for n in names if n.lower().endswith('.pdf')), None) or (names[0] if names else None)
+            if not pdf_name:
+                raise RuntimeError('No payslip file found in ZIP')
+            data = zf.read(pdf_name, pwd=str(x_document_password or '').encode('utf-8'))
+            media = 'application/pdf' if pdf_name.lower().endswith('.pdf') else 'application/octet-stream'
+            return data, media, pdf_name.split('/')[-1]
+    except Exception:
+        raise HTTPException(status_code=403, detail='Incorrect payslip document password')
+
 def _is_staff_user(db: Session, user_id: int) -> bool:
     row = db.execute(text("""
         SELECT 1 FROM employee_users WHERE user_id = :uid AND COALESCE(is_active, TRUE)=TRUE
@@ -767,6 +798,7 @@ def download_payslip(
     payslip_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    x_document_password: str | None = Header(default=None),
 ):
     _ensure_tables(db)
 
@@ -774,13 +806,21 @@ def download_payslip(
         raise HTTPException(status_code=403, detail='Payslip access denied')
 
     row = _get_scoped_payslip(db, current_user, payslip_id)
+    _require_document_password_for_staff(db, current_user, x_document_password)
 
+    if _can_payroll(db, current_user):
+        return Response(
+            content=row["file_content"],
+            media_type=row.get('content_type') or 'application/zip',
+            headers={"Content-Disposition": f'attachment; filename="{row["zip_filename"]}"'}
+        )
+
+    content, media_type, filename = _open_payslip_for_staff(row, x_document_password)
+    disposition = 'inline' if media_type == 'application/pdf' else 'attachment'
     return Response(
-        content=row["file_content"],
-        media_type=row.get('content_type') or 'application/zip',
-        headers={
-            "Content-Disposition": f'attachment; filename="{row["zip_filename"]}"'
-        }
+        content=content,
+        media_type=media_type,
+        headers={"Content-Disposition": f'{disposition}; filename="{filename}"'}
     )
 
 

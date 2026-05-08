@@ -22,11 +22,11 @@ export async function apiRequest(path, options = {}) {
   return response.json()
 }
 
-export async function apiBlob(path) {
+export async function apiBlob(path, options = {}) {
   const token = localStorage.getItem('token')
-  const headers = {}
+  const headers = { ...(options.headers || {}) }
   if (token) headers.Authorization = `Bearer ${token}`
-  const response = await fetch(`${API_BASE_URL}${path}`, { headers })
+  const response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers })
   if (!response.ok) {
     const body = await response.text().catch(() => 'Request failed')
     throw new Error(body || 'Request failed')
@@ -214,8 +214,9 @@ export async function getPayrollPayslips() {
   return apiRequest('/payroll/payslips')
 }
 
-export async function downloadPayslip(id) {
-  return apiBlob(`/payroll/payslips/${id}`)
+export async function downloadPayslip(id, password = '') {
+  const headers = password ? { 'X-Document-Password': password } : {}
+  return apiBlob(`/payroll/payslips/${id}`, { headers })
 }
 
 export async function deletePayslip(id) {
@@ -259,16 +260,17 @@ export async function getIrp5Documents() {
   return apiRequest('/irp5/documents')
 }
 
-export async function downloadIrp5Document(documentId) {
-  return apiBlob(`/irp5/documents/${documentId}/download`)
+export async function downloadIrp5Document(documentId, password = '') {
+  const headers = password ? { 'X-Document-Password': password } : {}
+  return apiBlob(`/irp5/documents/${documentId}/download`, { headers })
 }
 
 export async function deleteIrp5Document(documentId) {
   return apiRequest(`/irp5/documents/${documentId}`, { method: 'DELETE' })
 }
 
-export async function previewIrp5Document(documentId) {
-  return apiBlob(`/irp5/documents/${documentId}/download`)
+export async function previewIrp5Document(documentId, password = '') {
+  return downloadIrp5Document(documentId, password)
 }
 
 

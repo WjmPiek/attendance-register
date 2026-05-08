@@ -46,6 +46,16 @@ export default function PayrollPage({ me }) {
   const [error, setError] = useState('')
   const [selectedImport, setSelectedImport] = useState(null)
 
+  function askDocumentPassword() {
+    if (canManagePayroll) return ''
+    const password = window.prompt('Enter your account password to open this private document')
+    if (!password) {
+      setError('Password is required to open this private document.')
+      return null
+    }
+    return password
+  }
+
   async function load() {
     setError('')
     try {
@@ -90,9 +100,11 @@ export default function PayrollPage({ me }) {
     setMessage('')
     setError('')
     try {
-      const blob = await downloadPayslip(payslip.id)
+      const password = askDocumentPassword()
+      if (password === null) return
+      const blob = await downloadPayslip(payslip.id, password)
       openBlob(blob)
-      setMessage('Payslip opened. If your browser downloads it instead, open it with the employee ID Number as the ZIP password.')
+      setMessage('Payslip opened. If the file itself is password protected, use the document password supplied by payroll.')
     } catch (err) {
       setError(err.message || 'Could not view payslip')
     }
@@ -102,9 +114,11 @@ export default function PayrollPage({ me }) {
     setMessage('')
     setError('')
     try {
-      const blob = await downloadPayslip(payslip.id)
+      const password = askDocumentPassword()
+      if (password === null) return
+      const blob = await downloadPayslip(payslip.id, password)
       saveBlob(blob, payslip.zip_filename || payslip.original_filename || 'payslip.zip')
-      setMessage('Payslip downloaded. Open it with the employee ID Number as the ZIP password.')
+      setMessage('Payslip downloaded. If the file itself is password protected, use the document password supplied by payroll.')
     } catch (err) {
       setError(err.message || 'Could not download payslip')
     }
