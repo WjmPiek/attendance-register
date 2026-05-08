@@ -17,6 +17,8 @@ export default function Irp5DocumentsPage({ me }) {
   const isFinance = (me.employee_role || '').trim().toLowerCase().includes('finance')
   const canUpload = me.roles.includes('SuperUser') || me.roles.includes('FranchiseUser') || isFinance
   const isEmployee = me.roles.includes('EmployeeUser')
+  const isManager = me.roles.includes('ManagerUser')
+  const isStaffSelfService = isEmployee || isManager
   const canDelete = canUpload
   const [employees, setEmployees] = useState([])
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('')
@@ -34,7 +36,7 @@ export default function Irp5DocumentsPage({ me }) {
     setErr('')
     try {
       if (canUpload) setEmployees(await getIrp5Employees())
-      setDocs(canUpload ? await getIrp5Documents() : (isEmployee ? await getMyIrp5Documents() : []))
+      setDocs(canUpload ? await getIrp5Documents() : (isStaffSelfService ? await getMyIrp5Documents() : []))
     } catch (error) {
       setErr(error.message || 'Failed to load IRP5 documents')
     }
@@ -136,7 +138,7 @@ export default function Irp5DocumentsPage({ me }) {
         </section>
       ) : null}
 
-      {(isEmployee || canUpload) ? (
+      {(isStaffSelfService || canUpload) ? (
         <section className="form-card staff-list-card">
           <div className="list-header"><div><h2>{canUpload ? 'IRP 5 Documents' : 'My IRP 5 Documents'}</h2><p className="muted">Preview PDF in the app, download it, print it, or delete it if your user role allows deleting.</p></div><label>Tax year<select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)}><option value="">All years</option>{years.map((y) => <option key={y} value={y}>{y}</option>)}</select></label></div>
           {Object.keys(groupedDocs).map((year) => (

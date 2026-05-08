@@ -15,7 +15,9 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
   const isManagerUser = me.roles.includes('ManagerUser')
   const isEmployee = me.roles.includes('EmployeeUser')
   const isFinanceEmployee = (me.employee_role || '').trim().toLowerCase().includes('finance')
-  const canUsePayroll = isSuperUser || isFranchiseUser || isFinanceEmployee
+  const isStaffSelfService = isEmployee || isManagerUser
+  const canManagePayroll = isSuperUser || isFranchiseUser || isFinanceEmployee
+  const canUsePayroll = canManagePayroll || isStaffSelfService
   const isSignCapable = isEmployee || isManagerUser || isSuperUser
   const isApprovalCapable = isSuperUser || isFranchiseUser || isManagerUser
 
@@ -27,9 +29,9 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
     { id: 'staff', label: 'HR Staff', visible: isSuperUser || isFranchiseUser },
     { id: 'franchises', label: 'Franchise Approvals', visible: isSuperUser },
     { id: 'leave', label: 'Leave', visible: isEmployee || isManagerUser || isFranchiseUser || isSuperUser },
-    { id: 'payroll', label: 'Payroll', visible: canUsePayroll },
-    { id: 'irp5', label: isFinanceEmployee ? 'IRP 5 Uploads' : 'My IRP 5', visible: isEmployee || isFranchiseUser || isSuperUser },
-  ].filter((tab) => tab.visible), [isSignCapable, isApprovalCapable, isSuperUser, isFranchiseUser, isEmployee, isManagerUser, isFinanceEmployee, canUsePayroll])
+    { id: 'payroll', label: canManagePayroll ? 'Payroll' : 'Payslips', visible: canUsePayroll },
+    { id: 'irp5', label: canManagePayroll ? 'IRP 5 Uploads' : 'My IRP 5', visible: isStaffSelfService || isFranchiseUser || isSuperUser },
+  ].filter((tab) => tab.visible), [isSignCapable, isApprovalCapable, isSuperUser, isFranchiseUser, isEmployee, isManagerUser, isFinanceEmployee, isStaffSelfService, canManagePayroll, canUsePayroll])
 
   const defaultTab = new URLSearchParams(window.location.search).get('tab') || 'home'
   const [activeTab, setActiveTab] = useState(tabs.some((tab) => tab.id === defaultTab) ? defaultTab : (tabs[0]?.id || 'attendance'))

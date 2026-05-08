@@ -31,7 +31,9 @@ function saveBlob(blob, filename) {
   URL.revokeObjectURL(url)
 }
 
-export default function PayrollPage() {
+export default function PayrollPage({ me }) {
+  const isFinance = (me?.employee_role || '').trim().toLowerCase().includes('finance')
+  const canManagePayroll = Boolean(me?.roles?.includes('SuperUser') || me?.roles?.includes('FranchiseUser') || isFinance)
   const [imports, setImports] = useState([])
   const [payslips, setPayslips] = useState([])
   const [importFile, setImportFile] = useState(null)
@@ -43,18 +45,23 @@ export default function PayrollPage() {
   async function load() {
     setError('')
     try {
-      const [importRows, payslipRows] = await Promise.all([
-        getPayrollImports(),
-        getPayrollPayslips().catch(() => getMyPayslips().catch(() => [])),
-      ])
-      setImports(importRows)
-      setPayslips(payslipRows)
+      if (canManagePayroll) {
+        const [importRows, payslipRows] = await Promise.all([
+          getPayrollImports(),
+          getPayrollPayslips().catch(() => getMyPayslips().catch(() => [])),
+        ])
+        setImports(importRows)
+        setPayslips(payslipRows)
+      } else {
+        setImports([])
+        setPayslips(await getMyPayslips())
+      }
     } catch (e) {
       setError(e.message || 'Failed to load payslips')
     }
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { load() }, [canManagePayroll])
 
   async function uploadPayrollFile(e) {
     e.preventDefault()
@@ -116,8 +123,8 @@ export default function PayrollPage() {
       {error ? <p className="error">{error}</p> : null}
 
       <section className="form-card staff-list-card">
-        <h2>Payslip Documents</h2>
-        <p className="muted">Franchise and Finance users can view, download or delete payslips in their allowed franchise scope. Payslip ZIP files still use the employee ID Number as the password.</p>
+        <h2>{canManagePayroll ? 'Payslip Documents' : 'My Payslips'}</h2>
+        <p className="muted">{canManagePayroll ? 'Franchise and Finance users can view, download or delete payslips in their allowed franchise scope.' : 'View or download your payslips here.'} Payslip ZIP files still use the employee ID Number as the password.</p>
         <div className="table-wrap">
           <table>
             <thead>
@@ -142,7 +149,7 @@ export default function PayrollPage() {
                     <div className="action-row">
                       <button type="button" className="glass-button" onClick={() => handleViewPayslip(p)}>View</button>
                       <button type="button" className="glass-button" onClick={() => handleDownloadPayslip(p)}>Download</button>
-                      <button type="button" className="glass-button danger-button" onClick={() => handleDeletePayslip(p)}>Delete</button>
+                      {canManagePayroll ? <button type="button" className="glass-button danger-button" onClick={() => handleDeletePayslip(p)}>Delete</button> : null}
                     </div>
                   </td>
                 </tr>
@@ -153,7 +160,7 @@ export default function PayrollPage() {
         </div>
       </section>
 
-      <section className="form-card staff-list-card payroll-import-card">
+      {canManagePayroll ? <section className="form-card staff-list-card payroll-import-card">
         <h2>Import payslip ZIP</h2>
         <p className="muted">Finance users can upload a password-protected payslip ZIP. Files are matched to employees by EMPL. NO and saved under each employee's Payslip tab.</p>
         <form onSubmit={uploadPayrollFile} className="payroll-import-form">
@@ -164,7 +171,8 @@ export default function PayrollPage() {
         {importResult ? <div className="import-result"><p className="success">Imported {importResult.rows_matched} of {importResult.rows_total} payroll rows.</p></div> : null}
         <h3>Recent payroll imports</h3>
         <div className="table-wrap"><table><thead><tr><th>Date</th><th>File</th><th>Rows</th><th>Matched</th><th>Status</th></tr></thead><tbody>{imports.map((r) => <tr key={r.id}><td>{new Date(r.imported_at).toLocaleString('en-ZA', { timeZone: 'Africa/Johannesburg', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</td><td>{r.filename}</td><td>{r.rows_total}</td><td>{r.rows_matched}</td><td>{r.status}</td></tr>)}{!imports.length ? <tr><td colSpan="5" className="muted">No payroll imports yet.</td></tr> : null}</tbody></table></div>
-      </section>
+      </section> : null}
     </div>
   )
 }
+
