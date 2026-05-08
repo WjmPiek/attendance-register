@@ -1595,3 +1595,104 @@ h3 { font-size: 1.25rem; }
   h1 { font-size: 1.9rem; }
   h2 { font-size: 1.45rem; }
 }
+
+/* Mobile employee/manager landing menu: keep the menu separate from page content. */
+@media (max-width: 760px) {
+  .mobile-staff-menu-shell {
+    min-height: 100dvh;
+    display: flex !important;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 18px;
+    background: #f3f4f6;
+  }
+
+  .mobile-staff-menu-shell .sidebar {
+    position: relative;
+    top: auto;
+    width: min(100%, 430px);
+    min-height: auto;
+    height: auto;
+    padding: 22px;
+    border-radius: 30px;
+    gap: 18px;
+  }
+
+  .mobile-staff-menu-shell .brand-block {
+    margin-bottom: 6px;
+  }
+
+  .mobile-staff-menu-shell .brand-block img {
+    width: 112px;
+    height: 62px;
+    border-radius: 22px;
+  }
+
+  .mobile-staff-menu-shell .brand-block strong {
+    font-size: 1.35rem;
+  }
+
+  .mobile-staff-menu-shell .sidebar-tabs {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 13px;
+    overflow: visible;
+    padding: 0;
+  }
+
+  .mobile-staff-menu-shell .tab-button,
+  .mobile-staff-menu-shell .logout-button {
+    min-height: 64px;
+    border-radius: 22px;
+    padding: 16px 18px;
+    font-size: 1rem;
+  }
+
+  .mobile-staff-menu-shell .logout-button {
+    margin-top: 12px;
+    text-align: center;
+    justify-content: center;
+  }
+
+  .mobile-staff-content-shell {
+    display: block !important;
+    min-height: 100dvh;
+    padding: 12px;
+    background: #f3f4f6;
+  }
+
+  .mobile-staff-content-shell .content-panel {
+    width: 100%;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .mobile-page-header {
+    position: sticky;
+    top: 8px;
+    z-index: 20;
+    padding: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    border-radius: 22px;
+  }
+
+  .mobile-page-header .glass-button {
+    width: auto;
+    min-height: 44px;
+    padding: 10px 14px;
+    border-radius: 16px;
+  }
+
+  .mobile-staff-content-shell .card,
+  .mobile-staff-content-shell .form-card,
+  .mobile-staff-content-shell .section-header,
+  .mobile-staff-content-shell .topbar,
+  .mobile-staff-content-shell .glass-card {
+    border-radius: 24px;
+  }
+}
