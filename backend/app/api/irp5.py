@@ -3,7 +3,7 @@ from datetime import datetime
 from pathlib import Path
 import uuid
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Header
 from fastapi.responses import FileResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
