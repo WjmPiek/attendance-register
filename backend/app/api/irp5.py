@@ -41,11 +41,34 @@ def _ensure_table(db: Session):
             updated_at TIMESTAMP NULL
         )
     """))
-    db.execute(text("ALTER TABLE irp5_documents ADD COLUMN IF NOT EXISTS manager_user_id INTEGER NULL"))
-    db.execute(text("ALTER TABLE irp5_documents ADD COLUMN IF NOT EXISTS document_type VARCHAR(40) NULL DEFAULT 'IRP5'"))
-    db.execute(text("ALTER TABLE irp5_documents ADD COLUMN IF NOT EXISTS target_staff_type VARCHAR(40) NULL DEFAULT 'employee'"))
-    db.execute(text("ALTER TABLE irp5_documents ADD COLUMN IF NOT EXISTS target_staff_id INTEGER NULL"))
-    db.execute(text("ALTER TABLE irp5_documents ALTER COLUMN employee_user_id DROP NOT NULL"))
+    for stmt in [
+        "ALTER TABLE irp5_documents ADD COLUMN IF NOT EXISTS employee_user_id INTEGER NULL",
+        "ALTER TABLE irp5_documents ADD COLUMN IF NOT EXISTS target_user_id INTEGER NULL",
+        "ALTER TABLE irp5_documents ADD COLUMN IF NOT EXISTS uploaded_by_user_id INTEGER NULL",
+        "ALTER TABLE irp5_documents ADD COLUMN IF NOT EXISTS franchise_user_id INTEGER NULL",
+        "ALTER TABLE irp5_documents ADD COLUMN IF NOT EXISTS manager_user_id INTEGER NULL",
+        "ALTER TABLE irp5_documents ADD COLUMN IF NOT EXISTS original_filename VARCHAR(255) NULL",
+        "ALTER TABLE irp5_documents ADD COLUMN IF NOT EXISTS stored_filename VARCHAR(255) NULL",
+        "ALTER TABLE irp5_documents ADD COLUMN IF NOT EXISTS content_type VARCHAR(120) NULL",
+        "ALTER TABLE irp5_documents ADD COLUMN IF NOT EXISTS file_size INTEGER NULL",
+        "ALTER TABLE irp5_documents ADD COLUMN IF NOT EXISTS tax_year VARCHAR(20) NULL",
+        "ALTER TABLE irp5_documents ADD COLUMN IF NOT EXISTS notes TEXT NULL",
+        "ALTER TABLE irp5_documents ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE",
+        "ALTER TABLE irp5_documents ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT NOW()",
+        "ALTER TABLE irp5_documents ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NULL",
+        "ALTER TABLE irp5_documents ADD COLUMN IF NOT EXISTS document_type VARCHAR(40) NULL DEFAULT 'IRP5'",
+        "ALTER TABLE irp5_documents ADD COLUMN IF NOT EXISTS target_staff_type VARCHAR(40) NULL DEFAULT 'employee'",
+        "ALTER TABLE irp5_documents ADD COLUMN IF NOT EXISTS target_staff_id INTEGER NULL",
+    ]:
+        db.execute(text(stmt))
+    db.commit()
+    try:
+        db.execute(text("ALTER TABLE irp5_documents ALTER COLUMN employee_user_id DROP NOT NULL"))
+        db.execute(text("ALTER TABLE irp5_documents ALTER COLUMN target_user_id DROP NOT NULL"))
+    except Exception:
+        db.rollback()
+    else:
+        db.commit()
     db.commit()
 
 
@@ -270,8 +293,8 @@ def scoped_irp5_documents(current_user: User = Depends(get_current_user), db: Se
                COALESCE(e.name || ' ' || e.surname, m.name || ' ' || m.surname, u.full_name, u.email) AS staff_name
         FROM irp5_documents d
         LEFT JOIN users u ON u.id = d.target_user_id
-        LEFT JOIN employee_users e ON e.user_id = d.target_user_id
-        LEFT JOIN manager_users m ON m.user_id = d.target_user_id
+        LEFT JOIN employee_users e ON (d.target_staff_type = 'employee' AND e.id = d.target_staff_id) OR (d.target_staff_type IS NULL AND e.user_id = d.target_user_id)
+        LEFT JOIN manager_users m ON (d.target_staff_type = 'manager' AND m.id = d.target_staff_id) OR (d.target_staff_type IS NULL AND m.user_id = d.target_user_id)
         WHERE COALESCE(d.is_active, TRUE) = TRUE AND {where}
         ORDER BY d.created_at DESC
         LIMIT 500

@@ -110,6 +110,16 @@ def _ensure_tables(db: Session):
         "ALTER TABLE payroll_import_rows ADD COLUMN IF NOT EXISTS status VARCHAR(40) NOT NULL DEFAULT 'unmatched'",
         "ALTER TABLE payroll_import_rows ADD COLUMN IF NOT EXISTS message TEXT NULL",
         "ALTER TABLE payroll_import_rows ADD COLUMN IF NOT EXISTS match_method VARCHAR(80) NULL",
+        "ALTER TABLE payroll_payslips ADD COLUMN IF NOT EXISTS import_id INTEGER NULL",
+        "ALTER TABLE payroll_payslips ADD COLUMN IF NOT EXISTS user_id INTEGER NULL",
+        "ALTER TABLE payroll_payslips ADD COLUMN IF NOT EXISTS franchise_user_id INTEGER NULL",
+        "ALTER TABLE payroll_payslips ADD COLUMN IF NOT EXISTS employee_key VARCHAR(255) NULL",
+        "ALTER TABLE payroll_payslips ADD COLUMN IF NOT EXISTS original_filename VARCHAR(255) NULL",
+        "ALTER TABLE payroll_payslips ADD COLUMN IF NOT EXISTS zip_filename VARCHAR(255) NULL",
+        "ALTER TABLE payroll_payslips ADD COLUMN IF NOT EXISTS file_content BYTEA NULL",
+        "ALTER TABLE payroll_payslips ADD COLUMN IF NOT EXISTS content_type VARCHAR(120) NOT NULL DEFAULT 'application/zip'",
+        "ALTER TABLE payroll_payslips ADD COLUMN IF NOT EXISTS uploaded_by_user_id INTEGER NULL",
+        "ALTER TABLE payroll_payslips ADD COLUMN IF NOT EXISTS uploaded_at TIMESTAMP NOT NULL DEFAULT NOW()",
         "ALTER TABLE payroll_payslips ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE",
         "ALTER TABLE payroll_payslips ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP NULL",
         "ALTER TABLE payroll_payslips ADD COLUMN IF NOT EXISTS deleted_by_user_id INTEGER NULL",
@@ -600,7 +610,7 @@ def download_payslip(
 
     return Response(
         content=row["file_content"],
-        media_type='application/zip',
+        media_type=row.get('content_type') or 'application/zip',
         headers={
             "Content-Disposition": f'attachment; filename="{row["zip_filename"]}"'
         }

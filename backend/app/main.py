@@ -1,4 +1,5 @@
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, Request, Response
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import auth, users, roles, meta, attendance, franchise, franchise_staff, franchise_dashboard, user_management, alerts, irp5, leave, payroll, audit
@@ -23,6 +24,30 @@ app.add_middleware(
     expose_headers=["*"],
     max_age=86400,
 )
+
+
+def _cors_headers_for_request(request: Request) -> dict:
+    origin = request.headers.get("origin") or "*"
+    return {
+        "Access-Control-Allow-Origin": origin if origin != "null" else "*",
+        "Access-Control-Allow-Methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
+        "Access-Control-Allow-Headers": request.headers.get("access-control-request-headers", "Authorization,Content-Type"),
+        "Access-Control-Expose-Headers": "Content-Disposition,Content-Type",
+        "Vary": "Origin",
+    }
+
+
+@app.middleware("http")
+async def cors_and_error_safety_middleware(request: Request, call_next):
+    if request.method == "OPTIONS":
+        return Response(status_code=204, headers=_cors_headers_for_request(request))
+    try:
+        response = await call_next(request)
+    except Exception as exc:
+        response = JSONResponse(status_code=500, content={"detail": "Internal server error", "error": str(exc)})
+    for key, value in _cors_headers_for_request(request).items():
+        response.headers.setdefault(key, value)
+    return response
 
 
 @app.options("/{full_path:path}", include_in_schema=False)
