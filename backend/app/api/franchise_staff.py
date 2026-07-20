@@ -1537,7 +1537,6 @@ def upload_staff_id_photo(staff_type: str, staff_id: int, file: UploadFile = Fil
         raise HTTPException(status_code=400, detail='Empty image upload')
     if len(content) > 5 * 1024 * 1024:
         raise HTTPException(status_code=400, detail='Image is too large. Use 5MB or smaller')
-<<<<<<< HEAD
     try:
         from PIL import Image
         from io import BytesIO
@@ -1549,8 +1548,6 @@ def upload_staff_id_photo(staff_type: str, staff_id: int, file: UploadFile = Fil
         raise
     except Exception:
         raise HTTPException(status_code=400, detail='The uploaded ID photo could not be read as a valid image')
-=======
->>>>>>> 68d4c6b668fc45688534acafaad6b75fa751476f
     table = 'employee_users' if staff_type == 'employees' else 'manager_users'
     db.execute(text(f"""
         UPDATE {table}

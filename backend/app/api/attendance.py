@@ -271,13 +271,8 @@ def _visible_attendance_user_ids(db: Session, current_user: User, franchise_id: 
                 FROM employee_users eu
                 JOIN users u ON u.id = eu.user_id
                 WHERE COALESCE(eu.is_active, TRUE) = TRUE AND COALESCE(u.is_active, TRUE) = TRUE
-<<<<<<< HEAD
                   AND eu.manager_user_id = :manager_id
             """), {'manager_id': manager['id']}).mappings().all()
-=======
-                  AND (eu.manager_user_id = :manager_id OR eu.franchise_user_id = :franchise_user_id)
-            """), {'manager_id': manager['id'], 'franchise_user_id': manager['franchise_user_id']}).mappings().all()
->>>>>>> 68d4c6b668fc45688534acafaad6b75fa751476f
             visible.update(int(r['user_id']) for r in rows if r['user_id'] is not None)
 
     return sorted(visible)

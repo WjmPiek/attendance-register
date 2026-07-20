@@ -3,11 +3,7 @@ import Card from '../components/Card'
 import { getAttendanceStatus, submitAttendance, validateOfficeQr } from '../api/client'
 import SignaturePad from '../components/SignaturePad'
 
-<<<<<<< HEAD
 export default function MobileAttendancePage({ me, onDone }) {
-=======
-export default function MobileAttendancePage({ me }) {
->>>>>>> 68d4c6b668fc45688534acafaad6b75fa751476f
   const [status, setStatus] = useState(null)
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
@@ -147,13 +143,10 @@ export default function MobileAttendancePage({ me }) {
       }
       const result = await submitAttendance(action, payload)
       setMessage(result.message)
-<<<<<<< HEAD
       setSignatureValue('')
       setEmployeeNote('')
       setQrValue('')
       setQrOffice(null)
-=======
->>>>>>> 68d4c6b668fc45688534acafaad6b75fa751476f
       await loadStatus()
     } catch (err) {
       setError(err.message)
@@ -222,11 +215,7 @@ export default function MobileAttendancePage({ me }) {
         </button>
       </div>
       <p className="muted small">GPS and signature are recorded for office and on-road events. On-road events go to approval review.</p>
-<<<<<<< HEAD
       {message ? <div className="status-panel"><p className="success">{message}</p><button type="button" onClick={() => onDone?.()}>Done</button></div> : null}
-=======
-      {message ? <p className="success">{message}</p> : null}
->>>>>>> 68d4c6b668fc45688534acafaad6b75fa751476f
       {error ? <p className="error">{error}</p> : null}
     </Card>
   )

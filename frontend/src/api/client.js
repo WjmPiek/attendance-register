@@ -401,7 +401,6 @@ export async function updateOfficeLocation(areaId, payload) {
     method: 'PATCH',
     body: JSON.stringify(payload),
   });
-<<<<<<< HEAD
 }
 export async function getCommissionTypes() { return apiRequest('/commission/types') }
 export async function getCommissionEmployees() { return apiRequest('/commission/employees') }
@@ -424,6 +423,3 @@ export async function downloadCommissionReport(filters = {}) {
   if (filters.toDate) params.set('to_date', filters.toDate)
   return apiBlob(`/commission/report.pdf${params.toString() ? `?${params}` : ''}`)
 }
-=======
-}
->>>>>>> 68d4c6b668fc45688534acafaad6b75fa751476f

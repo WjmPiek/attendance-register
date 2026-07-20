@@ -184,15 +184,9 @@ def _visible_staff(db: Session, current_user: User) -> list[dict]:
             FROM employee_users e
             JOIN users u ON u.id = e.user_id
             WHERE COALESCE(e.is_active, TRUE) = TRUE AND COALESCE(u.is_active, TRUE) = TRUE
-<<<<<<< HEAD
               AND e.manager_user_id = :mid
             ORDER BY e.name, e.surname
         '''), {'mid': manager['id']}).mappings().all()
-=======
-              AND (e.manager_user_id = :mid OR e.franchise_user_id = :fid)
-            ORDER BY e.name, e.surname
-        '''), {'mid': manager['id'], 'fid': manager['franchise_user_id']}).mappings().all()
->>>>>>> 68d4c6b668fc45688534acafaad6b75fa751476f
     else:
         rows = db.execute(text('''
             SELECT id AS user_id, email AS login_email, full_name AS name, '' AS surname, email, NULL AS contact_number,
@@ -481,11 +475,7 @@ def alerts_summary(current_user: User = Depends(get_current_user), db: Session =
     notifications = db.execute(text('''
         SELECT id, user_id, recipient_user_id, franchise_user_id, notification_type, subject, message, status, is_read, severity, target_tab, related_table, related_id, created_at
         FROM notifications
-<<<<<<< HEAD
         WHERE (user_id = :user_id OR recipient_user_id = :user_id OR (user_id IS NULL AND recipient_user_id IS NULL))
-=======
-        WHERE (user_id = :user_id OR recipient_user_id = :user_id OR user_id IS NULL)
->>>>>>> 68d4c6b668fc45688534acafaad6b75fa751476f
           AND (
               user_id IS NULL
               OR EXISTS (SELECT 1 FROM users u WHERE u.id = notifications.user_id AND COALESCE(u.is_active, TRUE) = TRUE)
@@ -504,11 +494,7 @@ def list_notifications(current_user: User = Depends(get_current_user), db: Sessi
     rows = db.execute(text('''
         SELECT id, user_id, recipient_user_id, franchise_user_id, notification_type, subject, message, status, is_read, severity, target_tab, related_table, related_id, created_at
         FROM notifications
-<<<<<<< HEAD
         WHERE (user_id = :user_id OR recipient_user_id = :user_id OR (user_id IS NULL AND recipient_user_id IS NULL))
-=======
-        WHERE (user_id = :user_id OR recipient_user_id = :user_id OR user_id IS NULL)
->>>>>>> 68d4c6b668fc45688534acafaad6b75fa751476f
           AND (
               user_id IS NULL
               OR EXISTS (SELECT 1 FROM users u WHERE u.id = notifications.user_id AND COALESCE(u.is_active, TRUE) = TRUE)
@@ -542,12 +528,8 @@ def mark_read(notification_id: int, current_user: User = Depends(get_current_use
     db.execute(text('''
         UPDATE notifications
         SET is_read = TRUE, status = 'read', updated_at = :updated_at
-<<<<<<< HEAD
         WHERE id = :id
           AND (user_id = :user_id OR recipient_user_id = :user_id OR (user_id IS NULL AND recipient_user_id IS NULL))
-=======
-        WHERE id = :id AND (user_id = :user_id OR user_id IS NULL)
->>>>>>> 68d4c6b668fc45688534acafaad6b75fa751476f
     '''), {'id': notification_id, 'user_id': current_user.id, 'updated_at': datetime.utcnow()})
     db.commit()
     return {'success': True}

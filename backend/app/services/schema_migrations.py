@@ -68,7 +68,6 @@ def ensure_runtime_schema() -> None:
         _add_column(db, 'irp5_documents', 'manager_user_id', 'INTEGER')
 
         db.execute(text("""
-<<<<<<< HEAD
         CREATE TABLE IF NOT EXISTS commission_structures (
             id SERIAL PRIMARY KEY, franchise_user_id INTEGER NOT NULL REFERENCES franchise_users(id) ON DELETE CASCADE,
             commission_type VARCHAR(80) NOT NULL, label VARCHAR(120) NOT NULL, calculation_type VARCHAR(30) NOT NULL,
@@ -90,8 +89,6 @@ def ensure_runtime_schema() -> None:
         db.execute(text("CREATE INDEX IF NOT EXISTS ix_commission_entries_employee_date ON commission_entries(employee_user_id, service_date)"))
 
         db.execute(text("""
-=======
->>>>>>> 68d4c6b668fc45688534acafaad6b75fa751476f
         CREATE TABLE IF NOT EXISTS payroll_payslips (
             id SERIAL PRIMARY KEY,
             import_id INTEGER NULL REFERENCES payroll_imports(id) ON DELETE SET NULL,
