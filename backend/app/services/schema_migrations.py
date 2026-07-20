@@ -12,6 +12,7 @@ def _columns(db: Session, table: str) -> set[str]:
 def _add_column(db: Session, table: str, name: str, ddl: str) -> None:
     if name not in _columns(db, table):
         db.execute(text(f'ALTER TABLE {table} ADD COLUMN {name} {ddl}'))
+        db.commit()
 
 
 def ensure_runtime_schema() -> None:
