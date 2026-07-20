@@ -2,12 +2,19 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
+<<<<<<< HEAD
 from app.api import auth, users, roles, meta, attendance, franchise, franchise_staff, franchise_dashboard, user_management, alerts, irp5, leave, payroll, audit, commission
+=======
+from app.api import auth, users, roles, meta, attendance, franchise, franchise_staff, franchise_dashboard, user_management, alerts, irp5, leave, payroll, audit
+>>>>>>> 68d4c6b668fc45688534acafaad6b75fa751476f
 from app import models  # noqa: F401
 from app.db.base import Base
 from app.db.session import engine
 from app.services.seed import seed_initial_data
+<<<<<<< HEAD
 from app.services.schema_migrations import ensure_runtime_schema
+=======
+>>>>>>> 68d4c6b668fc45688534acafaad6b75fa751476f
 
 
 app = FastAPI(title="Attendance Register Platform API", version="0.1.0")
@@ -85,7 +92,10 @@ def favicon():
 @app.on_event("startup")
 def on_startup() -> None:
     Base.metadata.create_all(bind=engine)
+<<<<<<< HEAD
     ensure_runtime_schema()
+=======
+>>>>>>> 68d4c6b668fc45688534acafaad6b75fa751476f
     seed_initial_data()
 
 
@@ -105,4 +115,7 @@ app.include_router(irp5.router, prefix="/api/irp5", tags=["irp5-documents"])
 app.include_router(leave.router, prefix="/api/leave", tags=["leave-management"])
 app.include_router(payroll.router, prefix="/api/payroll", tags=["payroll"])
 app.include_router(audit.router, prefix="/api/audit", tags=["audit-logs"])
+<<<<<<< HEAD
 app.include_router(commission.router, prefix="/api/commission", tags=["commission-overtime"])
+=======
+>>>>>>> 68d4c6b668fc45688534acafaad6b75fa751476f

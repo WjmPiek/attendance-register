@@ -337,7 +337,10 @@ export default function OverviewDashboardPage({ onNavigate }) {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [leaveStatusFilter, setLeaveStatusFilter] = useState('all')
+<<<<<<< HEAD
   const [showNotificationHistory, setShowNotificationHistory] = useState(false)
+=======
+>>>>>>> 68d4c6b668fc45688534acafaad6b75fa751476f
 
   const load = async () => {
     setLoading(true)
@@ -369,8 +372,11 @@ export default function OverviewDashboardPage({ onNavigate }) {
   const lists = data?.lists || {}
   const suggestions = data?.suggestions || []
   const notifications = data?.notifications || []
+<<<<<<< HEAD
   const unreadNotifications = notifications.filter((n) => !n.is_read)
   const readNotifications = notifications.filter((n) => n.is_read)
+=======
+>>>>>>> 68d4c6b668fc45688534acafaad6b75fa751476f
 
   return (
     <div className="overview-dashboard overview-dashboard-pro">
@@ -405,10 +411,17 @@ export default function OverviewDashboardPage({ onNavigate }) {
               <p className="eyebrow">Outbox</p>
               <h2>Latest notifications</h2>
             </div>
+<<<<<<< HEAD
             <div className="button-row"><button className="glass-button small-button" onClick={() => setShowNotificationHistory((value) => !value)}>{showNotificationHistory ? 'Unread' : `History (${readNotifications.length})`}</button><button className="glass-button small-button" onClick={load}>Refresh</button></div>
           </div>
           <div className="notification-stack">
             {(showNotificationHistory ? readNotifications : unreadNotifications).length ? (showNotificationHistory ? readNotifications : unreadNotifications).slice(0, 20).map((n) => (
+=======
+            <button className="glass-button small-button" onClick={load}>Refresh</button>
+          </div>
+          <div className="notification-stack">
+            {notifications.length ? notifications.slice(0, 6).map((n) => (
+>>>>>>> 68d4c6b668fc45688534acafaad6b75fa751476f
               <div className={`notification-row ${n.is_read ? 'read' : ''} ${n.severity || ''}`} key={n.id}>
                 <button type="button" className="notification-main-button" onClick={() => n.target_tab && onNavigate?.(n.target_tab)}>
                   <strong>{n.subject}</strong>
@@ -417,7 +430,11 @@ export default function OverviewDashboardPage({ onNavigate }) {
                 </button>
                 {!n.is_read ? <button className="link-button" onClick={() => readNotification(n.id)}>Mark read</button> : null}
               </div>
+<<<<<<< HEAD
             )) : <p className="muted">{showNotificationHistory ? 'No read notifications in history.' : 'No unread notifications.'}</p>}
+=======
+            )) : <p className="muted">No notifications yet.</p>}
+>>>>>>> 68d4c6b668fc45688534acafaad6b75fa751476f
           </div>
         </section>
       </div>

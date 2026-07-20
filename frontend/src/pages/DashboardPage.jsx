@@ -8,7 +8,10 @@ import OverviewDashboardPage from './OverviewDashboardPage'
 import Irp5DocumentsPage from './Irp5DocumentsPage'
 import LeavePage from './LeavePage'
 import PayrollPage from './PayrollPage'
+<<<<<<< HEAD
 import CommissionPage from './CommissionPage'
+=======
+>>>>>>> 68d4c6b668fc45688534acafaad6b75fa751476f
 
 export default function DashboardPage({ me, roles, entities, onLogout }) {
   const isSuperUser = me.roles.includes('SuperUser')
@@ -44,7 +47,10 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
     { id: 'staff', label: 'HR Staff', visible: isSuperUser || isFranchiseUser },
     { id: 'franchises', label: 'Franchise Approvals', visible: isSuperUser },
     { id: 'leave', label: 'Leave', visible: isEmployee || isManagerUser || isFranchiseUser || isSuperUser },
+<<<<<<< HEAD
     { id: 'commission', label: 'Commission & Overtime', visible: isFranchiseUser || isManagerUser || isEmployee || isSuperUser },
+=======
+>>>>>>> 68d4c6b668fc45688534acafaad6b75fa751476f
     { id: 'payroll', label: canManagePayroll ? 'Payroll' : 'Payslips', visible: canUsePayroll },
     { id: 'irp5', label: canManagePayroll ? 'IRP 5 Uploads' : 'My IRP 5', visible: isStaffSelfService || isFranchiseUser || isSuperUser },
   ].filter((tab) => tab.visible), [isSignCapable, isApprovalCapable, isSuperUser, isFranchiseUser, isEmployee, isManagerUser, isFinanceEmployee, isStaffSelfService, canManagePayroll, canUsePayroll])
@@ -53,7 +59,10 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
     { id: 'attendance', label: 'Mobile Sign In', visible: isSignCapable },
     { id: 'history', label: 'History', visible: isSignCapable || isApprovalCapable },
     { id: 'leave', label: 'Leave', visible: isEmployee || isManagerUser },
+<<<<<<< HEAD
     { id: 'commission', label: 'Commission & Overtime', visible: isEmployee || isManagerUser },
+=======
+>>>>>>> 68d4c6b668fc45688534acafaad6b75fa751476f
     { id: 'payroll', label: 'Payslips', visible: canUsePayroll },
     { id: 'irp5', label: 'My IRP 5', visible: isStaffSelfService },
   ].filter((tab) => tab.visible), [isSignCapable, isApprovalCapable, isEmployee, isManagerUser, canUsePayroll, isStaffSelfService])
@@ -116,13 +125,20 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
           </div>
         ) : null}
         {activeTab === 'home' ? <OverviewDashboardPage me={me} onNavigate={openTab} /> : null}
+<<<<<<< HEAD
         {activeTab === 'attendance' && isSignCapable ? <MobileAttendancePage me={me} onDone={goBackToMobileMenu} /> : null}
+=======
+        {activeTab === 'attendance' && isSignCapable ? <MobileAttendancePage me={me} /> : null}
+>>>>>>> 68d4c6b668fc45688534acafaad6b75fa751476f
         {activeTab === 'history' && (isSignCapable || isApprovalCapable) ? <AttendanceHistoryPage me={me} /> : null}
         {activeTab === 'approvals' && isApprovalCapable ? <AttendanceApprovalPage me={me} /> : null}
         {activeTab === 'staff' && (isSuperUser || isFranchiseUser) ? <FranchiseStaffPage me={me} /> : null}
         {activeTab === 'franchises' && isSuperUser ? <FranchiseRegistrationApprovalPage me={me} /> : null}
         {activeTab === 'leave' ? <LeavePage me={me} /> : null}
+<<<<<<< HEAD
         {activeTab === 'commission' ? <CommissionPage me={me} /> : null}
+=======
+>>>>>>> 68d4c6b668fc45688534acafaad6b75fa751476f
         {activeTab === 'payroll' && canUsePayroll ? <PayrollPage me={me} /> : null}
         {activeTab === 'irp5' ? <Irp5DocumentsPage me={me} /> : null}
       </main> : null}
