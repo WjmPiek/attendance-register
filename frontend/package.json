@@ -1,0 +1,55 @@
+{
+  "name": "attendance-register-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 5173",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 5173",
+    "electron": "npm run build && electron .",
+    "dist:win": "npm run build && electron-builder --win nsis --x64",
+    "cap:add:android": "cap add android",
+    "cap:sync:android": "npm run build && cap sync android",
+    "apk:debug": "npm run build && cap sync android && cd android && ./gradlew assembleDebug"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.2",
+    "vite": "^5.4.8",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8",
+    "@capacitor/cli": "^6.1.2",
+    "@capacitor/core": "^6.1.2",
+    "@capacitor/android": "^6.1.2",
+    "@capacitor/assets": "^3.0.5"
+  },
+  "main": "electron/main.cjs",
+  "build": {
+    "appId": "com.martins.attendance",
+    "productName": "Martins Attendance Register",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "dist/**",
+      "electron/**",
+      "public/icon-512.png"
+    ],
+    "win": {
+      "icon": "public/icon-512.png",
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}
