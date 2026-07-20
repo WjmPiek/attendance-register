@@ -17,7 +17,11 @@ def _add_column(db: Session, table: str, name: str, ddl: str) -> None:
 def ensure_runtime_schema() -> None:
     from app.db.session import SessionLocal
     db: Session = SessionLocal()
+
     try:
+        db.execute(text("SET lock_timeout = '10s'"))
+        db.execute(text("SET statement_timeout = '60s'"))
+        
         # Login compatibility: staff can sign in with either email or username.
         _add_column(db, 'users', 'username', 'VARCHAR(100) UNIQUE')
 

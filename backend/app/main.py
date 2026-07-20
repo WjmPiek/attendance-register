@@ -1,3 +1,6 @@
+import threading
+import traceback
+
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -82,11 +85,30 @@ def favicon():
     return Response(status_code=204)
 
 
+def _initialize_database() -> None:
+    try:
+        print("Starting database initialization...", flush=True)
+        Base.metadata.create_all(bind=engine)
+        print("Base tables checked.", flush=True)
+
+        ensure_runtime_schema()
+        print("Runtime schema checked.", flush=True)
+
+        seed_initial_data()
+        print("Database initialization completed.", flush=True)
+    except Exception:
+        print("Database initialization failed:", flush=True)
+        traceback.print_exc()
+
+
 @app.on_event("startup")
 def on_startup() -> None:
-    Base.metadata.create_all(bind=engine)
-    ensure_runtime_schema()
-    seed_initial_data()
+    thread = threading.Thread(
+        target=_initialize_database,
+        name="database-initializer",
+        daemon=True,
+    )
+    thread.start()
 
 
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
