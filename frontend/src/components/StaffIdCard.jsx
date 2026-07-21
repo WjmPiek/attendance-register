@@ -29,7 +29,6 @@ export default function StaffIdCard({ item, className = '' }) {
       <div className="staff-id-header">
         <div className="staff-id-title">
           <h2>STAFF ID</h2>
-          <p>Attendance Register Platform</p>
         </div>
         <img src={card.logoUrl} className="staff-id-logo" alt="Logo" />
       </div>

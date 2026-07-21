@@ -1901,3 +1901,21 @@ input[type="date"]::-webkit-date-and-time-value,
   .business-info-hero { align-items: flex-start; flex-direction: column; }
   .two-column-grid, .business-map-card { grid-template-columns: 1fr; }
 }
+
+/* Business Information uses the same full-width cards and spacing as the rest of the dashboard. */
+.business-information-page > .form-card,
+.business-information-page > .card {
+  width: 100%;
+  max-width: none;
+  box-sizing: border-box;
+}
+.business-info-form { padding: 24px; }
+.business-map-card { display: grid; gap: 18px; }
+.business-map-card iframe { width: 100%; min-height: 360px; border: 0; border-radius: 20px; }
+.office-location-map-shell { display: grid; gap: 12px; margin-top: 14px; }
+.office-map-search-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: end; }
+.office-map-search-row label { margin: 0; }
+.office-map-search-row button { min-height: 44px; }
+@media (max-width: 720px) {
+  .office-map-search-row { grid-template-columns: 1fr; }
+}

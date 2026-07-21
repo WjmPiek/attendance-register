@@ -47,7 +47,6 @@ export default function DigitalIdCard() {
         <div className="premium-id-header">
           <div>
             <h2>STAFF ID</h2>
-            <p>Attendance Register Platform</p>
           </div>
           <img src="/logo.png" className="premium-id-logo" alt="Logo" />
         </div>

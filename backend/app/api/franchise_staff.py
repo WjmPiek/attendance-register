@@ -733,8 +733,7 @@ def _build_id_cards_pdf(staff_rows: list[dict], current_user: User) -> bytes:
         logo = _logo_flowable(123, 13.5) or Paragraph('<b>LOGO</b>', styles['PdfStaffTiny'])
         title_block = Table([
             [Paragraph('<b>STAFF ID</b>', styles['PdfStaffTitle'])],
-            [Paragraph('Attendance Register Platform', styles['PdfStaffSub'])],
-        ], colWidths=[46*mm], rowHeights=[5.5*mm, 4.0*mm])
+        ], colWidths=[46*mm], rowHeights=[9.5*mm])
         title_block.setStyle(TableStyle([
             ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0),
             ('TOPPADDING', (0,0), (-1,-1), 0), ('BOTTOMPADDING', (0,0), (-1,-1), 0),
@@ -1542,8 +1541,10 @@ def upload_staff_id_photo(staff_type: str, staff_id: int, file: UploadFile = Fil
         from io import BytesIO
         with Image.open(BytesIO(content)) as image:
             width, height = image.size
-        if width < 1500 or height < 1000:
-            raise HTTPException(status_code=400, detail=f'ID photo must be at least 1500x1000 pixels. Uploaded image is {width}x{height}.')
+        # The browser saves the aligned ID-card crop at 600x740. Accept that
+        # generated portrait while still rejecting unusably small source images.
+        if width < 400 or height < 400:
+            raise HTTPException(status_code=400, detail=f'ID photo must be at least 400x400 pixels. Uploaded image is {width}x{height}.')
     except HTTPException:
         raise
     except Exception:

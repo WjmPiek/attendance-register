@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 let googleMapsPromise;
 
@@ -7,20 +7,14 @@ function loadGoogleMaps() {
 
   if (!googleMapsPromise) {
     const apikey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
-
     googleMapsPromise = new Promise((resolve, reject) => {
-      if (!apikey) {
-        reject(new Error('Missing VITE_GOOGLE_MAPS_API_KEY'));
-        return;
-      }
-
+      if (!apikey) return reject(new Error('Missing VITE_GOOGLE_MAPS_API_KEY'));
       const existingScript = document.querySelector('script[src*="maps.googleapis.com/maps/api/js"]');
       if (existingScript) {
         existingScript.addEventListener('load', () => resolve(window.google), { once: true });
         existingScript.addEventListener('error', reject, { once: true });
         return;
       }
-
       const script = document.createElement('script');
       script.src = `https://maps.googleapis.com/maps/api/js?key=${apikey}&libraries=places`;
       script.async = true;
@@ -30,109 +24,109 @@ function loadGoogleMaps() {
       document.head.appendChild(script);
     });
   }
-
   return googleMapsPromise;
 }
 
 function geocodeAddress(google, address) {
   return new Promise((resolve) => {
-    if (!address || !google.maps.Geocoder) {
-      resolve(null);
-      return;
-    }
-
+    if (!address || !google.maps.Geocoder) return resolve(null);
     const geocoder = new google.maps.Geocoder();
-    geocoder.geocode({ address, componentRestrictions: { country: 'ZA' } }, (results, status) => {
+    geocoder.geocode({ address: `${address}, South Africa`, region: 'ZA' }, (results, status) => {
       if (status === 'OK' && results?.[0]?.geometry?.location) {
-        resolve(results[0].geometry.location);
-      } else {
-        resolve(null);
-      }
+        resolve({ location: results[0].geometry.location, formattedAddress: results[0].formatted_address });
+      } else resolve(null);
     });
   });
 }
 
 export default function OfficeLocationMap({ office, onPick }) {
   const mapRef = useRef(null);
+  const mapObjectRef = useRef(null);
+  const markerRef = useRef(null);
+  const circleRef = useRef(null);
+  const googleRef = useRef(null);
+  const [address, setAddress] = useState(office?.address || '');
+  const [mapMessage, setMapMessage] = useState('');
+
+  const placePoint = (latLng, formattedAddress = '') => {
+    if (!latLng || !markerRef.current || !circleRef.current || !mapObjectRef.current) return;
+    markerRef.current.setPosition(latLng);
+    circleRef.current.setCenter(latLng);
+    mapObjectRef.current.setCenter(latLng);
+    mapObjectRef.current.setZoom(17);
+    onPick({
+      latitude: latLng.lat(),
+      longitude: latLng.lng(),
+      allowed_radius_m: Number(office.allowed_radius_m) || 100,
+      formatted_address: formattedAddress,
+    });
+  };
+
+  const findAddress = async () => {
+    setMapMessage('Finding address...');
+    try {
+      const result = await geocodeAddress(googleRef.current || await loadGoogleMaps(), address.trim());
+      if (!result) return setMapMessage('Google Maps could not find that address. Add the street number, suburb, city and postal code.');
+      placePoint(result.location, result.formattedAddress);
+      setAddress(result.formattedAddress || address);
+      setMapMessage('Address found. Confirm the marker, then save the office location.');
+    } catch (error) {
+      setMapMessage(error.message || 'Unable to find address.');
+    }
+  };
 
   useEffect(() => {
-    let map;
-    let marker;
-    let circle;
+    setAddress(office?.address || '');
     let cancelled = false;
-
     async function init() {
       const google = await loadGoogleMaps();
+      googleRef.current = google;
       if (cancelled || !mapRef.current) return;
 
       const hasSavedGps = office.latitude !== null && office.latitude !== undefined && office.longitude !== null && office.longitude !== undefined;
+      let center = hasSavedGps
+        ? { lat: Number(office.latitude), lng: Number(office.longitude) }
+        : { lat: -26.2041, lng: 28.0473 };
 
-      let center = {
-        lat: Number(office.latitude) || -26.2041,
-        lng: Number(office.longitude) || 28.0473,
-      };
-
-      if (!hasSavedGps && office.address) {
-        const geocodedLocation = await geocodeAddress(google, office.address);
+      // The complete office address is the source of truth when opening Set GPS.
+      // This prevents an old/wrong coordinate from centering the map at another address.
+      if (office.address) {
+        const result = await geocodeAddress(google, office.address);
         if (cancelled) return;
-
-        if (geocodedLocation) {
-          center = {
-            lat: geocodedLocation.lat(),
-            lng: geocodedLocation.lng(),
-          };
+        if (result) {
+          center = { lat: result.location.lat(), lng: result.location.lng() };
+          setAddress(result.formattedAddress || office.address);
+          setMapMessage('Map centred on the office address. Drag the marker only if the entrance is elsewhere.');
         }
       }
 
-      map = new google.maps.Map(mapRef.current, {
-        center,
-        zoom: hasSavedGps || office.address ? 17 : 12,
-      });
+      const map = new google.maps.Map(mapRef.current, { center, zoom: office.address || hasSavedGps ? 17 : 12 });
+      const marker = new google.maps.Marker({ position: center, map, draggable: true });
+      const circle = new google.maps.Circle({ map, center, radius: Number(office.allowed_radius_m) || 100, fillOpacity: 0.15, strokeWeight: 2 });
+      mapObjectRef.current = map;
+      markerRef.current = marker;
+      circleRef.current = circle;
 
-      marker = new google.maps.Marker({
-        position: center,
-        map,
-        draggable: true,
-      });
-
-      circle = new google.maps.Circle({
-        map,
-        center,
-        radius: Number(office.allowed_radius_m) || 100,
-        fillOpacity: 0.15,
-        strokeWeight: 2,
-      });
-
-      const setLocation = (latLng) => {
-        const picked = {
-          latitude: latLng.lat(),
-          longitude: latLng.lng(),
-          allowed_radius_m: Number(office.allowed_radius_m) || 100,
-        };
-
-        marker.setPosition(latLng);
-        circle.setCenter(latLng);
-        onPick(picked);
-      };
-
+      const setLocation = (latLng) => placePoint(latLng);
       map.addListener('click', (e) => setLocation(e.latLng));
       marker.addListener('dragend', (e) => setLocation(e.latLng));
-
-      if (!hasSavedGps && office.address) {
-        onPick({
-          latitude: center.lat,
-          longitude: center.lng,
-          allowed_radius_m: Number(office.allowed_radius_m) || 100,
-        });
-      }
+      onPick({ latitude: center.lat, longitude: center.lng, allowed_radius_m: Number(office.allowed_radius_m) || 100 });
     }
-
-    init().catch((err) => console.error('Google Maps failed to load', err));
-
-    return () => {
-      cancelled = true;
-    };
+    init().catch((err) => setMapMessage(err.message || 'Google Maps failed to load'));
+    return () => { cancelled = true; };
   }, [office, onPick]);
 
-  return <div style={{ height: 300, width: '100%', borderRadius: 16, overflow: 'hidden' }} ref={mapRef} />;
+  return (
+    <div className="office-location-map-shell">
+      <div className="office-map-search-row">
+        <label>
+          Find the exact office address
+          <input value={address} onChange={(event) => setAddress(event.target.value)} placeholder="Street number, street, suburb, city, postal code" />
+        </label>
+        <button type="button" onClick={findAddress}>Find on Google Maps</button>
+      </div>
+      {mapMessage ? <p className="muted small">{mapMessage}</p> : null}
+      <div style={{ height: 360, width: '100%', borderRadius: 16, overflow: 'hidden' }} ref={mapRef} />
+    </div>
+  );
 }

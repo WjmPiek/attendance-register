@@ -527,7 +527,7 @@ def _build_id_cards_pdf(staff_rows: list[dict], current_user: User) -> bytes:
 
         header = Table([
             [
-                Paragraph('<b>STAFF ID</b><br/><font size="4.5">Attendance Register Platform</font>', styles['CardTitle']),
+                Paragraph('<b>STAFF ID</b>', styles['CardTitle']),
                 logo,
             ]
         ], colWidths=[42*mm, 28*mm], rowHeights=[10*mm])
