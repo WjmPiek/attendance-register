@@ -9,6 +9,8 @@ from app.models.core import User, UserRole
 
 router = APIRouter()
 
+PROTECTED_SUPERUSER_EMAIL = "wjm@martinsdirect.com"
+
 
 def _roles(db: Session, user: User) -> list[str]:
     return [ur.role.name for ur in db.query(UserRole).filter(UserRole.user_id == user.id).all()]
@@ -238,6 +240,7 @@ def list_users(
             u.full_name,
             u.email,
             u.is_active,
+            CASE WHEN LOWER(COALESCE(u.email, '')) = 'wjm@martinsdirect.com' THEN TRUE ELSE FALSE END AS is_protected,
             STRING_AGG(r.name, ', ' ORDER BY r.name) AS roles
         FROM users u
         LEFT JOIN user_roles ur ON ur.user_id = u.id
@@ -283,6 +286,8 @@ def deactivate_user(
     user = db.execute(text("SELECT id, email FROM users WHERE id = :id"), {"id": user_id}).mappings().first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    if (user.get("email") or "").strip().lower() == PROTECTED_SUPERUSER_EMAIL:
+        raise HTTPException(status_code=403, detail="The protected Martinsdirect SuperUser cannot be edited, deactivated, or deleted")
 
     now = datetime.utcnow()
 

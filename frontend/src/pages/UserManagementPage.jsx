@@ -34,7 +34,7 @@ export default function UserManagementPage() {
   return (
     <div style={{ padding: 24 }}>
       <h1>System User Management</h1>
-      <p>SuperUser can deactivate Franchise, Manager, and Employee users across the whole system.</p>
+      <p>SuperUser can deactivate Franchise, Manager, and Employee users. The Martinsdirect SuperUser is permanently protected.</p>
 
       <div style={{ display: "flex", gap: 12, marginBottom: 20 }}>
         <select value={role} onChange={(e) => setRole(e.target.value)}>
@@ -69,7 +69,9 @@ export default function UserManagementPage() {
               <td>{u.roles}</td>
               <td>{u.is_active ? "Yes" : "No"}</td>
               <td>
-                {u.is_active ? (
+                {u.is_protected ? (
+                  <strong>Protected</strong>
+                ) : u.is_active ? (
                   <button onClick={() => deactivate(u.id)}>Deactivate</button>
                 ) : (
                   <button onClick={() => activate(u.id)}>Activate</button>
