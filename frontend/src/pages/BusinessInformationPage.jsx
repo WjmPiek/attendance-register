@@ -23,6 +23,7 @@ const normalizeAddress = (value) => String(value || '').trim().toLowerCase().rep
 export default function BusinessInformationPage() {
   const [form, setForm] = useState(emptyForm)
   const [office, setOffice] = useState(null)
+  const [addressHistory, setAddressHistory] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [regenerating, setRegenerating] = useState(false)
@@ -40,10 +41,12 @@ export default function BusinessInformationPage() {
       const nextForm = Object.fromEntries(Object.keys(emptyForm).map((key) => [key, data?.[key] || '']))
       setForm(nextForm)
       const businessAddress = normalizeAddress(nextForm.office_address)
-      const headOffice = (offices || []).find((item) => normalizeAddress(item.address) === businessAddress)
-        || (offices || []).find((item) => String(item.name || '').toLowerCase().includes('head office'))
+      const activeOffices = (offices || []).filter((item) => !item.is_archived)
+      const headOffice = activeOffices.find((item) => normalizeAddress(item.address) === businessAddress)
+        || activeOffices[0]
         || null
       setOffice(headOffice)
+      setAddressHistory((offices || []).filter((item) => item.is_archived))
       setRadius(headOffice?.allowed_radius_m || 100)
     } catch (err) { setError(err.message || 'Unable to load business information') }
     finally { setLoading(false) }
@@ -73,7 +76,7 @@ export default function BusinessInformationPage() {
     setSaving(true); setMessage(''); setError('')
     try {
       await updateOfficeDetails(office.id, {
-        name: `${form.business_name || form.franchise_name || 'Head Office'} - Head Office`,
+        name: form.business_name || form.franchise_name || 'Business',
         address: form.office_address,
         allowed_radius_m: Number(radius || 100),
       })
@@ -142,7 +145,7 @@ export default function BusinessInformationPage() {
       }
       await deleteOffice(office.id)
       setDeleteDialog(null)
-      setMessage('Office address deleted. Linked staff were moved to the replacement address.')
+      setMessage('The old address was archived, not deleted. Linked staff were moved to the replacement address and all historical records remain available.')
       await load()
     } catch (err) { setError(err.message || 'Unable to delete office address') }
     finally { setSaving(false) }
@@ -184,8 +187,19 @@ export default function BusinessInformationPage() {
             <div className="business-qr-status"><span className="muted small">Current QR status</span><strong>{office.qr_enabled === false ? 'Inactive' : 'Active'}</strong></div>
           </div>
           {pickedLocation ? <p className="muted small">Selected GPS: {pickedLocation.latitude.toFixed(6)}, {pickedLocation.longitude.toFixed(6)}</p> : null}
-          <div className="button-row"><button type="button" onClick={saveOfficeSettings} disabled={saving}>Save GPS and radius</button><button type="button" className="danger-button" onClick={beginDeleteOffice} disabled={saving}>Delete office address</button></div>
+          <div className="button-row"><button type="button" onClick={saveOfficeSettings} disabled={saving}>Save GPS and radius</button><button type="button" className="danger-button" onClick={beginDeleteOffice} disabled={saving}>Replace and archive address</button></div>
         </> : <p className="muted">Save a complete business address first. The system will create the single Head Office QR location automatically.</p>}
+      </section>
+
+
+      <section className="form-card business-address-history-card">
+        <div><p className="eyebrow">Permanent record</p><h2>Previous Business Addresses</h2><p className="muted">Old addresses are retained permanently for audit and attendance history. Archived QR codes remain invalid and cannot be used for attendance.</p></div>
+        {addressHistory.length ? <div className="linked-staff-list">
+          {addressHistory.map((item) => <div className="linked-staff-row" key={item.id}>
+            <div><strong>{item.name || form.business_name || form.franchise_name || 'Business'}</strong><span>{item.address || 'No address recorded'}</span></div>
+            <span className="status-chip">Archived{item.archived_at ? ` · ${new Date(item.archived_at).toLocaleDateString()}` : ''}</span>
+          </div>)}
+        </div> : <p className="muted">No previous business addresses have been archived.</p>}
       </section>
 
       <section className="form-card business-qr-card">
@@ -196,7 +210,7 @@ export default function BusinessInformationPage() {
           <p className="muted small">Generating a new code invalidates every previously printed copy immediately. The address, GPS coordinates and radius are preserved.</p>
         </div> : <p className="muted">No Head Office QR is available until the business address is saved.</p>}
       </section>
-      {deleteDialog ? <div className="modal-backdrop"><section className="form-card office-delete-modal"><h2>Employees linked to this address</h2><p className="muted">Every linked employee and manager must receive a replacement address before this office can be deleted.</p><div className="linked-staff-list">{deleteDialog.items?.length ? deleteDialog.items.map((item) => <div className="linked-staff-row" key={`${item.staff_type}-${item.staff_id}`}><strong>{item.full_name || item.employee_number}</strong><span>{item.staff_type} · {item.employee_number || 'No employee number'}</span></div>) : <p>No active staff are linked to this office.</p>}</div>{deleteDialog.count > 0 ? <label>Replacement address for all linked staff<textarea rows="3" value={replacementAddress} onChange={(e) => setReplacementAddress(e.target.value)} placeholder="Street, suburb, city, province, postal code" /></label> : null}<div className="button-row"><button type="button" className="danger-button" onClick={confirmDeleteOffice} disabled={saving}>{saving ? 'Updating...' : 'Update staff and delete office'}</button><button type="button" className="glass-button" onClick={() => setDeleteDialog(null)} disabled={saving}>Cancel</button></div></section></div> : null}
+      {deleteDialog ? <div className="modal-backdrop"><section className="form-card office-delete-modal"><h2>Staff linked to this address</h2><p className="muted">Every linked employee, agent and manager must receive a replacement address before this address is archived. No historical records will be deleted.</p><div className="linked-staff-list">{deleteDialog.items?.length ? deleteDialog.items.map((item) => <div className="linked-staff-row" key={`${item.staff_type}-${item.staff_id}`}><strong>{item.full_name || item.employee_number}</strong><span>{item.staff_type} · {item.employee_number || 'No employee number'}</span></div>) : <p>No active staff are linked to this office.</p>}</div>{deleteDialog.count > 0 ? <label>Replacement address for all linked staff<textarea rows="3" value={replacementAddress} onChange={(e) => setReplacementAddress(e.target.value)} placeholder="Street, suburb, city, province, postal code" /></label> : null}<div className="button-row"><button type="button" className="danger-button" onClick={confirmDeleteOffice} disabled={saving}>{saving ? 'Updating...' : 'Update staff and archive address'}</button><button type="button" className="glass-button" onClick={() => setDeleteDialog(null)} disabled={saving}>Cancel</button></div></section></div> : null}
     </div>
   )
 }

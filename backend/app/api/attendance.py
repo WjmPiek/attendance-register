@@ -74,6 +74,8 @@ def _ensure_office_qr_schema(db: Session):
         db.execute(text("ALTER TABLE areas ADD COLUMN IF NOT EXISTS qr_updated_at TIMESTAMP NULL"))
         db.execute(text("ALTER TABLE areas ADD COLUMN IF NOT EXISTS franchise_user_id INTEGER NULL"))
         db.execute(text("ALTER TABLE areas ADD COLUMN IF NOT EXISTS office_address TEXT NULL"))
+        db.execute(text("ALTER TABLE areas ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT FALSE"))
+        db.execute(text("ALTER TABLE areas ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP NULL"))
         db.execute(text("ALTER TABLE attendance_events ADD COLUMN IF NOT EXISTS qr_area_id INTEGER NULL"))
         db.execute(text("ALTER TABLE attendance_events ADD COLUMN IF NOT EXISTS qr_office_name VARCHAR(255) NULL"))
         db.execute(text("ALTER TABLE attendance_events ADD COLUMN IF NOT EXISTS qr_token_hash VARCHAR(128) NULL"))
@@ -156,7 +158,7 @@ def _upsert_address_area(db: Session, franchise_user_id: int, address: str, labe
     code = f'F{franchise_user_id}-ADDR-{address_key}'
     row = db.execute(text("""
         SELECT id, name, code, description, office_address, latitude, longitude, allowed_radius_m,
-               qr_token, COALESCE(qr_enabled, TRUE) AS qr_enabled, franchise_user_id
+               qr_token, COALESCE(qr_enabled, TRUE) AS qr_enabled, COALESCE(is_archived, FALSE) AS is_archived, archived_at, franchise_user_id
         FROM areas
         WHERE franchise_user_id = :fid AND code = :code
         LIMIT 1
@@ -165,18 +167,19 @@ def _upsert_address_area(db: Session, franchise_user_id: int, address: str, labe
     if row:
         db.execute(text("""
             UPDATE areas
-            SET name = :name, description = :address, office_address = :address, updated_at = :now
+            SET name = :name, description = :address, office_address = :address,
+                is_archived = FALSE, archived_at = NULL, qr_enabled = TRUE, updated_at = :now
             WHERE id = :id
-        """), {'name': f'{label[:95]} [{address_key}]', 'address': address.strip(), 'now': now, 'id': row['id']})
+        """), {'name': label[:120], 'address': address.strip(), 'now': now, 'id': row['id']})
         area_id = int(row['id'])
     else:
         token = secrets.token_urlsafe(32)
         inserted = db.execute(text("""
             INSERT INTO areas (name, code, description, office_address, allowed_radius_m, franchise_user_id,
-                               qr_token, qr_enabled, qr_updated_at, created_at, updated_at)
-            VALUES (:name, :code, :address, :address, 100, :fid, :token, TRUE, :now, :now, :now)
+                               qr_token, qr_enabled, is_archived, qr_updated_at, created_at, updated_at)
+            VALUES (:name, :code, :address, :address, 100, :fid, :token, TRUE, FALSE, :now, :now, :now)
             RETURNING id
-        """), {'name': f'{label[:95]} [{address_key}]', 'code': code, 'address': address.strip(),
+        """), {'name': label[:120], 'code': code, 'address': address.strip(),
                  'fid': franchise_user_id, 'token': token, 'now': now}).mappings().first()
         area_id = int(inserted['id'])
     db.commit()
@@ -213,7 +216,7 @@ def _sync_franchise_address_areas(db: Session, franchise_user_id: int):
         return []
     areas_by_address = {}
     if _normalise_address(franchise.get('office_address')):
-        area = _upsert_address_area(db, franchise_user_id, franchise['office_address'], f"{franchise.get('label') or 'Head Office'} - Head Office")
+        area = _upsert_address_area(db, franchise_user_id, franchise['office_address'], franchise.get('label') or 'Business')
         areas_by_address[_normalise_address(franchise['office_address'])] = area
         _assign_user_to_area(db, int(franchise['user_id']), area)
     staff = db.execute(text("""
@@ -258,7 +261,7 @@ def _office_qr_row(db: Session, area_id: int):
     _ensure_office_qr_schema(db)
     row = db.execute(text("""
         SELECT id, name, code, description, office_address, latitude, longitude, allowed_radius_m,
-               qr_token, COALESCE(qr_enabled, TRUE) AS qr_enabled, franchise_user_id
+               qr_token, COALESCE(qr_enabled, TRUE) AS qr_enabled, COALESCE(is_archived, FALSE) AS is_archived, archived_at, franchise_user_id
         FROM areas
         WHERE id = :area_id
     """), {'area_id': area_id}).mappings().first()
@@ -286,7 +289,7 @@ def _validate_office_qr_for_user(db: Session, user_id: int, qr_value: str | None
         raise HTTPException(status_code=400, detail='Office QR code is required before sign in/out')
     area = db.execute(text("""
         SELECT id, name, code, description, office_address, latitude, longitude, allowed_radius_m,
-               qr_token, COALESCE(qr_enabled, TRUE) AS qr_enabled, franchise_user_id
+               qr_token, COALESCE(qr_enabled, TRUE) AS qr_enabled, COALESCE(is_archived, FALSE) AS is_archived, archived_at, franchise_user_id
         FROM areas
         WHERE qr_token = :token
         LIMIT 1
@@ -1497,13 +1500,14 @@ def list_office_qr_codes(current_user: User = Depends(get_current_user), db: Ses
 
     rows = db.execute(text(f"""
         SELECT a.id, a.name, a.code, a.description, a.office_address, a.latitude, a.longitude,
-               a.allowed_radius_m, a.qr_token, COALESCE(a.qr_enabled, TRUE) AS qr_enabled, a.franchise_user_id,
+               a.allowed_radius_m, a.qr_token, COALESCE(a.qr_enabled, TRUE) AS qr_enabled,
+               COALESCE(a.is_archived, FALSE) AS is_archived, a.archived_at, a.franchise_user_id,
                COUNT(DISTINCT g.user_id) AS assigned_user_count
         FROM areas a
         LEFT JOIN gps_allocations_per_user g ON g.area_id = a.id AND COALESCE(g.is_active, TRUE) = TRUE
         WHERE {where}
         GROUP BY a.id
-        ORDER BY a.name ASC
+        ORDER BY COALESCE(a.is_archived, FALSE) ASC, a.created_at DESC, a.name ASC
     """), params).mappings().all()
     result = []
     for raw in rows:
@@ -1515,6 +1519,8 @@ def list_office_qr_codes(current_user: User = Depends(get_current_user), db: Ses
             'longitude': str(row.get('longitude')) if row.get('longitude') is not None else None,
             'allowed_radius_m': row.get('allowed_radius_m'),
             'qr_enabled': row.get('qr_enabled') is not False,
+            'is_archived': bool(row.get('is_archived')),
+            'archived_at': row.get('archived_at').isoformat() if row.get('archived_at') else None,
             'qr_payload': _qr_payload(row['qr_token']),
             'scan_url': _qr_scan_url(row['qr_token']),
             'assigned_user_count': int(raw.get('assigned_user_count') or 0),
@@ -1686,10 +1692,18 @@ def delete_office(area_id: int, current_user: User = Depends(get_current_user), 
     assigned = db.execute(text('SELECT COUNT(*) FROM gps_allocations_per_user WHERE area_id=:area_id AND COALESCE(is_active, TRUE)=TRUE'), {'area_id':area_id}).scalar() or 0
     if assigned:
         raise HTTPException(status_code=409, detail=f'Cannot delete this office while {assigned} active staff member(s) are assigned to it. Edit those staff addresses first.')
-    db.execute(text('DELETE FROM gps_allocations_per_user WHERE area_id=:area_id'), {'area_id':area_id})
-    db.execute(text('DELETE FROM areas WHERE id=:area_id'), {'area_id':area_id})
+    now = now_sa_naive()
+    db.execute(text('''
+        UPDATE areas
+        SET is_archived=TRUE, archived_at=:now, qr_enabled=FALSE, updated_at=:now
+        WHERE id=:area_id
+    '''), {'now': now, 'area_id': area_id})
     db.commit()
-    return {'message':'Office deleted','area_id':area_id}
+    return {
+        'message': 'Office address archived. Historical office, QR and allocation records were preserved.',
+        'area_id': area_id,
+        'archived': True,
+    }
 
 def _assert_office_area_access(db: Session, current_user: User, area: dict, write: bool = False):
     roles = set(_get_role_names(db, current_user.id))
