@@ -817,14 +817,15 @@ export default function FranchiseStaffPage() {
       {activeSubTab === 'qr' ? (
         <section className="form-card staff-list-card">
           <h2>Printable Office QR Codes</h2>
-          <p className="muted">Print the QR code for each office. Employees scan the printed code from their mobile phone before signing in or out.</p>
+          <p className="muted">Each QR code is generated from the franchise business address or a manager/employee assigned office address. Staff can only use the QR code linked to their assigned address.</p>
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Office</th><th>Address / Description</th><th>Radius</th><th>QR Payload</th><th>Action</th></tr></thead>
+              <thead><tr><th>Office</th><th>Linked business / assigned address</th><th>Assigned staff</th><th>Radius</th><th>QR Payload</th><th>Action</th></tr></thead>
               <tbody>
                 {officeQrs.map((office) => <tr key={office.id}>
                   <td>{office.name || `Office #${office.id}`}</td>
                   <td>{office.address || '—'}</td>
+                  <td>{office.assigned_user_count || 0}</td>
                   <td>{office.allowed_radius_m || 100} m</td>
                   <td><code>{office.qr_payload}</code></td>
                   <td>
@@ -837,7 +838,7 @@ export default function FranchiseStaffPage() {
                     </button>
                   </td>
                 </tr>)}
-                {!officeQrs.length ? <tr><td colSpan="5" className="muted">No offices found. Add office areas first, then assign staff to those offices.</td></tr> : null}
+                {!officeQrs.length ? <tr><td colSpan="6" className="muted">No linked addresses found. Save the franchise business address or assign an office address to staff.</td></tr> : null}
               </tbody>
             </table>
           </div>

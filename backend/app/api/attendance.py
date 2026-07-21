@@ -63,6 +63,8 @@ def _ensure_office_qr_schema(db: Session):
         db.execute(text("ALTER TABLE areas ADD COLUMN IF NOT EXISTS qr_token VARCHAR(120)"))
         db.execute(text("ALTER TABLE areas ADD COLUMN IF NOT EXISTS qr_enabled BOOLEAN NOT NULL DEFAULT TRUE"))
         db.execute(text("ALTER TABLE areas ADD COLUMN IF NOT EXISTS qr_updated_at TIMESTAMP NULL"))
+        db.execute(text("ALTER TABLE areas ADD COLUMN IF NOT EXISTS franchise_user_id INTEGER NULL"))
+        db.execute(text("ALTER TABLE areas ADD COLUMN IF NOT EXISTS office_address TEXT NULL"))
         db.execute(text("ALTER TABLE attendance_events ADD COLUMN IF NOT EXISTS qr_area_id INTEGER NULL"))
         db.execute(text("ALTER TABLE attendance_events ADD COLUMN IF NOT EXISTS qr_office_name VARCHAR(255) NULL"))
         db.execute(text("ALTER TABLE attendance_events ADD COLUMN IF NOT EXISTS qr_token_hash VARCHAR(128) NULL"))
@@ -99,14 +101,146 @@ def _token_hash(token: str | None) -> str | None:
 
 
 def _office_address(row: dict) -> str:
-    return row.get('description') or row.get('code') or row.get('name') or ''
+    return row.get('office_address') or row.get('description') or row.get('code') or row.get('name') or ''
+
+
+def _normalise_address(value: str | None) -> str:
+    return ' '.join(str(value or '').strip().lower().split())
+
+
+def _franchise_scope_for_user(db: Session, user_id: int) -> tuple[int | None, str | None]:
+    row = db.execute(text("""
+        SELECT fu.id AS franchise_user_id, fu.office_address
+        FROM franchise_users fu
+        WHERE fu.user_id = :user_id AND COALESCE(fu.is_active, TRUE) = TRUE
+        UNION ALL
+        SELECT mu.franchise_user_id, fu.office_address
+        FROM manager_users mu
+        JOIN franchise_users fu ON fu.id = mu.franchise_user_id
+        WHERE mu.user_id = :user_id AND COALESCE(mu.is_active, TRUE) = TRUE
+        UNION ALL
+        SELECT eu.franchise_user_id, fu.office_address
+        FROM employee_users eu
+        JOIN franchise_users fu ON fu.id = eu.franchise_user_id
+        WHERE eu.user_id = :user_id AND COALESCE(eu.is_active, TRUE) = TRUE
+        LIMIT 1
+    """), {'user_id': user_id}).mappings().first()
+    if not row:
+        return None, None
+    return row.get('franchise_user_id'), row.get('office_address')
+
+
+def _upsert_address_area(db: Session, franchise_user_id: int, address: str, label: str) -> dict:
+    normalized = _normalise_address(address)
+    if not normalized:
+        raise HTTPException(status_code=400, detail='A complete office address is required')
+    address_key = hashlib.sha256(normalized.encode('utf-8')).hexdigest()[:12]
+    code = f'F{franchise_user_id}-ADDR-{address_key}'
+    row = db.execute(text("""
+        SELECT id, name, code, description, office_address, latitude, longitude, allowed_radius_m,
+               qr_token, COALESCE(qr_enabled, TRUE) AS qr_enabled, franchise_user_id
+        FROM areas
+        WHERE franchise_user_id = :fid AND code = :code
+        LIMIT 1
+    """), {'fid': franchise_user_id, 'code': code}).mappings().first()
+    now = now_sa_naive()
+    if row:
+        db.execute(text("""
+            UPDATE areas
+            SET name = :name, description = :address, office_address = :address, updated_at = :now
+            WHERE id = :id
+        """), {'name': f'{label[:95]} [{address_key}]', 'address': address.strip(), 'now': now, 'id': row['id']})
+        area_id = int(row['id'])
+    else:
+        token = secrets.token_urlsafe(32)
+        inserted = db.execute(text("""
+            INSERT INTO areas (name, code, description, office_address, allowed_radius_m, franchise_user_id,
+                               qr_token, qr_enabled, qr_updated_at, created_at, updated_at)
+            VALUES (:name, :code, :address, :address, 100, :fid, :token, TRUE, :now, :now, :now)
+            RETURNING id
+        """), {'name': f'{label[:95]} [{address_key}]', 'code': code, 'address': address.strip(),
+                 'fid': franchise_user_id, 'token': token, 'now': now}).mappings().first()
+        area_id = int(inserted['id'])
+    db.commit()
+    return _office_qr_row(db, area_id)
+
+
+def _assign_user_to_area(db: Session, user_id: int, area: dict):
+    current = db.execute(text("""
+        SELECT id, area_id FROM gps_allocations_per_user
+        WHERE user_id = :user_id AND COALESCE(is_active, TRUE) = TRUE
+        ORDER BY id DESC LIMIT 1
+    """), {'user_id': user_id}).mappings().first()
+    if current and int(current.get('area_id') or 0) == int(area['id']):
+        return
+    now = now_sa_naive()
+    db.execute(text("UPDATE gps_allocations_per_user SET is_active = FALSE, updated_at = :now WHERE user_id = :user_id"),
+               {'now': now, 'user_id': user_id})
+    db.execute(text("""
+        INSERT INTO gps_allocations_per_user
+            (user_id, area_id, latitude, longitude, radius_meters, is_active, created_at, updated_at)
+        VALUES (:user_id, :area_id, :latitude, :longitude, :radius, TRUE, :now, :now)
+    """), {'user_id': user_id, 'area_id': area['id'], 'latitude': str(area.get('latitude')) if area.get('latitude') is not None else None,
+             'longitude': str(area.get('longitude')) if area.get('longitude') is not None else None,
+             'radius': area.get('allowed_radius_m') or 100, 'now': now})
+    db.commit()
+
+
+def _sync_franchise_address_areas(db: Session, franchise_user_id: int):
+    franchise = db.execute(text("""
+        SELECT user_id, COALESCE(business_name, franchise_name, 'Head Office') AS label, office_address
+        FROM franchise_users WHERE id = :fid LIMIT 1
+    """), {'fid': franchise_user_id}).mappings().first()
+    if not franchise:
+        return []
+    areas_by_address = {}
+    if _normalise_address(franchise.get('office_address')):
+        area = _upsert_address_area(db, franchise_user_id, franchise['office_address'], f"{franchise.get('label') or 'Head Office'} - Head Office")
+        areas_by_address[_normalise_address(franchise['office_address'])] = area
+        _assign_user_to_area(db, int(franchise['user_id']), area)
+    staff = db.execute(text("""
+        SELECT user_id, name, surname, office_address_assigned, 'Manager' AS staff_type
+        FROM manager_users
+        WHERE franchise_user_id = :fid AND COALESCE(is_active, TRUE) = TRUE
+        UNION ALL
+        SELECT user_id, name, surname, office_address_assigned, 'Employee' AS staff_type
+        FROM employee_users
+        WHERE franchise_user_id = :fid AND COALESCE(is_active, TRUE) = TRUE
+    """), {'fid': franchise_user_id}).mappings().all()
+    for person in staff:
+        address = (person.get('office_address_assigned') or franchise.get('office_address') or '').strip()
+        if not address:
+            continue
+        key = _normalise_address(address)
+        area = areas_by_address.get(key)
+        if not area:
+            area = _upsert_address_area(db, franchise_user_id, address, f"Office - {address.split(',')[0].strip()}")
+            areas_by_address[key] = area
+        _assign_user_to_area(db, int(person['user_id']), area)
+    return list(areas_by_address.values())
+
+
+def _sync_user_address_allocation(db: Session, user_id: int):
+    fid, franchise_address = _franchise_scope_for_user(db, user_id)
+    if not fid:
+        return
+    row = db.execute(text("""
+        SELECT office_address_assigned FROM manager_users WHERE user_id = :uid
+        UNION ALL
+        SELECT office_address_assigned FROM employee_users WHERE user_id = :uid
+        LIMIT 1
+    """), {'uid': user_id}).mappings().first()
+    address = ((row.get('office_address_assigned') if row else None) or franchise_address or '').strip()
+    if address:
+        area = _upsert_address_area(db, int(fid), address, f"Office - {address.split(',')[0].strip()}")
+        _assign_user_to_area(db, user_id, area)
 
 
 def _office_qr_row(db: Session, area_id: int):
     _ensure_office_qr_schema(db)
     row = db.execute(text("""
-        SELECT id, name, code, description, latitude, longitude, allowed_radius_m,
-               qr_token, COALESCE(qr_enabled, TRUE) AS qr_enabled
+        SELECT id, name, code, description, office_address, latitude, longitude, allowed_radius_m,
+               qr_token, COALESCE(qr_enabled, TRUE) AS qr_enabled, franchise_user_id
         FROM areas
         WHERE id = :area_id
     """), {'area_id': area_id}).mappings().first()
@@ -133,8 +267,8 @@ def _validate_office_qr_for_user(db: Session, user_id: int, qr_value: str | None
     if not token:
         raise HTTPException(status_code=400, detail='Office QR code is required before sign in/out')
     area = db.execute(text("""
-        SELECT id, name, code, description, latitude, longitude, allowed_radius_m,
-               qr_token, COALESCE(qr_enabled, TRUE) AS qr_enabled
+        SELECT id, name, code, description, office_address, latitude, longitude, allowed_radius_m,
+               qr_token, COALESCE(qr_enabled, TRUE) AS qr_enabled, franchise_user_id
         FROM areas
         WHERE qr_token = :token
         LIMIT 1
@@ -144,6 +278,7 @@ def _validate_office_qr_for_user(db: Session, user_id: int, qr_value: str | None
     area = dict(area)
     if area.get('qr_enabled') is False:
         raise HTTPException(status_code=400, detail='This office QR code is disabled')
+    _sync_user_address_allocation(db, user_id)
     allocation = db.execute(text("""
         SELECT area_id
         FROM gps_allocations_per_user
@@ -1323,25 +1458,47 @@ def list_office_qr_codes(current_user: User = Depends(get_current_user), db: Ses
     roles = set(_get_role_names(db, current_user.id))
     if not roles.intersection({'SuperUser', 'FranchiseUser', 'ManagerUser'}):
         raise HTTPException(status_code=403, detail='Only SuperUser, Franchise or Manager users can print office QR codes')
-    rows = db.execute(text("""
-        SELECT id, name, code, description, latitude, longitude, allowed_radius_m,
-               qr_token, COALESCE(qr_enabled, TRUE) AS qr_enabled
-        FROM areas
-        ORDER BY name ASC
-    """)).mappings().all()
+
+    params = {}
+    where = '1 = 1'
+    if 'SuperUser' not in roles:
+        fid, _ = _franchise_scope_for_user(db, current_user.id)
+        if not fid:
+            raise HTTPException(status_code=403, detail='No franchise scope found')
+        _sync_franchise_address_areas(db, int(fid))
+        where = 'a.franchise_user_id = :fid'
+        params['fid'] = int(fid)
+        if 'ManagerUser' in roles and 'FranchiseUser' not in roles:
+            assigned = db.execute(text("""
+                SELECT area_id FROM gps_allocations_per_user
+                WHERE user_id = :uid AND COALESCE(is_active, TRUE) = TRUE
+                ORDER BY id DESC LIMIT 1
+            """), {'uid': current_user.id}).mappings().first()
+            where += ' AND a.id = :assigned_area_id'
+            params['assigned_area_id'] = int(assigned['area_id']) if assigned and assigned.get('area_id') else -1
+
+    rows = db.execute(text(f"""
+        SELECT a.id, a.name, a.code, a.description, a.office_address, a.latitude, a.longitude,
+               a.allowed_radius_m, a.qr_token, COALESCE(a.qr_enabled, TRUE) AS qr_enabled, a.franchise_user_id,
+               COUNT(DISTINCT g.user_id) AS assigned_user_count
+        FROM areas a
+        LEFT JOIN gps_allocations_per_user g ON g.area_id = a.id AND COALESCE(g.is_active, TRUE) = TRUE
+        WHERE {where}
+        GROUP BY a.id
+        ORDER BY a.name ASC
+    """), params).mappings().all()
     result = []
     for raw in rows:
         row = _office_qr_row(db, int(raw['id']))
         result.append({
-            'id': row['id'],
-            'name': row.get('name'),
-            'code': row.get('code'),
+            'id': row['id'], 'name': row.get('name'), 'code': row.get('code'),
             'address': _office_address(row),
             'latitude': str(row.get('latitude')) if row.get('latitude') is not None else None,
             'longitude': str(row.get('longitude')) if row.get('longitude') is not None else None,
             'allowed_radius_m': row.get('allowed_radius_m'),
             'qr_enabled': row.get('qr_enabled') is not False,
             'qr_payload': _qr_payload(row['qr_token']),
+            'assigned_user_count': int(raw.get('assigned_user_count') or 0),
         })
     return result
 
@@ -1364,6 +1521,7 @@ def print_office_qr_pdf(area_id: int, current_user: User = Depends(get_current_u
     if not roles.intersection({'SuperUser', 'FranchiseUser', 'ManagerUser'}):
         raise HTTPException(status_code=403, detail='Only SuperUser, Franchise or Manager users can print office QR codes')
     area = _office_qr_row(db, area_id)
+    _assert_office_area_access(db, current_user, area)
     try:
         from reportlab.lib import colors
         from reportlab.lib.pagesizes import A4
@@ -1408,6 +1566,25 @@ def print_office_qr_pdf(area_id: int, current_user: User = Depends(get_current_u
     safe_name = ''.join(ch if ch.isalnum() else '_' for ch in str(area.get('name') or area_id)).strip('_') or f'office_{area_id}'
     return Response(buffer.getvalue(), media_type='application/pdf', headers={'Content-Disposition': f'attachment; filename="office_qr_{safe_name}.pdf"'})
 
+
+def _assert_office_area_access(db: Session, current_user: User, area: dict, write: bool = False):
+    roles = set(_get_role_names(db, current_user.id))
+    if 'SuperUser' in roles:
+        return
+    fid, _ = _franchise_scope_for_user(db, current_user.id)
+    if not fid or int(area.get('franchise_user_id') or 0) != int(fid):
+        raise HTTPException(status_code=403, detail='This office QR code is outside your franchise scope')
+    if 'ManagerUser' in roles and 'FranchiseUser' not in roles:
+        allocation = db.execute(text("""
+            SELECT area_id FROM gps_allocations_per_user
+            WHERE user_id = :uid AND COALESCE(is_active, TRUE) = TRUE
+            ORDER BY id DESC LIMIT 1
+        """), {'uid': current_user.id}).mappings().first()
+        if not allocation or int(allocation.get('area_id') or 0) != int(area['id']):
+            raise HTTPException(status_code=403, detail='Managers can only access the QR code for their assigned office')
+        if write:
+            raise HTTPException(status_code=403, detail='Only the franchise user can change office GPS settings')
+
 def _get_user_office_hours(db: Session, user_id: int) -> tuple[str, str]:
     # Returns the staff-specific office hours if configured. Falls back to 08:00-17:00.
     try:
@@ -1448,6 +1625,8 @@ def update_office_location(
     if not roles.intersection({'SuperUser', 'FranchiseUser', 'ManagerUser'}):
         raise HTTPException(status_code=403, detail='Only SuperUser, Franchise or Manager users can update office GPS')
 
+    area_data = _office_qr_row(db, area_id)
+    _assert_office_area_access(db, current_user, area_data, write=True)
     area = db.query(Area).filter(Area.id == area_id).first()
     if not area:
         raise HTTPException(status_code=404, detail='Office / area not found')
@@ -1458,6 +1637,13 @@ def update_office_location(
 
     db.commit()
     db.refresh(area)
+    db.execute(text("""
+        UPDATE gps_allocations_per_user
+        SET latitude = :latitude, longitude = :longitude, radius_meters = :radius, updated_at = :now
+        WHERE area_id = :area_id AND COALESCE(is_active, TRUE) = TRUE
+    """), {'latitude': str(payload.latitude), 'longitude': str(payload.longitude),
+             'radius': int(payload.allowed_radius_m or 100), 'now': now_sa_naive(), 'area_id': area_id})
+    db.commit()
 
     return {
         'id': area.id,
