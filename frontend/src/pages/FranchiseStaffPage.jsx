@@ -234,6 +234,7 @@ export default function FranchiseStaffPage() {
   const staffAutocompleteRef = React.useRef(null);
 
   const activeManagers = useMemo(() => managers.filter((m) => m.is_active !== false), [managers])
+  const activeOfficeAddresses = useMemo(() => officeQrs.filter((o) => o.is_active !== false && o.address).map((o) => ({ id: o.id, name: o.name || o.address, address: o.address })), [officeQrs])
   const isManagerRole = staff.role === 'Manager'
 
   const load = async () => {
@@ -256,6 +257,12 @@ export default function FranchiseStaffPage() {
   }
 
   useEffect(() => { load() }, [])
+
+  useEffect(() => {
+    if (activeSubTab === 'add' && !editing && !staff.office_address_assigned && activeOfficeAddresses.length) {
+      setStaff((current) => ({ ...current, office_address_assigned: activeOfficeAddresses[0].address }))
+    }
+  }, [activeSubTab, editing, activeOfficeAddresses, staff.office_address_assigned])
 
   useEffect(() => {
     if (activeSubTab !== 'add') return;
@@ -807,7 +814,16 @@ export default function FranchiseStaffPage() {
             <label>Surname<input required value={staff.surname} onChange={(e) => setStaff({ ...staff, surname: e.target.value })} /></label>
             <label>Email Address <span className="optional-note">optional</span><input type="email" value={staff.email || ''} onChange={(e) => setStaff({ ...staff, email: e.target.value })} /></label>
             <label>Contact Number<input value={staff.contact_number || ''} onChange={(e) => setStaff({ ...staff, contact_number: e.target.value })} /></label>
-            <label>Office Address Assigned<input ref={staffAddressInputRef} value={staff.office_address_assigned || ''} onChange={(e) => setStaff({ ...staff, office_address_assigned: e.target.value })} placeholder="Start typing address..." /></label>
+            <label>Office Address Assigned
+              {activeOfficeAddresses.length ? (
+                <select required value={staff.office_address_assigned || ''} onChange={(e) => setStaff({ ...staff, office_address_assigned: e.target.value })}>
+                  <option value="">Select franchise office address</option>
+                  {activeOfficeAddresses.map((office) => <option key={office.id} value={office.address}>{office.name} — {office.address}</option>)}
+                </select>
+              ) : (
+                <input ref={staffAddressInputRef} required value={staff.office_address_assigned || ''} onChange={(e) => setStaff({ ...staff, office_address_assigned: e.target.value })} placeholder="Save a franchise office address first" />
+              )}
+            </label>
             <div className="hours-grid">
               <label>Office Start Time<input type="time" required value={staff.work_start_time || '08:00'} onChange={(e) => setStaff({ ...staff, work_start_time: e.target.value })} /></label>
               <label>Office End Time<input type="time" required value={staff.work_end_time || '17:00'} onChange={(e) => setStaff({ ...staff, work_end_time: e.target.value })} /></label>

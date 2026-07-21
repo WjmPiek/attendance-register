@@ -204,7 +204,7 @@ def _scope_where(db: Session, current_user: User):
         return 'la.franchise_user_id = :fid', {'fid': franchise['franchise_user_id']}
     manager = _manager_profile(db, current_user.id)
     if manager:
-        return '(la.manager_user_id = :mid OR la.franchise_user_id = :fid)', {'mid': manager['manager_user_id'], 'fid': manager['franchise_user_id']}
+        return '(la.applicant_user_id = :uid OR la.manager_user_id = :mid)', {'uid': current_user.id, 'mid': manager['manager_user_id']}
     return 'la.applicant_user_id = :uid', {'uid': current_user.id}
 
 

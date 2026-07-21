@@ -219,6 +219,27 @@ export async function markNotificationRead(notificationId) {
   return apiRequest(`/alerts/notifications/${notificationId}/read`, { method: 'POST' })
 }
 
+export async function getPayrollEmployees() {
+  return apiRequest('/payroll/employees')
+}
+
+export async function uploadPayslipDocument(staffType, staffId, file) {
+  const token = localStorage.getItem('token')
+  const form = new FormData()
+  form.append('file', file)
+  const type = staffType === 'Manager' || staffType === 'manager' ? 'managers' : 'employees'
+  const response = await fetch(`${API_BASE_URL}/payroll/${type}/${staffId}/upload`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: form,
+  })
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({ detail: 'Payslip upload failed' }))
+    throw new Error(body.detail || 'Payslip upload failed')
+  }
+  return response.json()
+}
+
 export async function getMyPayslips() {
   return apiRequest('/payroll/my-payslips')
 }

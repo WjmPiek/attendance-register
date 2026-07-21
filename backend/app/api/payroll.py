@@ -163,12 +163,12 @@ def _staff_rows(db: Session, current_user: User):
     where, params = _staff_scope_sql(db, current_user)
     rows = db.execute(text(f"""
         WITH staff AS (
-            SELECT u.id AS user_id, e.franchise_user_id, e.name, e.surname, e.employee_role AS role, e.email,
+            SELECT e.id AS staff_id, u.id AS user_id, e.franchise_user_id, e.name, e.surname, e.employee_role AS role, e.email,
                    e.employee_number, 'Employee' AS staff_type
             FROM employee_users e JOIN users u ON u.id = e.user_id
             WHERE COALESCE(e.is_active, TRUE) = TRUE AND COALESCE(u.is_active, TRUE) = TRUE
             UNION ALL
-            SELECT u.id AS user_id, m.franchise_user_id, m.name, m.surname, 'Manager' AS role, m.email,
+            SELECT m.id AS staff_id, u.id AS user_id, m.franchise_user_id, m.name, m.surname, 'Manager' AS role, m.email,
                    m.employee_number AS employee_number, 'Manager' AS staff_type
             FROM manager_users m JOIN users u ON u.id = m.user_id
             WHERE COALESCE(m.is_active, TRUE) = TRUE AND COALESCE(u.is_active, TRUE) = TRUE
@@ -742,6 +742,77 @@ def _is_staff_user(db: Session, user_id: int) -> bool:
         LIMIT 1
     """), {"uid": user_id}).first()
     return bool(row)
+
+
+
+
+@router.get('/employees')
+def visible_staff_for_payroll(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _ensure_tables(db)
+    if not _can_payroll(db, current_user):
+        raise HTTPException(status_code=403, detail='Only SuperUser, FranchiseUser or Finance users can upload payslips')
+    return _staff_rows(db, current_user)
+
+
+def _payroll_target(db: Session, current_user: User, staff_type: str, staff_id: int):
+    if not _can_payroll(db, current_user):
+        raise HTTPException(status_code=403, detail='Payslip upload denied')
+    table = 'manager_users' if staff_type == 'manager' else 'employee_users'
+    sql = f"""
+        SELECT s.id AS staff_id, s.user_id, s.franchise_user_id, s.employee_number,
+               s.name, s.surname
+        FROM {table} s
+        JOIN users u ON u.id = s.user_id
+        WHERE s.id = :id AND COALESCE(s.is_active, TRUE)=TRUE AND COALESCE(u.is_active, TRUE)=TRUE
+        LIMIT 1
+    """
+    row = db.execute(text(sql), {'id': staff_id}).mappings().first()
+    if not row:
+        raise HTTPException(status_code=404, detail='Staff member not found')
+    if not _is_superuser(db, current_user) and not _is_finance_user(db, current_user):
+        fid = _franchise_id_for_user(db, current_user)
+        if not fid or int(row['franchise_user_id']) != int(fid):
+            raise HTTPException(status_code=403, detail='Staff member is outside your franchise scope')
+    return dict(row)
+
+
+def _upload_single_payslip(staff_type: str, staff_id: int, file: UploadFile, current_user: User, db: Session):
+    _ensure_tables(db)
+    target = _payroll_target(db, current_user, staff_type, staff_id)
+    filename = (file.filename or 'payslip').strip()
+    ext = filename.lower().rsplit('.', 1)[-1] if '.' in filename else ''
+    if ext not in {'pdf', 'zip', 'png', 'jpg', 'jpeg'}:
+        raise HTTPException(status_code=400, detail='Only PDF, ZIP, PNG or JPG payslip files are allowed')
+    content = file.file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail='The selected file is empty')
+    if len(content) > 20 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail='File is too large. Maximum size is 20 MB')
+    content_type = file.content_type or ('application/pdf' if ext == 'pdf' else 'application/octet-stream')
+    payslip_id = db.execute(text("""
+        INSERT INTO payroll_payslips (import_id, user_id, franchise_user_id, employee_key, original_filename,
+            zip_filename, file_content, content_type, uploaded_by_user_id, uploaded_at, is_active)
+        VALUES (NULL, :user_id, :franchise_user_id, :employee_key, :original_filename,
+            :zip_filename, :file_content, :content_type, :uploaded_by_user_id, :uploaded_at, TRUE)
+        RETURNING id
+    """), {
+        'user_id': target['user_id'], 'franchise_user_id': target['franchise_user_id'],
+        'employee_key': target.get('employee_number'), 'original_filename': filename,
+        'zip_filename': filename, 'file_content': content, 'content_type': content_type,
+        'uploaded_by_user_id': current_user.id, 'uploaded_at': datetime.utcnow(),
+    }).scalar_one()
+    db.commit()
+    return {'message': 'Payslip uploaded and linked to staff member', 'payslip_id': payslip_id}
+
+
+@router.post('/employees/{employee_id}/upload')
+def upload_employee_payslip(employee_id: int, file: UploadFile = File(...), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return _upload_single_payslip('employee', employee_id, file, current_user, db)
+
+
+@router.post('/managers/{manager_id}/upload')
+def upload_manager_payslip(manager_id: int, file: UploadFile = File(...), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return _upload_single_payslip('manager', manager_id, file, current_user, db)
 
 
 @router.get('/payslips')
