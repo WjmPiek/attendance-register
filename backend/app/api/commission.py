@@ -117,7 +117,16 @@ def employees(current_user:User=Depends(get_current_user),db:Session=Depends(get
     if "FranchiseUser" in roles: where.append("e.franchise_user_id=:fid");p["fid"]=fid
     elif "ManagerUser" in roles: where.append("e.manager_user_id=:mid");p["mid"]=mid
     elif "EmployeeUser" in roles: where.append("e.id=:eid");p["eid"]=eid
-    rows=db.execute(text(f"SELECT e.user_id,COALESCE(NULLIF(TRIM(CONCAT(COALESCE(e.name,''),' ',COALESCE(e.surname,''))),''),u.full_name) full_name,e.employee_number FROM employee_users e JOIN users u ON u.id=e.user_id WHERE {' AND '.join(where)} ORDER BY full_name"),p).mappings().all()
+    rows=db.execute(text(f"""SELECT e.user_id,
+        COALESCE(NULLIF(TRIM(CONCAT(COALESCE(e.name,''),' ',COALESCE(e.surname,''))),''),u.full_name) full_name,
+        e.employee_number,
+        COALESCE(NULLIF(e.employee_role,''),'Employee') employee_role,
+        COALESCE(NULLIF(e.email,''),u.email) email,
+        e.office_address_assigned
+      FROM employee_users e
+      JOIN users u ON u.id=e.user_id
+      WHERE {' AND '.join(where)}
+      ORDER BY full_name"""),p).mappings().all()
     return [dict(r) for r in rows]
 
 @router.get('/structures')

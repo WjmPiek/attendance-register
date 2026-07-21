@@ -2019,3 +2019,23 @@ input[type="date"]::-webkit-date-and-time-value,
   .newly-created-id-page .button-row { display: none !important; }
   .created-id-card-stage { padding: 0; }
 }
+
+/* Franchise employee commission directory */
+.commission-employee-search { min-width: min(100%, 320px); }
+.commission-employee-search input { width: 100%; margin-top: 6px; }
+.commission-employee-list { display: grid; gap: 10px; }
+.commission-employee-row {
+  width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 18px;
+  padding: 16px 18px; border: 1px solid rgba(20, 44, 38, .14); border-radius: 14px;
+  background: rgba(255,255,255,.72); text-align: left; color: inherit; cursor: pointer;
+  box-shadow: 0 5px 16px rgba(27, 54, 45, .06); transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
+}
+.commission-employee-row:hover { transform: translateY(-1px); box-shadow: 0 9px 22px rgba(27,54,45,.11); border-color: rgba(35,99,78,.38); }
+.commission-employee-row > div { display: grid; gap: 3px; min-width: 0; }
+.commission-employee-row strong { font-size: 1rem; }
+.commission-employee-row span, .commission-employee-row small { color: var(--muted, #66736f); }
+.commission-open-label { white-space: nowrap; font-weight: 700; color: var(--primary, #23634e) !important; }
+@media (max-width: 640px) {
+  .commission-employee-row { align-items: flex-start; }
+  .commission-open-label { white-space: normal; text-align: right; }
+}
