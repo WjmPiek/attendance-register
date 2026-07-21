@@ -190,6 +190,15 @@ export async function resetStaffPassword(type, id, password) {
   return apiFetch(`/franchise-staff/${type}/${id}/reset-password`, { method: 'POST', body: JSON.stringify({ password }) })
 }
 
+
+export async function getMyBusinessInformation() {
+  return apiRequest('/franchise/me')
+}
+
+export async function updateMyBusinessInformation(payload) {
+  return apiRequest('/franchise/me', { method: 'PUT', body: JSON.stringify(payload) })
+}
+
 export async function getDashboardAlerts() {
   return apiRequest('/alerts/summary')
 }

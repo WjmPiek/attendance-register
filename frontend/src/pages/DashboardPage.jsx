@@ -9,6 +9,7 @@ import Irp5DocumentsPage from './Irp5DocumentsPage'
 import LeavePage from './LeavePage'
 import PayrollPage from './PayrollPage'
 import CommissionPage from './CommissionPage'
+import BusinessInformationPage from './BusinessInformationPage'
 
 export default function DashboardPage({ me, roles, entities, onLogout }) {
   const isSuperUser = me.roles.includes('SuperUser')
@@ -42,6 +43,7 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
     { id: 'history', label: 'History', visible: isSignCapable || isApprovalCapable },
     { id: 'approvals', label: 'Approvals', visible: isApprovalCapable },
     { id: 'staff', label: 'HR Staff', visible: isSuperUser || isFranchiseUser },
+    { id: 'business', label: 'Business Information', visible: isFranchiseUser },
     { id: 'franchises', label: 'Franchise Approvals', visible: isSuperUser },
     { id: 'leave', label: 'Leave', visible: isEmployee || isManagerUser || isFranchiseUser || isSuperUser },
     { id: 'commission', label: 'Commission & Overtime', visible: isFranchiseUser || isManagerUser || isEmployee || isSuperUser },
@@ -120,6 +122,7 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
         {activeTab === 'history' && (isSignCapable || isApprovalCapable) ? <AttendanceHistoryPage me={me} /> : null}
         {activeTab === 'approvals' && isApprovalCapable ? <AttendanceApprovalPage me={me} /> : null}
         {activeTab === 'staff' && (isSuperUser || isFranchiseUser) ? <FranchiseStaffPage me={me} /> : null}
+        {activeTab === 'business' && isFranchiseUser ? <BusinessInformationPage /> : null}
         {activeTab === 'franchises' && isSuperUser ? <FranchiseRegistrationApprovalPage me={me} /> : null}
         {activeTab === 'leave' ? <LeavePage me={me} /> : null}
         {activeTab === 'commission' ? <CommissionPage me={me} /> : null}

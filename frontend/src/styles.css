@@ -1222,7 +1222,7 @@ h3 { font-size: 1.25rem; }
 .metric-card.success strong { color: #15803d; }
 .overview-notification-grid { grid-template-columns: repeat(3, minmax(220px, 1fr)); }
 .overview-dashboard-pro .notification-card { min-height: 132px; padding: 16px; box-shadow: 0 10px 28px rgba(91,65,120,.08); }
-.overview-action-row { grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr); }
+.overview-action-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .overview-card-title { display: flex; justify-content: space-between; gap: 12px; align-items: start; margin-bottom: 14px; }
 .overview-card-title h2, .overview-card-title p { margin: 0; }
 .overview-card-title.split { align-items: center; }
@@ -1878,4 +1878,26 @@ input[type="date"]::-webkit-date-and-time-value,
     font-size: 12px;
     padding: 0.7rem 0.65rem;
   }
+}
+
+/* BUSINESS_INFORMATION_AND_OVERVIEW_CARD_ALIGNMENT */
+.business-information-page { display: grid; gap: 20px; }
+.business-info-hero { display: flex; justify-content: space-between; align-items: center; gap: 20px; }
+.business-info-hero h1 { margin: 2px 0 8px; }
+.business-info-form { padding: 26px; }
+.two-column-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.two-column-grid label { display: grid; gap: 7px; font-weight: 700; }
+.full-width-field { grid-column: 1 / -1; }
+.business-map-card { display: grid; grid-template-columns: minmax(260px, .7fr) minmax(320px, 1.3fr); gap: 20px; align-items: stretch; }
+.business-map-card iframe { width: 100%; min-height: 340px; border: 0; border-radius: 20px; }
+.success-message { color: #15803d; font-weight: 700; }
+.overview-dashboard-pro .suggestions-card,
+.overview-dashboard-pro .notifications-card { min-height: 100%; padding: 22px; border-radius: 30px; box-shadow: var(--shadow-soft); }
+.overview-action-row.enterprise-action-stack { align-items: stretch; }
+.overview-action-row.enterprise-action-stack > .form-card { height: 100%; }
+.metric-card.metric-link { cursor: pointer; text-align: left; width: 100%; font: inherit; color: inherit; }
+.metric-card.metric-link:hover { transform: translateY(-2px); box-shadow: 0 14px 32px rgba(91,65,120,.13); }
+@media (max-width: 760px) {
+  .business-info-hero { align-items: flex-start; flex-direction: column; }
+  .two-column-grid, .business-map-card { grid-template-columns: 1fr; }
 }

@@ -1,17 +1,18 @@
 import { useEffect, useState } from 'react'
 import { getDashboardAlerts, markNotificationRead } from '../api/client'
 
-function StatBlock({ title, value, subtitle, tone = '' }) {
-  return (
-    <div className={`metric-card ${tone}`}>
-      <strong>{value}</strong>
-      <span>{title}</span>
-      {subtitle ? <small>{subtitle}</small> : null}
-    </div>
-  )
+function StatBlock({ title, value, subtitle, tone = '', onClick }) {
+  const content = <>
+    <strong>{value}</strong>
+    <span>{title}</span>
+    {subtitle ? <small>{subtitle}</small> : null}
+  </>
+  return onClick ? (
+    <button type="button" className={`metric-card metric-link ${tone}`} onClick={onClick} title={`Open ${title}`}>{content}</button>
+  ) : <div className={`metric-card ${tone}`}>{content}</div>
 }
 
-function OverviewMetricRail({ metrics = {}, lists = {} }) {
+function OverviewMetricRail({ metrics = {}, lists = {}, onNavigate }) {
   const totalIssues = Number(metrics.not_signed_in || 0) + Number(metrics.late || 0) + Number(metrics.missing_sign_out || 0) + Number((lists.gps_issues || []).length || 0)
   const goodCount = Math.max(0, Number(metrics.completed || 0))
   return (
@@ -22,10 +23,10 @@ function OverviewMetricRail({ metrics = {}, lists = {} }) {
         <p className="muted">Attendance, exceptions, leave and notifications for your current franchise scope.</p>
       </div>
       <div className="overview-metric-rail">
-        <StatBlock title="Active staff" value={metrics.total_staff || 0} subtitle="In current scope" />
-        <StatBlock title="Completed" value={goodCount} subtitle="Signed in and out" tone="success" />
-        <StatBlock title="Open issues" value={totalIssues} subtitle="Needs review" tone={totalIssues ? 'danger' : 'success'} />
-        <StatBlock title="Leave pending" value={metrics.pending_leave || 0} subtitle="Applications to review" tone={metrics.pending_leave ? 'warning' : ''} />
+        <StatBlock title="Active staff" value={metrics.total_staff || 0} subtitle="In current scope" onClick={() => onNavigate?.('staff')} />
+        <StatBlock title="Completed" value={goodCount} subtitle="Signed in and out" tone="success" onClick={() => onNavigate?.('history')} />
+        <StatBlock title="Open issues" value={totalIssues} subtitle="Needs review" tone={totalIssues ? 'danger' : 'success'} onClick={() => onNavigate?.('approvals')} />
+        <StatBlock title="Leave pending" value={metrics.pending_leave || 0} subtitle="Applications to review" tone={metrics.pending_leave ? 'warning' : ''} onClick={() => onNavigate?.('leave')} />
       </div>
     </section>
   )
@@ -376,7 +377,7 @@ export default function OverviewDashboardPage({ onNavigate }) {
     <div className="overview-dashboard overview-dashboard-pro">
       {error ? <p className="error">{error}</p> : null}
 
-      <OverviewMetricRail metrics={metrics} lists={lists} />
+      <OverviewMetricRail metrics={metrics} lists={lists} onNavigate={onNavigate} />
 
       <OverviewNotifications lists={lists} metrics={metrics} onNavigate={onNavigate} />
 
