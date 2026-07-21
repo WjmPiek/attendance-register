@@ -1181,25 +1181,6 @@ def create_manager(payload: CreateManagerRequest, current_user: User = Depends(g
     return {"message": "Manager created", "manager_id": manager_id, "user_id": user_id, "username": login_username, "login_name": login_username if not payload.email else login_email}
 
 
-
-def _valid_hhmm(value, fallback="08:00"):
-    value = (value or fallback or "08:00").strip()
-
-    try:
-        parts = value.split(":")
-        if len(parts) != 2:
-            return fallback
-
-        hour = int(parts[0])
-        minute = int(parts[1])
-
-        if hour < 0 or hour > 23 or minute < 0 or minute > 59:
-            return fallback
-
-        return f"{hour:02d}:{minute:02d}"
-    except Exception:
-        return fallback
-
 @router.post("/employees")
 def create_employee(payload: CreateEmployeeRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _ensure_office_hours_columns(db)
