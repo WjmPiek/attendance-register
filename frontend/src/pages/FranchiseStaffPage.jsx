@@ -7,7 +7,9 @@ import {
   downloadOfficeQrPdf,
   uploadStaffIdPhoto,
   downloadStaffIdCards,
-  updateOfficeLocation
+  updateOfficeLocation,
+  updateOfficeDetails,
+  deleteOffice
 } from '../api/client'
 
 import OfficeLocationMap from '../components/OfficeLocationMap'
@@ -17,6 +19,7 @@ import { getDistance } from "../utils/distance";
 
 const staffRoles = [
   'Manager',
+  'Agent',
   'Finance',
   'Admin',
   'Arrangement Officer',
@@ -224,7 +227,8 @@ export default function FranchiseStaffPage() {
   const [idPhotoFile, setIdPhotoFile] = useState(null)
   const [idPhotoPreview, setIdPhotoPreview] = useState('')
   const [idPhotoOffset, setIdPhotoOffset] = useState({ x: 0, y: 0 })
-  const [selectedOffice, setSelectedOffice] = useState(null);
+  const [selectedOffice, setSelectedOffice] = useState(null)
+  const [editingOffice, setEditingOffice] = useState(null);
   const [pickedLocation, setPickedLocation] = useState(null);
   const staffAddressInputRef = React.useRef(null);
   const staffAutocompleteRef = React.useRef(null);
@@ -528,6 +532,44 @@ export default function FranchiseStaffPage() {
     }
   }
 
+  const startEditOffice = (office) => {
+    setEditingOffice({
+      id: office.id,
+      name: (office.name || '').split(' [', 1)[0],
+      address: office.address || '',
+      allowed_radius_m: office.allowed_radius_m || 100,
+    })
+  }
+
+  const saveOfficeDetails = async () => {
+    try {
+      setError('')
+      await updateOfficeDetails(editingOffice.id, {
+        name: editingOffice.name,
+        address: editingOffice.address,
+        allowed_radius_m: Number(editingOffice.allowed_radius_m || 100),
+      })
+      setEditingOffice(null)
+      setMsg('Office information updated.')
+      await loadOfficeQrs()
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
+  const removeOffice = async (office) => {
+    if (!window.confirm(`Delete ${office.name || 'this office'}? This is only allowed when no active staff are assigned.`)) return
+    try {
+      setError('')
+      await deleteOffice(office.id)
+      setMsg('Office deleted.')
+      await loadOfficeQrs()
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
+
   const saveOfficeLocation = async () => {
     if (!selectedOffice || !pickedLocation) return;
 
@@ -820,27 +862,42 @@ export default function FranchiseStaffPage() {
           <p className="muted">Each QR code is generated from the franchise business address or a manager/employee assigned office address. Staff can only use the QR code linked to their assigned address.</p>
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Office</th><th>Linked business / assigned address</th><th>Assigned staff</th><th>Radius</th><th>QR Payload</th><th>Action</th></tr></thead>
+              <thead><tr><th>Office</th><th>Linked business / assigned address</th><th>Assigned staff</th><th>Radius</th><th>QR Link</th><th>Action</th></tr></thead>
               <tbody>
                 {officeQrs.map((office) => <tr key={office.id}>
-                  <td>{office.name || `Office #${office.id}`}</td>
+                  <td>{(office.name || `Office #${office.id}`).split(' [', 1)[0]}</td>
                   <td>{office.address || '—'}</td>
                   <td>{office.assigned_user_count || 0}</td>
                   <td>{office.allowed_radius_m || 100} m</td>
-                  <td><code>{office.qr_payload}</code></td>
+                  <td><span className="muted small">Opens registered staff sign in/out</span></td>
                   <td>
                     <button type="button" onClick={() => printOfficeQr(office)}>
                       Download / Print QR
                     </button>
 
-                    <button type="button" onClick={() => setSelectedOffice(office)}>
-                      Set GPS
-                    </button>
+                    <button type="button" onClick={() => setSelectedOffice(office)}>Set GPS</button>
+                    <button type="button" className="secondary-action" onClick={() => startEditOffice(office)}>Edit</button>
+                    <button type="button" className="danger" onClick={() => removeOffice(office)}>Delete</button>
                   </td>
                 </tr>)}
                 {!officeQrs.length ? <tr><td colSpan="6" className="muted">No linked addresses found. Save the franchise business address or assign an office address to staff.</td></tr> : null}
               </tbody>
             </table>
+          </div>
+        </section>
+      ) : null}
+
+      {editingOffice ? (
+        <section className="form-card" style={{ marginTop: 20 }}>
+          <h3>Edit office information</h3>
+          <div className="form-grid">
+            <label>Office name<input value={editingOffice.name} onChange={(e) => setEditingOffice({ ...editingOffice, name: e.target.value })} /></label>
+            <label>Attendance radius (metres)<input type="number" min="10" value={editingOffice.allowed_radius_m} onChange={(e) => setEditingOffice({ ...editingOffice, allowed_radius_m: e.target.value })} /></label>
+            <label className="full-width">Office address<textarea value={editingOffice.address} onChange={(e) => setEditingOffice({ ...editingOffice, address: e.target.value })} /></label>
+          </div>
+          <div className="separate-actions">
+            <button type="button" onClick={saveOfficeDetails}>Save Office</button>
+            <button type="button" className="secondary-action" onClick={() => setEditingOffice(null)}>Cancel</button>
           </div>
         </section>
       ) : null}

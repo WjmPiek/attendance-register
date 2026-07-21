@@ -61,8 +61,9 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
   ].filter((tab) => tab.visible), [isSignCapable, isApprovalCapable, isEmployee, isManagerUser, canUsePayroll, isStaffSelfService])
 
   const tabs = isMobileLayout && isStaffSelfService && !canManagePayroll ? mobileStaffTabs : fullTabs
-  const defaultTab = new URLSearchParams(window.location.search).get('tab') || 'home'
-  const shouldStartOnMobileMenu = isMobileLayout && isStaffSelfService && !canManagePayroll && !new URLSearchParams(window.location.search).get('tab')
+  const queryParams = new URLSearchParams(window.location.search)
+  const defaultTab = queryParams.get('office_qr') ? 'attendance' : (queryParams.get('tab') || 'home')
+  const shouldStartOnMobileMenu = isMobileLayout && isStaffSelfService && !canManagePayroll && !queryParams.get('tab') && !queryParams.get('office_qr')
   const [activeTab, setActiveTab] = useState(shouldStartOnMobileMenu ? null : (tabs.some((tab) => tab.id === defaultTab) ? defaultTab : (tabs[0]?.id || 'attendance')))
 
   useEffect(() => {

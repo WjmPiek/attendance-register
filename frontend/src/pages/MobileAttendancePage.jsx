@@ -11,7 +11,7 @@ export default function MobileAttendancePage({ me, onDone }) {
   const [workLocationType, setWorkLocationType] = useState('office')
   const [employeeNote, setEmployeeNote] = useState('')
   const [signatureValue, setSignatureValue] = useState('')
-  const [qrValue, setQrValue] = useState('')
+  const [qrValue, setQrValue] = useState(() => new URLSearchParams(window.location.search).get('office_qr') || '')
   const [qrOffice, setQrOffice] = useState(null)
   const [scanning, setScanning] = useState(false)
   const [cameraOpen, setCameraOpen] = useState(false)
@@ -30,6 +30,16 @@ export default function MobileAttendancePage({ me, onDone }) {
 
   useEffect(() => {
     loadStatus()
+    const linkedQr = new URLSearchParams(window.location.search).get('office_qr')
+    if (linkedQr) {
+      validateOfficeQr(linkedQr)
+        .then((office) => {
+          setQrOffice(office)
+          setQrValue(office.qr_payload || linkedQr)
+          setMessage('Office QR verified. Complete your signature and sign in or out.')
+        })
+        .catch((err) => setError(err.message))
+    }
   }, [])
 
   const getLocation = () => new Promise((resolve, reject) => {

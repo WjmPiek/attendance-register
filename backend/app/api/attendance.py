@@ -13,6 +13,7 @@ from math import radians, sin, cos, sqrt, atan2
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel
+from app.core.config import settings
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
@@ -56,6 +57,11 @@ class OfficeLocationUpdateRequest(BaseModel):
 class OfficeQrValidateRequest(BaseModel):
     qr_value: str
 
+class OfficeDetailsUpdateRequest(BaseModel):
+    name: str
+    address: str
+    allowed_radius_m: int = 100
+
 
 def _ensure_office_qr_schema(db: Session):
     """Request-time, lightweight schema compatibility for office QR attendance."""
@@ -92,6 +98,15 @@ def _extract_qr_token(qr_value: str | None) -> str | None:
 
 def _qr_payload(token: str) -> str:
     return f'ARP-OFFICE:{token}'
+
+
+def _qr_scan_url(token: str) -> str:
+    base = str(getattr(settings, 'FRONTEND_URL', '') or '').strip().rstrip('/')
+    payload = _qr_payload(token)
+    if not base:
+        return payload
+    from urllib.parse import quote
+    return f"{base}/?tab=attendance&office_qr={quote(payload, safe='')}"
 
 
 def _token_hash(token: str | None) -> str | None:
@@ -1498,6 +1513,7 @@ def list_office_qr_codes(current_user: User = Depends(get_current_user), db: Ses
             'allowed_radius_m': row.get('allowed_radius_m'),
             'qr_enabled': row.get('qr_enabled') is not False,
             'qr_payload': _qr_payload(row['qr_token']),
+            'scan_url': _qr_scan_url(row['qr_token']),
             'assigned_user_count': int(raw.get('assigned_user_count') or 0),
         })
     return result
@@ -1512,6 +1528,7 @@ def validate_office_qr(payload: OfficeQrValidateRequest, current_user: User = De
         'office_name': area.get('name'),
         'address': _office_address(area),
         'qr_payload': _qr_payload(token),
+        'scan_url': _qr_scan_url(token),
     }
 
 
@@ -1525,47 +1542,81 @@ def print_office_qr_pdf(area_id: int, current_user: User = Depends(get_current_u
     try:
         from reportlab.lib import colors
         from reportlab.lib.pagesizes import A4
-        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.enums import TA_CENTER
         from reportlab.lib.units import mm
-        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
         from reportlab.graphics.barcode import qr
         from reportlab.graphics.shapes import Drawing
     except ImportError:
         raise HTTPException(status_code=500, detail='QR PDF export requires reportlab. Run: pip install -r requirements.txt')
+
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=18*mm, leftMargin=18*mm, topMargin=18*mm, bottomMargin=18*mm)
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=12*mm, leftMargin=12*mm, topMargin=10*mm, bottomMargin=10*mm)
     styles = getSampleStyleSheet()
-    payload = _qr_payload(area['qr_token'])
-    qr_code = qr.QrCodeWidget(payload)
+    brand = colors.HexColor('#6f42c1')
+    dark = colors.HexColor('#292536')
+    address = _office_address(area) or 'Address not captured'
+    office_name = str(area.get('name') or 'Office').split(' [', 1)[0].strip()
+    scan_url = _qr_scan_url(area['qr_token'])
+    qr_code = qr.QrCodeWidget(scan_url)
     bounds = qr_code.getBounds()
     width = bounds[2] - bounds[0]
     height = bounds[3] - bounds[1]
-    size = 70 * mm
+    size = 118 * mm
     drawing = Drawing(size, size, transform=[size / width, 0, 0, size / height, 0, 0])
     drawing.add(qr_code)
-    story = [
-        Paragraph('Attendance Office QR Code', styles['Title']),
-        Spacer(1, 8*mm),
-        Paragraph(f"<b>Office:</b> {area.get('name') or 'Office'}", styles['Heading2']),
-        Paragraph(f"<b>Address:</b> {_office_address(area) or 'Not captured'}", styles['Normal']),
-        Paragraph('Employees must scan this code from the mobile attendance page before signing in or out at this office.', styles['Normal']),
-        Spacer(1, 8*mm),
-        Table([[drawing]], colWidths=[80*mm], rowHeights=[80*mm], style=TableStyle([
-            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-            ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#6f42c1')),
-            ('BACKGROUND', (0,0), (-1,-1), colors.white),
-        ])),
-        Spacer(1, 6*mm),
-        Paragraph(f"Code: {payload}", styles['Code']),
-        Spacer(1, 4*mm),
-        Paragraph('Print and place this at the office entrance or attendance point.', styles['Italic']),
-    ]
-    doc.build(story)
+    title_style = ParagraphStyle('QRTitle', parent=styles['Title'], fontSize=25, leading=30, textColor=dark, alignment=TA_CENTER, spaceAfter=4*mm)
+    office_style = ParagraphStyle('OfficeName', parent=styles['Heading1'], fontSize=18, leading=22, textColor=brand, alignment=TA_CENTER, spaceAfter=2*mm)
+    center_style = ParagraphStyle('Center', parent=styles['BodyText'], fontSize=11, leading=16, textColor=dark, alignment=TA_CENTER)
+    instruction_style = ParagraphStyle('Instruction', parent=center_style, fontSize=13, leading=19)
+    logo_path = Path(__file__).resolve().parents[1] / 'static' / 'logo.png'
+    header_items = []
+    if logo_path.exists():
+        header_items.append(Image(str(logo_path), width=42*mm, height=21*mm, kind='proportional'))
+    header_items.extend([Paragraph('OFFICE ATTENDANCE', title_style), Paragraph(office_name, office_style), Paragraph(address, center_style)])
+    header = Table([[item] for item in header_items], colWidths=[186*mm])
+    header.setStyle(TableStyle([('ALIGN',(0,0),(-1,-1),'CENTER'),('VALIGN',(0,0),(-1,-1),'MIDDLE'),('BOTTOMPADDING',(0,0),(-1,-1),2*mm)]))
+    qr_panel = Table([[drawing]], colWidths=[140*mm], rowHeights=[140*mm])
+    qr_panel.setStyle(TableStyle([('ALIGN',(0,0),(-1,-1),'CENTER'),('VALIGN',(0,0),(-1,-1),'MIDDLE'),('BOX',(0,0),(-1,-1),2,brand),('BACKGROUND',(0,0),(-1,-1),colors.white),('LEFTPADDING',(0,0),(-1,-1),8*mm),('RIGHTPADDING',(0,0),(-1,-1),8*mm),('TOPPADDING',(0,0),(-1,-1),8*mm),('BOTTOMPADDING',(0,0),(-1,-1),8*mm)]))
+    footer = Table([[Paragraph('<b>SCAN TO SIGN IN OR SIGN OUT</b>', instruction_style)],[Paragraph('Use your registered staff login. The system verifies your account and assigned office before opening attendance.', center_style)],[Paragraph('GPS location and signature are required to complete attendance.', center_style)]], colWidths=[180*mm])
+    footer.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2ecff')),('BOX',(0,0),(-1,-1),1,colors.HexColor('#ded2f8')),('ALIGN',(0,0),(-1,-1),'CENTER'),('VALIGN',(0,0),(-1,-1),'MIDDLE'),('TOPPADDING',(0,0),(-1,-1),4*mm),('BOTTOMPADDING',(0,0),(-1,-1),4*mm),('LEFTPADDING',(0,0),(-1,-1),6*mm),('RIGHTPADDING',(0,0),(-1,-1),6*mm)]))
+    doc.build([header, Spacer(1,5*mm), qr_panel, Spacer(1,6*mm), footer])
     buffer.seek(0)
-    safe_name = ''.join(ch if ch.isalnum() else '_' for ch in str(area.get('name') or area_id)).strip('_') or f'office_{area_id}'
+    safe_name = ''.join(ch if ch.isalnum() else '_' for ch in office_name).strip('_') or f'office_{area_id}'
     return Response(buffer.getvalue(), media_type='application/pdf', headers={'Content-Disposition': f'attachment; filename="office_qr_{safe_name}.pdf"'})
 
+
+@router.patch('/office-qr/offices/{area_id}')
+def update_office_details(area_id: int, payload: OfficeDetailsUpdateRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    area_data = _office_qr_row(db, area_id)
+    _assert_office_area_access(db, current_user, area_data, write=True)
+    name = str(payload.name or '').strip()
+    address = str(payload.address or '').strip()
+    if not name or not address:
+        raise HTTPException(status_code=400, detail='Office name and address are required')
+    radius = max(10, int(payload.allowed_radius_m or 100))
+    db.execute(text("UPDATE areas SET name=:name, description=:address, office_address=:address, allowed_radius_m=:radius, updated_at=:now WHERE id=:area_id"), {'name':name,'address':address,'radius':radius,'now':now_sa_naive(),'area_id':area_id})
+    db.execute(text("UPDATE gps_allocations_per_user SET radius_meters=:radius, updated_at=:now WHERE area_id=:area_id AND COALESCE(is_active, TRUE)=TRUE"), {'radius':radius,'now':now_sa_naive(),'area_id':area_id})
+    if area_data.get('franchise_user_id'):
+        current_address = db.execute(text('SELECT office_address FROM franchise_users WHERE id=:fid'), {'fid':area_data['franchise_user_id']}).scalar()
+        if _normalise_address(current_address) == _normalise_address(_office_address(area_data)):
+            db.execute(text('UPDATE franchise_users SET office_address=:address, updated_at=:now WHERE id=:fid'), {'address':address,'now':now_sa_naive(),'fid':area_data['franchise_user_id']})
+    db.commit()
+    return {'message':'Office updated','office':_office_qr_row(db, area_id)}
+
+
+@router.delete('/office-qr/offices/{area_id}')
+def delete_office(area_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    area = _office_qr_row(db, area_id)
+    _assert_office_area_access(db, current_user, area, write=True)
+    assigned = db.execute(text('SELECT COUNT(*) FROM gps_allocations_per_user WHERE area_id=:area_id AND COALESCE(is_active, TRUE)=TRUE'), {'area_id':area_id}).scalar() or 0
+    if assigned:
+        raise HTTPException(status_code=409, detail=f'Cannot delete this office while {assigned} active staff member(s) are assigned to it. Edit those staff addresses first.')
+    db.execute(text('DELETE FROM gps_allocations_per_user WHERE area_id=:area_id'), {'area_id':area_id})
+    db.execute(text('DELETE FROM areas WHERE id=:area_id'), {'area_id':area_id})
+    db.commit()
+    return {'message':'Office deleted','area_id':area_id}
 
 def _assert_office_area_access(db: Session, current_user: User, area: dict, write: bool = False):
     roles = set(_get_role_names(db, current_user.id))

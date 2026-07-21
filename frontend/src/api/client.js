@@ -411,6 +411,14 @@ export async function updateOfficeLocation(areaId, payload) {
     body: JSON.stringify(payload),
   });
 }
+
+export async function updateOfficeDetails(areaId, payload) {
+  return apiRequest(`/attendance/office-qr/offices/${areaId}`, { method: 'PATCH', body: JSON.stringify(payload) })
+}
+
+export async function deleteOffice(areaId) {
+  return apiRequest(`/attendance/office-qr/offices/${areaId}`, { method: 'DELETE' })
+}
 export async function getCommissionTypes() { return apiRequest('/commission/types') }
 export async function getCommissionEmployees() { return apiRequest('/commission/employees') }
 export async function getCommissionStructures() { return apiRequest('/commission/structures') }
