@@ -1,105 +1,56 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  createCommissionEntry, deleteCommissionEntry, downloadCommissionReport,
-  getCommissionEmployees, getCommissionEntries, getCommissionStructures,
-  getCommissionTypes, saveCommissionStructure,
+  bulkReviewCommissionEntries, createCommissionEntry, deleteCommissionEntry, downloadCommissionForm,
+  downloadCommissionReport, getCommissionEmployees, getCommissionEntries, getCommissionStructures,
+  getCommissionTypes, reviewCommissionEntry, saveCommissionStructure,
 } from '../api/client'
 
-const money = (value) => `R ${Number(value || 0).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+const today = () => new Date().toISOString().slice(0, 10)
+const money = (v) => `R ${Number(v || 0).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+const blank = { employee_user_id:'', commission_type:'removals', service_date:today(), reference:'', quantity:1, invoice_value_before_tax:'', hours:'', hourly_rate:'', notes:'' }
 
 export default function CommissionPage({ me }) {
-  const canManage = me.roles.includes('FranchiseUser') || me.roles.includes('SuperUser')
-  const [types, setTypes] = useState([])
-  const [employees, setEmployees] = useState([])
-  const [structures, setStructures] = useState([])
-  const [report, setReport] = useState({ items: [], total: 0, commission_total: 0, overtime_total: 0 })
-  const [filter, setFilter] = useState({ employeeUserId: '', fromDate: '', toDate: '' })
-  const [form, setForm] = useState({ employee_user_id: '', commission_type: 'removals', service_date: new Date().toISOString().slice(0,10), reference: '', quantity: 1, invoice_value_before_tax: '', hours: '', hourly_rate: '', notes: '' })
-  const [structure, setStructure] = useState({ commission_type: 'removals', label: 'Removals', calculation_type: 'fixed', rate: 0, overtime_multiplier: 1.5, is_active: true })
-  const [error, setError] = useState('')
+  const isEmployee = me.roles.includes('EmployeeUser')
+  const canReview = me.roles.some(r => ['FranchiseUser','ManagerUser','SuperUser'].includes(r))
+  const canManageStructure = me.roles.some(r => ['FranchiseUser','SuperUser'].includes(r))
+  const [types,setTypes]=useState([]), [employees,setEmployees]=useState([]), [structures,setStructures]=useState([])
+  const [report,setReport]=useState({items:[],total:0,commission_total:0,overtime_total:0,counts:{}})
+  const [filter,setFilter]=useState({employeeUserId:'',fromDate:'',toDate:'',status:'',search:''})
+  const [form,setForm]=useState(blank), [editing,setEditing]=useState(null), [selected,setSelected]=useState([])
+  const [structure,setStructure]=useState({commission_type:'removals',label:'Removals',calculation_type:'fixed',rate:0,overtime_multiplier:1.5,is_active:true})
+  const [error,setError]=useState(''), [notice,setNotice]=useState('')
 
-  const load = async () => {
-    try {
-      setError('')
-      const [t, e, s] = await Promise.all([getCommissionTypes(), getCommissionEmployees(), getCommissionStructures()])
-      setTypes(t); setEmployees(e); setStructures(s)
-      const r = await getCommissionEntries(filter)
-      setReport(r)
-      if (!form.employee_user_id && e.length === 1) setForm((v) => ({ ...v, employee_user_id: String(e[0].user_id) }))
-    } catch (err) { setError(err.message) }
-  }
-  useEffect(() => { load() }, [])
-
-  const currentStructure = useMemo(() => structures.find((s) => s.commission_type === form.commission_type), [structures, form.commission_type])
-  const refreshReport = async () => { try { setReport(await getCommissionEntries(filter)); setError('') } catch (err) { setError(err.message) } }
-
-  const submitEntry = async (event) => {
-    event.preventDefault()
-    try {
-      await createCommissionEntry({
-        ...form,
-        employee_user_id: Number(form.employee_user_id), quantity: Number(form.quantity || 1),
-        invoice_value_before_tax: form.invoice_value_before_tax === '' ? null : Number(form.invoice_value_before_tax),
-        hours: form.hours === '' ? null : Number(form.hours), hourly_rate: form.hourly_rate === '' ? null : Number(form.hourly_rate),
-      })
-      setForm((v) => ({ ...v, reference: '', quantity: 1, invoice_value_before_tax: '', hours: '', hourly_rate: '', notes: '' }))
-      await refreshReport()
-    } catch (err) { setError(err.message) }
-  }
-
-  const submitStructure = async (event) => {
-    event.preventDefault()
-    try {
-      await saveCommissionStructure({ ...structure, rate: Number(structure.rate || 0), overtime_multiplier: structure.calculation_type === 'overtime' ? Number(structure.overtime_multiplier || 1) : null })
-      setStructures(await getCommissionStructures()); setError('')
-    } catch (err) { setError(err.message) }
-  }
-
-  const exportPdf = async () => {
-    try {
-      const blob = await downloadCommissionReport(filter)
-      const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'commission-overtime-report.pdf'; a.click(); URL.revokeObjectURL(url)
-    } catch (err) { setError(err.message) }
-  }
+  const refresh=async(f=filter)=>{ try{setReport(await getCommissionEntries(f));setError('')}catch(e){setError(e.message)} }
+  const load=async()=>{try{const [t,e,s]=await Promise.all([getCommissionTypes(),getCommissionEmployees(),getCommissionStructures()]);setTypes(t);setEmployees(e);setStructures(s);await refresh();if(e.length===1)setForm(v=>({...v,employee_user_id:String(e[0].user_id)}))}catch(e){setError(e.message)}}
+  useEffect(()=>{load()},[])
+  useEffect(()=>{const id=Number(sessionStorage.getItem('commissionFocusId')||0);if(id){sessionStorage.removeItem('commissionFocusId');getCommissionEntries({}).then(r=>{const x=r.items.find(i=>i.id===id);if(x)setEditing(x)})}},[])
+  const active=useMemo(()=>structures.filter(s=>s.is_active),[structures])
+  const current=active.find(s=>s.commission_type===form.commission_type)
+  const estimate=()=>{if(!current)return 0;if(form.commission_type==='invoice_commission')return Number(form.invoice_value_before_tax||0)*Number(current.rate||0)/100;if(form.commission_type==='overtime')return Number(form.hours||0)*Number(form.hourly_rate||0)*Number(current.overtime_multiplier||current.rate||1);return Number(form.quantity||0)*Number(current.rate||0)}
+  const payload=(x)=>({...x,employee_user_id:x.employee_user_id?Number(x.employee_user_id):null,quantity:Number(x.quantity||1),invoice_value_before_tax:x.invoice_value_before_tax===''?null:Number(x.invoice_value_before_tax),hours:x.hours===''?null:Number(x.hours),hourly_rate:x.hourly_rate===''?null:Number(x.hourly_rate)})
+  const submit=async e=>{e.preventDefault();try{await createCommissionEntry(payload(form));setForm(v=>({...blank,employee_user_id:v.employee_user_id}));setNotice(isEmployee?'Commission submitted for review.':'Entry added and approved.');await refresh()}catch(x){setError(x.message)}}
+  const saveStructure=async e=>{e.preventDefault();try{await saveCommissionStructure({...structure,rate:Number(structure.rate||0),overtime_multiplier:structure.calculation_type==='overtime'?Number(structure.overtime_multiplier||1):null});setStructures(await getCommissionStructures());setNotice('Structure saved.')}catch(x){setError(x.message)}}
+  const review=async status=>{try{await reviewCommissionEntry(editing.id,{...payload(editing),status,review_notes:editing.review_notes||''});setEditing(null);setNotice(`Commission ${status}. Employee notification sent.`);await refresh()}catch(x){setError(x.message)}}
+  const bulk=async status=>{if(!selected.length)return;try{await bulkReviewCommissionEntries({entry_ids:selected,status,review_notes:''});setSelected([]);setNotice(`${selected.length} submission(s) ${status}.`);await refresh()}catch(x){setError(x.message)}}
+  const saveBlob=(blob,name)=>{const u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=name;a.click();URL.revokeObjectURL(u)}
 
   return <section className="stack-page">
-    <div className="glass-card section-card">
-      <div className="section-heading"><div><h1>Commission & Overtime</h1><p>{canManage ? 'Manage employee commission and overtime for your franchise.' : 'Your personal commission and overtime report.'}</p></div></div>
-      {error ? <div className="error-message">{error}</div> : null}
-      <div className="stats-grid">
-        <div className="stat-card"><span>Total</span><strong>{money(report.total)}</strong></div>
-        <div className="stat-card"><span>Commission</span><strong>{money(report.commission_total)}</strong></div>
-        <div className="stat-card"><span>Overtime</span><strong>{money(report.overtime_total)}</strong></div>
-      </div>
+    <div className="glass-card section-card"><div className="section-heading"><div><h1>Commissions & Overtime</h1><p>{isEmployee?'Submit claims and track review status.':'Configure, review, approve and report on submissions.'}</p></div></div>{error&&<div className="error-message">{error}</div>}{notice&&<div className="success-message">{notice}</div>}
+      <div className="stats-grid"><div className="stat-card"><span>Approved total</span><strong>{money(report.total)}</strong></div><div className="stat-card"><span>Pending</span><strong>{report.counts?.pending||0}</strong></div><div className="stat-card"><span>Approved</span><strong>{report.counts?.approved||0}</strong></div><div className="stat-card"><span>Rejected</span><strong>{report.counts?.rejected||0}</strong></div></div>
     </div>
 
-    {canManage ? <div className="glass-card section-card">
-      <h2>Commission structure</h2>
-      <form className="form-grid" onSubmit={submitStructure}>
-        <label>Type<select value={structure.commission_type} onChange={(e) => { const t=types.find(x=>x.value===e.target.value); setStructure((v)=>({...v,commission_type:e.target.value,label:t?.label||'',calculation_type:e.target.value==='invoice_commission'?'percentage':e.target.value==='overtime'?'overtime':'fixed'})) }}>{types.map(t=><option key={t.value} value={t.value}>{t.label}</option>)}</select></label>
-        <label>Label<input value={structure.label} onChange={(e)=>setStructure((v)=>({...v,label:e.target.value}))}/></label>
-        <label>{structure.calculation_type === 'percentage' ? 'Percentage' : structure.calculation_type === 'overtime' ? 'Default hourly rate (optional)' : 'Fixed amount'}<input type="number" step="0.01" min="0" value={structure.rate} onChange={(e)=>setStructure((v)=>({...v,rate:e.target.value}))}/></label>
-        {structure.calculation_type === 'overtime' ? <label>Overtime multiplier<input type="number" step="0.01" min="0" value={structure.overtime_multiplier} onChange={(e)=>setStructure((v)=>({...v,overtime_multiplier:e.target.value}))}/></label> : null}
-        <button className="primary-button" type="submit">Save structure</button>
-      </form>
-      {structures.length ? <div className="table-wrap"><table><thead><tr><th>Type</th><th>Calculation</th><th>Rate</th></tr></thead><tbody>{structures.map(s=><tr key={s.id}><td>{s.label}</td><td>{s.calculation_type}</td><td>{s.calculation_type==='percentage'?`${s.rate}%`:s.calculation_type==='overtime'?`${s.overtime_multiplier || s.rate}x`:money(s.rate)}</td></tr>)}</tbody></table></div> : null}
-    </div> : null}
+    {canManageStructure&&<div className="glass-card section-card"><h2>Commission structures</h2><form className="form-grid" onSubmit={saveStructure}><label>Type<select value={structure.commission_type} onChange={e=>{const t=types.find(x=>x.value===e.target.value);setStructure(v=>({...v,commission_type:e.target.value,label:t?.label||'',calculation_type:e.target.value==='invoice_commission'?'percentage':e.target.value==='overtime'?'overtime':'fixed'}))}}>{types.map(t=><option key={t.value} value={t.value}>{t.label}</option>)}</select></label><label>Display label<input required value={structure.label} onChange={e=>setStructure(v=>({...v,label:e.target.value}))}/></label><label>Rate<input type="number" min="0" step="0.01" value={structure.rate} onChange={e=>setStructure(v=>({...v,rate:e.target.value}))}/></label>{structure.calculation_type==='overtime'&&<label>Multiplier<input type="number" min="0" step="0.01" value={structure.overtime_multiplier} onChange={e=>setStructure(v=>({...v,overtime_multiplier:e.target.value}))}/></label>}<button className="primary-button">Save structure</button></form>
+      <div className="table-wrap"><table><thead><tr><th>Label</th><th>Calculation</th><th>Rate</th></tr></thead><tbody>{structures.map(s=><tr key={s.id}><td>{s.label}</td><td>{s.calculation_type}</td><td>{s.calculation_type==='percentage'?`${s.rate}%`:s.calculation_type==='overtime'?`${s.overtime_multiplier||s.rate}x`:money(s.rate)}</td></tr>)}</tbody></table></div>
+    </div>}
 
-    {canManage ? <div className="glass-card section-card"><h2>Add employee entry</h2><form className="form-grid" onSubmit={submitEntry}>
-      <label>Employee<select required value={form.employee_user_id} onChange={(e)=>setForm((v)=>({...v,employee_user_id:e.target.value}))}><option value="">Select employee</option>{employees.map(e=><option key={e.user_id} value={e.user_id}>{e.full_name}</option>)}</select></label>
-      <label>Type<select value={form.commission_type} onChange={(e)=>setForm((v)=>({...v,commission_type:e.target.value}))}>{types.map(t=><option key={t.value} value={t.value}>{t.label}</option>)}</select></label>
-      <label>Date<input required type="date" value={form.service_date} onChange={(e)=>setForm((v)=>({...v,service_date:e.target.value}))}/></label>
-      <label>Reference<input value={form.reference} onChange={(e)=>setForm((v)=>({...v,reference:e.target.value}))}/></label>
-      {form.commission_type === 'invoice_commission' ? <label>Invoice value before TAX<input required type="number" step="0.01" min="0" value={form.invoice_value_before_tax} onChange={(e)=>setForm((v)=>({...v,invoice_value_before_tax:e.target.value}))}/></label> : null}
-      {form.commission_type === 'overtime' ? <><label>Overtime hours<input required type="number" step="0.25" min="0" value={form.hours} onChange={(e)=>setForm((v)=>({...v,hours:e.target.value}))}/></label><label>Hourly rate<input required type="number" step="0.01" min="0" value={form.hourly_rate} onChange={(e)=>setForm((v)=>({...v,hourly_rate:e.target.value}))}/></label></> : null}
-      {!['invoice_commission','overtime'].includes(form.commission_type) ? <label>Quantity<input required type="number" step="1" min="1" value={form.quantity} onChange={(e)=>setForm((v)=>({...v,quantity:e.target.value}))}/></label> : null}
-      <label className="full-width">Notes<textarea value={form.notes} onChange={(e)=>setForm((v)=>({...v,notes:e.target.value}))}/></label>
-      <button className="primary-button" type="submit" disabled={!currentStructure}>Add entry</button>{!currentStructure ? <span>Create this structure first.</span> : null}
-    </form></div> : null}
+    <div className="glass-card section-card"><h2>{isEmployee?'Submit commission form':'Add approved employee entry'}</h2><form className="form-grid" onSubmit={submit}>{!isEmployee&&<label>Employee<select required value={form.employee_user_id} onChange={e=>setForm(v=>({...v,employee_user_id:e.target.value}))}><option value="">Select employee</option>{employees.map(x=><option key={x.user_id} value={x.user_id}>{x.full_name}</option>)}</select></label>}<label>Commission<select value={form.commission_type} onChange={e=>setForm(v=>({...v,commission_type:e.target.value}))}>{active.map(x=><option key={x.id} value={x.commission_type}>{x.label}</option>)}</select></label><label>Service date<input required type="date" value={form.service_date} onChange={e=>setForm(v=>({...v,service_date:e.target.value}))}/></label><label>Reference number<input required value={form.reference} onChange={e=>setForm(v=>({...v,reference:e.target.value}))}/></label>{form.commission_type==='invoice_commission'?<label>Invoice value before tax<input required type="number" min="0" step="0.01" value={form.invoice_value_before_tax} onChange={e=>setForm(v=>({...v,invoice_value_before_tax:e.target.value}))}/></label>:form.commission_type==='overtime'?<><label>Hours<input required type="number" min="0" step="0.25" value={form.hours} onChange={e=>setForm(v=>({...v,hours:e.target.value}))}/></label><label>Hourly rate<input required type="number" min="0" step="0.01" value={form.hourly_rate} onChange={e=>setForm(v=>({...v,hourly_rate:e.target.value}))}/></label></>:<label>Quantity<input required type="number" min="1" step="1" value={form.quantity} onChange={e=>setForm(v=>({...v,quantity:e.target.value}))}/></label>}<label className="full-width">Notes<textarea value={form.notes} onChange={e=>setForm(v=>({...v,notes:e.target.value}))}/></label><div><strong>Calculated amount: {money(estimate())}</strong></div><button className="primary-button" disabled={!current}>{isEmployee?'Submit for review':'Add approved entry'}</button></form></div>
 
-    <div className="glass-card section-card"><div className="section-heading"><h2>{canManage ? 'Employee report' : 'My report'}</h2><button className="glass-button" onClick={exportPdf}>Export PDF</button></div>
-      <div className="form-grid compact-grid">{canManage ? <label>Employee<select value={filter.employeeUserId} onChange={(e)=>setFilter((v)=>({...v,employeeUserId:e.target.value}))}><option value="">All employees</option>{employees.map(e=><option key={e.user_id} value={e.user_id}>{e.full_name}</option>)}</select></label> : null}<label>From<input type="date" value={filter.fromDate} onChange={(e)=>setFilter((v)=>({...v,fromDate:e.target.value}))}/></label><label>To<input type="date" value={filter.toDate} onChange={(e)=>setFilter((v)=>({...v,toDate:e.target.value}))}/></label><button className="glass-button" onClick={refreshReport}>Apply</button></div>
-      <div className="table-wrap"><table><thead><tr><th>Date</th>{canManage ? <th>Employee</th> : null}<th>Type</th><th>Reference</th><th>Details</th><th>Amount</th>{canManage ? <th>Action</th> : null}</tr></thead><tbody>{report.items.map(r=><tr key={r.id}><td>{r.service_date}</td>{canManage ? <td>{r.employee_name}</td> : null}<td>{r.commission_type.replaceAll('_',' ')}</td><td>{r.reference || '-'}</td><td>{r.commission_type==='overtime'?`${r.hours} hrs × ${money(r.hourly_rate)} × ${r.applied_rate}`:r.commission_type==='invoice_commission'?`${money(r.invoice_value_before_tax)} × ${r.applied_rate}%`:`${r.quantity} × ${money(r.applied_rate)}`}</td><td>{money(r.calculated_amount)}</td>{canManage ? <td><button className="danger-button" onClick={async()=>{await deleteCommissionEntry(r.id); await refreshReport()}}>Delete</button></td> : null}</tr>)}{!report.items.length ? <tr><td colSpan="7">No records found.</td></tr> : null}</tbody></table></div>
+    <div className="glass-card section-card"><div className="section-heading"><h2>{canReview?'Submission review & history':'My submissions'}</h2><button className="glass-button" onClick={async()=>saveBlob(await downloadCommissionReport(filter),'commission-overtime-report.pdf')}>Download letterhead PDF</button></div>
+      <div className="form-grid compact-grid">{canReview&&<label>Employee<select value={filter.employeeUserId} onChange={e=>setFilter(v=>({...v,employeeUserId:e.target.value}))}><option value="">All</option>{employees.map(x=><option key={x.user_id} value={x.user_id}>{x.full_name}</option>)}</select></label>}<label>Status<select value={filter.status} onChange={e=>setFilter(v=>({...v,status:e.target.value}))}><option value="">All</option><option value="pending">Pending</option><option value="approved">Approved</option><option value="rejected">Rejected</option></select></label><label>Search<input placeholder="Reference, employee or type" value={filter.search} onChange={e=>setFilter(v=>({...v,search:e.target.value}))}/></label><label>From<input type="date" value={filter.fromDate} onChange={e=>setFilter(v=>({...v,fromDate:e.target.value}))}/></label><label>To<input type="date" value={filter.toDate} onChange={e=>setFilter(v=>({...v,toDate:e.target.value}))}/></label><button className="glass-button" onClick={()=>refresh()}>Apply</button></div>
+      {canReview&&selected.length>0&&<div className="button-row"><button className="primary-button" onClick={()=>bulk('approved')}>Approve selected</button><button className="danger-button" onClick={()=>bulk('rejected')}>Reject selected</button></div>}
+      <div className="table-wrap"><table><thead><tr>{canReview&&<th>Select</th>}<th>Date</th>{canReview&&<th>Employee</th>}<th>Type</th><th>Reference</th><th>Qty</th><th>Amount</th><th>Status</th><th>Actions</th></tr></thead><tbody>{report.items.map(r=><tr key={r.id}>{canReview&&<td><input type="checkbox" disabled={r.status!=='pending'} checked={selected.includes(r.id)} onChange={e=>setSelected(v=>e.target.checked?[...v,r.id]:v.filter(id=>id!==r.id))}/></td>}<td>{r.service_date}</td>{canReview&&<td>{r.employee_name}</td>}<td>{r.commission_type.replaceAll('_',' ')}</td><td>{r.reference}</td><td>{r.quantity}</td><td>{money(r.calculated_amount)}</td><td><strong>{r.status}</strong></td><td><div className="button-row">{canReview&&r.status==='pending'&&<button className="glass-button" onClick={()=>setEditing({...r})}>Edit / review</button>}<button className="glass-button" onClick={async()=>saveBlob(await downloadCommissionForm(r.id),`commission-form-${r.id}.pdf`)}>PDF</button>{canManageStructure&&<button className="danger-button" onClick={async()=>{await deleteCommissionEntry(r.id);refresh()}}>Delete</button>}</div></td></tr>)}{!report.items.length&&<tr><td colSpan="10">No records found.</td></tr>}</tbody></table></div>
     </div>
+
+    {editing&&<div className="glass-card section-card"><div className="section-heading"><h2>Review commission #{editing.id}</h2><button className="glass-button" onClick={()=>setEditing(null)}>Close</button></div><div className="form-grid"><label>Type<select value={editing.commission_type} onChange={e=>setEditing(v=>({...v,commission_type:e.target.value}))}>{active.map(x=><option key={x.id} value={x.commission_type}>{x.label}</option>)}</select></label><label>Date<input type="date" value={editing.service_date} onChange={e=>setEditing(v=>({...v,service_date:e.target.value}))}/></label><label>Reference<input value={editing.reference||''} onChange={e=>setEditing(v=>({...v,reference:e.target.value}))}/></label><label>Quantity<input type="number" min="1" value={editing.quantity||1} onChange={e=>setEditing(v=>({...v,quantity:e.target.value}))}/></label><label>Invoice value<input type="number" min="0" step="0.01" value={editing.invoice_value_before_tax||''} onChange={e=>setEditing(v=>({...v,invoice_value_before_tax:e.target.value}))}/></label><label>Hours<input type="number" min="0" step="0.25" value={editing.hours||''} onChange={e=>setEditing(v=>({...v,hours:e.target.value}))}/></label><label>Hourly rate<input type="number" min="0" step="0.01" value={editing.hourly_rate||''} onChange={e=>setEditing(v=>({...v,hourly_rate:e.target.value}))}/></label><label className="full-width">Employee notes<textarea value={editing.notes||''} onChange={e=>setEditing(v=>({...v,notes:e.target.value}))}/></label><label className="full-width">Review notes<textarea value={editing.review_notes||''} onChange={e=>setEditing(v=>({...v,review_notes:e.target.value}))}/></label><div className="button-row"><button className="primary-button" onClick={()=>review('approved')}>Save edits & approve</button><button className="danger-button" onClick={()=>review('rejected')}>Reject</button></div></div></div>}
   </section>
 }

@@ -92,6 +92,23 @@ def ensure_runtime_schema() -> None:
         )
         """))
         db.execute(text("CREATE INDEX IF NOT EXISTS ix_commission_entries_employee_date ON commission_entries(employee_user_id, service_date)"))
+        for statement in [
+            "ALTER TABLE commission_entries ADD COLUMN IF NOT EXISTS status VARCHAR(30) NOT NULL DEFAULT 'approved'",
+            "ALTER TABLE commission_entries ADD COLUMN IF NOT EXISTS submitted_at TIMESTAMP NULL",
+            "ALTER TABLE commission_entries ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMP NULL",
+            "ALTER TABLE commission_entries ADD COLUMN IF NOT EXISTS reviewed_by_user_id INTEGER NULL REFERENCES users(id)",
+            "ALTER TABLE commission_entries ADD COLUMN IF NOT EXISTS review_notes TEXT NULL",
+            "ALTER TABLE commission_entries ADD COLUMN IF NOT EXISTS last_edited_by_user_id INTEGER NULL REFERENCES users(id)",
+        ]:
+            db.execute(text(statement))
+        db.execute(text("CREATE INDEX IF NOT EXISTS ix_commission_entries_status ON commission_entries(franchise_user_id, status, created_at DESC)"))
+        db.execute(text("""
+        CREATE TABLE IF NOT EXISTS commission_entry_audit (
+            id SERIAL PRIMARY KEY, entry_id INTEGER NOT NULL REFERENCES commission_entries(id) ON DELETE CASCADE,
+            action VARCHAR(40) NOT NULL, actor_user_id INTEGER NOT NULL REFERENCES users(id),
+            old_values TEXT NULL, new_values TEXT NULL, note TEXT NULL, created_at TIMESTAMP NOT NULL DEFAULT NOW()
+        )
+        """))
 
         db.execute(text("""
         CREATE TABLE IF NOT EXISTS payroll_payslips (

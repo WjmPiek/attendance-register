@@ -410,7 +410,7 @@ export default function OverviewDashboardPage({ onNavigate }) {
           <div className="notification-stack">
             {(showNotificationHistory ? readNotifications : unreadNotifications).length ? (showNotificationHistory ? readNotifications : unreadNotifications).slice(0, 20).map((n) => (
               <div className={`notification-row ${n.is_read ? 'read' : ''} ${n.severity || ''}`} key={n.id}>
-                <button type="button" className="notification-main-button" onClick={() => n.target_tab && onNavigate?.(n.target_tab)}>
+                <button type="button" className="notification-main-button" onClick={() => { if (n.related_table === 'commission_entries' && n.related_id) sessionStorage.setItem('commissionFocusId', String(n.related_id)); if (n.target_tab) onNavigate?.(n.target_tab) }}>
                   <strong>{n.subject}</strong>
                   <p>{n.message}</p>
                   <small>{n.created_at ? new Date(n.created_at).toLocaleString('en-ZA', { timeZone: 'Africa/Johannesburg', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''} · {n.status || 'pending'}</small>
