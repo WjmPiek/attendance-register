@@ -14,6 +14,7 @@ import {
 
 import OfficeLocationMap from '../components/OfficeLocationMap'
 import DragDropFileInput from '../components/DragDropFileInput.jsx'
+import StaffIdCard from '../components/StaffIdCard.jsx'
 import { getCurrentLocation } from "../utils/location";
 import { getDistance } from "../utils/distance";
 
@@ -223,6 +224,8 @@ export default function FranchiseStaffPage() {
   const [editing, setEditing] = useState(null)
   const [viewItem, setViewItem] = useState(null)
   const [viewTitle, setViewTitle] = useState('')
+  const [createdCard, setCreatedCard] = useState(null)
+  const [createdCardType, setCreatedCardType] = useState('employees')
   const [officeQrs, setOfficeQrs] = useState([])
   const [idPhotoFile, setIdPhotoFile] = useState(null)
   const [idPhotoPreview, setIdPhotoPreview] = useState('')
@@ -240,17 +243,21 @@ export default function FranchiseStaffPage() {
   const load = async () => {
     setErr('')
     try {
-      const [m, e, qrs, payslips] = await Promise.all([
+      const results = await Promise.allSettled([
         apiFetch('/franchise-staff/managers'),
         apiFetch('/franchise-staff/employees'),
-        getOfficeQrCodes().catch(() => []),
-        apiFetch('/payroll/my-payslips').catch(() => []),
+        getOfficeQrCodes(),
+        apiFetch('/payroll/my-payslips'),
       ])
-
-      setManagers(m)
-      setEmployees(e)
-      setOfficeQrs(qrs)
-      setMyPayslips(payslips)
+      const [m, e, qrs, payslips] = results
+      setManagers(m.status === 'fulfilled' && Array.isArray(m.value) ? m.value : [])
+      setEmployees(e.status === 'fulfilled' && Array.isArray(e.value) ? e.value : [])
+      setOfficeQrs(qrs.status === 'fulfilled' && Array.isArray(qrs.value) ? qrs.value : [])
+      setMyPayslips(payslips.status === 'fulfilled' && Array.isArray(payslips.value) ? payslips.value : [])
+      const failed = results.filter((item) => item.status === 'rejected')
+      if (failed.length) {
+        setErr(failed.map((item) => item.reason?.message || 'A staff service failed').join(' | '))
+      }
     } catch (error) {
       setErr(error.message || 'Failed to load franchise staff')
     }
@@ -386,9 +393,17 @@ export default function FranchiseStaffPage() {
         const alignedPhoto = await cropPhotoToIdCardFile(idPhotoPreview, idPhotoOffset, idPhotoFile.name)
         await uploadStaffIdPhoto(savedType, savedId, alignedPhoto || idPhotoFile)
       }
-      resetForm()
-      setActiveSubTab('view')
       await load()
+      if (!editing && savedId) {
+        const cardData = await apiFetch(`/franchise-staff/${savedType}/${savedId}`)
+        setCreatedCard(cardData)
+        setCreatedCardType(savedType)
+        resetForm()
+        setActiveSubTab('card')
+      } else {
+        resetForm()
+        setActiveSubTab('view')
+      }
     } catch (error) {
       setErr(error.message || 'Failed to save staff member')
     }
@@ -782,7 +797,21 @@ export default function FranchiseStaffPage() {
       ) : null}
 
       {msg ? <p className="success">{msg}</p> : null}
-      {err ? <p className="muted small">Staff data could not load. Check backend server, then refresh.</p> : null}
+      {err ? <p className="error">Staff data could not load: {err}. Check the backend service and refresh.</p> : null}
+
+      {activeSubTab === 'card' && createdCard ? (
+        <section className="form-card newly-created-id-page">
+          <div className="detail-header">
+            <div><p className="eyebrow">Staff member created successfully</p><h2>Print Staff ID Card</h2><p className="muted">Review the card below, then print or download it. The same card is available in the staff member's own Employee Card tab.</p></div>
+            <button type="button" className="glass-button" onClick={() => { setCreatedCard(null); setActiveSubTab('view') }}>Back to staff</button>
+          </div>
+          <div className="created-id-card-stage"><StaffIdCard item={createdCard} className="created-staff-id-card" /></div>
+          <div className="button-row">
+            <button type="button" onClick={() => window.print()}>Print Card</button>
+            <button type="button" className="secondary-action" onClick={() => downloadIdCards(createdCardType, createdCard.id)}>Download PDF</button>
+          </div>
+        </section>
+      ) : null}
 
       {activeSubTab === 'add' ? (
         <section className="form-card staff-card single-staff-form">

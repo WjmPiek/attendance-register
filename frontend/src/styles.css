@@ -1965,3 +1965,57 @@ input[type="date"]::-webkit-date-and-time-value,
 .linked-staff-row { display:flex; justify-content:space-between; gap:16px; padding:12px 14px; border:1px solid rgba(108,76,166,.14); border-radius:14px; background:rgba(255,255,255,.62); }
 .danger-button { background:#b91c1c; color:#fff; }
 @media (max-width:760px){ .overview-action-row.enterprise-action-stack{grid-template-columns:1fr;} .linked-staff-row{flex-direction:column;} }
+
+/* Staff ID creation confirmation and employee mobile card */
+.newly-created-id-page,
+.employee-card-page { width: 100%; max-width: none; }
+.created-id-card-stage,
+.employee-card-mobile-stage {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 24px 0;
+  overflow: hidden;
+}
+.created-staff-id-card,
+.employee-self-id-card { width: min(620px, 100%) !important; }
+.registered-addresses-card { width: 100%; max-width: none; }
+
+@media (max-width: 640px) {
+  .employee-card-page {
+    padding: 8px !important;
+    min-height: calc(100dvh - 72px);
+    display: flex;
+    flex-direction: column;
+  }
+  .employee-card-heading { margin-bottom: 4px; }
+  .employee-card-heading .muted { display: none; }
+  .employee-card-mobile-stage {
+    flex: 1;
+    min-height: 0;
+    padding: 4px 0;
+    align-items: center;
+  }
+  .employee-self-id-card {
+    width: calc(100vw - 24px) !important;
+    max-width: none !important;
+    transform: none !important;
+  }
+}
+
+@media print {
+  body * { visibility: hidden; }
+  .newly-created-id-page,
+  .newly-created-id-page * { visibility: visible; }
+  .newly-created-id-page {
+    position: absolute;
+    inset: 0;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border: 0 !important;
+  }
+  .newly-created-id-page .detail-header,
+  .newly-created-id-page .button-row { display: none !important; }
+  .created-id-card-stage { padding: 0; }
+}

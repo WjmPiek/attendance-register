@@ -10,6 +10,7 @@ import LeavePage from './LeavePage'
 import PayrollPage from './PayrollPage'
 import CommissionPage from './CommissionPage'
 import BusinessInformationPage from './BusinessInformationPage'
+import DigitalIdCard from '../components/DigitalIdCard'
 
 export default function DashboardPage({ me, roles, entities, onLogout }) {
   const isSuperUser = me.roles.includes('SuperUser')
@@ -40,6 +41,7 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
   const fullTabs = useMemo(() => [
     { id: 'home', label: 'Overview', visible: !isEmployee || isFinanceEmployee || isSuperUser || isFranchiseUser },
     { id: 'attendance', label: 'Mobile Sign In', visible: isSignCapable },
+    { id: 'employee-card', label: 'Employee Card', visible: isEmployee || isManagerUser },
     { id: 'history', label: 'History', visible: isSignCapable || isApprovalCapable },
     { id: 'approvals', label: 'Approvals', visible: isApprovalCapable },
     { id: 'staff', label: 'HR Staff', visible: isSuperUser || isFranchiseUser },
@@ -53,6 +55,7 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
 
   const mobileStaffTabs = useMemo(() => [
     { id: 'attendance', label: 'Mobile Sign In', visible: isSignCapable },
+    { id: 'employee-card', label: 'Employee Card', visible: isEmployee || isManagerUser },
     { id: 'history', label: 'History', visible: isSignCapable || isApprovalCapable },
     { id: 'leave', label: 'Leave', visible: isEmployee || isManagerUser },
     { id: 'commission', label: 'Commission & Overtime', visible: isEmployee || isManagerUser },
@@ -120,6 +123,7 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
         ) : null}
         {activeTab === 'home' ? <OverviewDashboardPage me={me} onNavigate={openTab} /> : null}
         {activeTab === 'attendance' && isSignCapable ? <MobileAttendancePage me={me} onDone={goBackToMobileMenu} /> : null}
+        {activeTab === 'employee-card' && (isEmployee || isManagerUser) ? <DigitalIdCard /> : null}
         {activeTab === 'history' && (isSignCapable || isApprovalCapable) ? <AttendanceHistoryPage me={me} /> : null}
         {activeTab === 'approvals' && isApprovalCapable ? <AttendanceApprovalPage me={me} /> : null}
         {activeTab === 'staff' && (isSuperUser || isFranchiseUser) ? <FranchiseStaffPage me={me} /> : null}

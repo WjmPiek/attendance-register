@@ -24,6 +24,7 @@ export default function BusinessInformationPage() {
   const [form, setForm] = useState(emptyForm)
   const [office, setOffice] = useState(null)
   const [addressHistory, setAddressHistory] = useState([])
+  const [allOffices, setAllOffices] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [regenerating, setRegenerating] = useState(false)
@@ -40,6 +41,7 @@ export default function BusinessInformationPage() {
       const [data, offices] = await Promise.all([getMyBusinessInformation(), getOfficeQrCodes()])
       const nextForm = Object.fromEntries(Object.keys(emptyForm).map((key) => [key, data?.[key] || '']))
       setForm(nextForm)
+      setAllOffices(offices || [])
       const businessAddress = normalizeAddress(nextForm.office_address)
       const activeOffices = (offices || []).filter((item) => !item.is_archived)
       const headOffice = activeOffices.find((item) => normalizeAddress(item.address) === businessAddress)
@@ -151,6 +153,34 @@ export default function BusinessInformationPage() {
     finally { setSaving(false) }
   }
 
+  const editRegisteredAddress = async (item) => {
+    const nextAddress = window.prompt('Edit registered address:', item.address || '')
+    if (nextAddress === null || !nextAddress.trim()) return
+    const nextName = window.prompt('Business / office name:', item.name || form.business_name || form.franchise_name || 'Business')
+    if (nextName === null) return
+    setSaving(true); setError(''); setMessage('')
+    try {
+      await updateOfficeDetails(item.id, { name: nextName.trim() || 'Business', address: nextAddress.trim(), allowed_radius_m: Number(item.allowed_radius_m || 100) })
+      if (!item.is_archived && office?.id === item.id) {
+        await updateMyBusinessInformation({ ...form, office_address: nextAddress.trim() })
+      }
+      setMessage('Registered address updated throughout the office record.')
+      await load()
+    } catch (err) { setError(err.message || 'Unable to edit registered address') }
+    finally { setSaving(false) }
+  }
+
+  const selectAddressForArchive = async (item) => {
+    if (item.is_archived) return
+    setOffice(item)
+    setRadius(item.allowed_radius_m || 100)
+    try {
+      const linked = await getOfficeLinkedStaff(item.id)
+      setDeleteDialog(linked)
+      setReplacementAddress('')
+    } catch (err) { setError(err.message || 'Unable to check linked staff') }
+  }
+
   if (loading) return <section className="form-card"><p>Loading business information...</p></section>
 
   return (
@@ -177,6 +207,14 @@ export default function BusinessInformationPage() {
         </div>
         <div className="button-row"><button type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save all business information'}</button><button type="button" className="glass-button" onClick={load} disabled={saving}>Reset</button></div>
       </form>
+
+      <section className="form-card registered-addresses-card">
+        <div><p className="eyebrow">Address register</p><h2>All Registered Addresses</h2><p className="muted">Active and historical addresses remain visible. Deleting an active address archives it after linked staff are reassigned.</p></div>
+        <div className="table-wrap"><table><thead><tr><th>Business / Office</th><th>Address</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+          {allOffices.map((item) => { const maps = item.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(item.address)}` : ''; return <tr key={item.id}><td><strong>{item.name || form.business_name || form.franchise_name || 'Business'}</strong></td><td>{item.address || '—'}</td><td><span className={`status-pill ${item.is_archived ? 'declined' : 'approved'}`}>{item.is_archived ? 'Archived' : 'Active'}</span></td><td><div className="action-row">{maps ? <a className="link-button" href={maps} target="_blank" rel="noreferrer">View (Google Maps)</a> : null}<button type="button" className="link-button" onClick={() => editRegisteredAddress(item)}>Edit</button><button type="button" className="link-button danger" disabled={item.is_archived} title={item.is_archived ? 'Historical records are retained permanently' : 'Reassign linked staff and archive this address'} onClick={() => selectAddressForArchive(item)}>{item.is_archived ? 'Retained' : 'Delete'}</button></div></td></tr> })}
+          {!allOffices.length ? <tr><td colSpan="4" className="muted">No registered addresses found.</td></tr> : null}
+        </tbody></table></div>
+      </section>
 
       <section className="form-card business-map-card">
         <div><h2>Head Office GPS and attendance radius</h2><p className="muted">All employees, agents and managers assigned to the business address use this one Head Office QR code.</p><strong>{form.office_address || 'No business address saved yet.'}</strong></div>
