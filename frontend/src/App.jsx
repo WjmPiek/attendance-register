@@ -1,16 +1,28 @@
 import { useEffect, useState } from 'react'
 import { getCoreEntities, getMe, getRoles, login } from './api/client'
+import { AUTH_INVALID_EVENT, getAccessToken, setAccessToken } from './api/authSession'
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
-import FranchiseStaffPage from "./pages/FranchiseStaffPage";
 
 export default function App() {
-  const [token, setToken] = useState(localStorage.getItem('token'))
+  const [token, setToken] = useState(getAccessToken())
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [me, setMe] = useState(null)
   const [roles, setRoles] = useState([])
   const [entities, setEntities] = useState([])
+
+  useEffect(() => {
+    const handleInvalidSession = (event) => {
+      setError(event.detail?.reason || 'Your session has expired. Please sign in again.')
+      setToken(null)
+      setMe(null)
+      setRoles([])
+      setEntities([])
+    }
+    window.addEventListener(AUTH_INVALID_EVENT, handleInvalidSession)
+    return () => window.removeEventListener(AUTH_INVALID_EVENT, handleInvalidSession)
+  }, [])
 
   useEffect(() => {
     if (!token) return
@@ -47,7 +59,7 @@ export default function App() {
     setError('')
     try {
       const data = await login(loginName, password)
-      localStorage.setItem('token', data.access_token)
+      setAccessToken(data.access_token)
       setToken(data.access_token)
     } catch (err) {
       setError(err.message)
@@ -57,7 +69,7 @@ export default function App() {
   }
 
   const handleLogout = () => {
-    localStorage.removeItem('token')
+    setAccessToken(null)
     setToken(null)
     setMe(null)
     setRoles([])

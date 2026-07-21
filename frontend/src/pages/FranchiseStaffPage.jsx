@@ -20,6 +20,7 @@ import { getDistance } from "../utils/distance";
 
 const staffRoles = [
   'Manager',
+  'Employee',
   'Agent',
   'Finance',
   'Admin',

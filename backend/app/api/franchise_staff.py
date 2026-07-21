@@ -19,6 +19,7 @@ from app.core.security import hash_password
 router = APIRouter()
 
 EMPLOYEE_ROLES = [
+    "Employee",
     "Agent",
     "Finance",
     "Admin",

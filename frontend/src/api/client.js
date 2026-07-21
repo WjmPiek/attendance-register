@@ -1,36 +1,49 @@
+import { clearAccessToken, getAccessToken } from './authSession'
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api'
 
-export async function apiRequest(path, options = {}) {
-  const token = localStorage.getItem('token')
-  const headers = {
-    'Content-Type': 'application/json',
-    ...(options.headers || {}),
+async function parseApiError(response) {
+  let detail = 'Request failed'
+  try {
+    const body = await response.json()
+    detail = typeof body?.detail === 'string' ? body.detail : JSON.stringify(body?.detail || body)
+  } catch (_) {
+    try { detail = (await response.text()) || detail } catch (_) {}
   }
+  if (response.status === 401) {
+    clearAccessToken(detail === 'Invalid token' ? 'Your session has expired. Please sign in again.' : detail)
+  }
+  const error = new Error(detail)
+  error.status = response.status
+  return error
+}
 
+function buildHeaders(options = {}, includeJson = true) {
+  const token = getAccessToken()
+  const headers = { ...(includeJson ? { 'Content-Type': 'application/json' } : {}), ...(options.headers || {}) }
   if (token) headers.Authorization = `Bearer ${token}`
+  return headers
+}
 
+export async function apiRequest(path, options = {}) {
   let response
   try {
-    response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers })
-  } catch (err) {
+    response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers: buildHeaders(options, true) })
+  } catch (_) {
     throw new Error(`Could not reach the API at ${API_BASE_URL}. Check that the backend is running and CORS is enabled.`)
   }
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({ detail: 'Request failed' }))
-    throw new Error(body.detail || 'Request failed')
-  }
+  if (!response.ok) throw await parseApiError(response)
+  if (response.status === 204) return null
   return response.json()
 }
 
 export async function apiBlob(path, options = {}) {
-  const token = localStorage.getItem('token')
-  const headers = { ...(options.headers || {}) }
-  if (token) headers.Authorization = `Bearer ${token}`
-  const response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers })
-  if (!response.ok) {
-    const body = await response.text().catch(() => 'Request failed')
-    throw new Error(body || 'Request failed')
+  let response
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers: buildHeaders(options, false) })
+  } catch (_) {
+    throw new Error(`Could not reach the API at ${API_BASE_URL}.`)
   }
+  if (!response.ok) throw await parseApiError(response)
   return response.blob()
 }
 
@@ -169,24 +182,15 @@ export async function rejectFranchiseRegistration(registrationId, note = '') {
 }
 
 export async function apiFetch(path, options = {}) {
-  const token = localStorage.getItem('token')
-  const url = path.startsWith('http') ? path : API_BASE_URL + path
-
-  const res = await fetch(url, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(options.headers || {}),
-    },
-  })
-
-  if (!res.ok) {
-    const text = await res.text()
-    throw new Error(text || 'Request failed')
+  const normalizedPath = path.startsWith(API_BASE_URL) ? path.slice(API_BASE_URL.length) : path
+  if (path.startsWith('http') && !path.startsWith(API_BASE_URL)) {
+    let response
+    try { response = await fetch(path, { ...options, headers: buildHeaders(options, true) }) }
+    catch (_) { throw new Error('Could not reach the requested service.') }
+    if (!response.ok) throw await parseApiError(response)
+    return response.status === 204 ? null : response.json()
   }
-
-  return res.json()
+  return apiRequest(normalizedPath, options)
 }
 
 
@@ -224,7 +228,7 @@ export async function getPayrollEmployees() {
 }
 
 export async function uploadPayslipDocument(staffType, staffId, file) {
-  const token = localStorage.getItem('token')
+  const token = getAccessToken()
   const form = new FormData()
   form.append('file', file)
   const type = staffType === 'Manager' || staffType === 'manager' ? 'managers' : 'employees'
@@ -268,7 +272,7 @@ export async function uploadIrp5Document(typeOrEmployeeId, staffIdOrFile, maybeF
   const file = typeof typeOrEmployeeId === 'string' ? maybeFile : staffIdOrFile
   const taxYear = typeof typeOrEmployeeId === 'string' ? maybeTaxYear : maybeFile || ''
   const notes = typeof typeOrEmployeeId === 'string' ? maybeNotes : maybeTaxYear || ''
-  const token = localStorage.getItem('token')
+  const token = getAccessToken()
   const form = new FormData()
   form.append('file', file)
   const params = new URLSearchParams()
@@ -329,7 +333,7 @@ export async function declineLeaveApplication(id, note = '') {
 
 
 export async function importPayrollDocument(file, payrollMonth = '') {
-  const token = localStorage.getItem('token')
+  const token = getAccessToken()
   const form = new FormData()
   form.append('file', file)
   if (payrollMonth) form.append('payroll_month', payrollMonth)
@@ -363,7 +367,7 @@ export async function deletePayrollImport(id) {
 
 
 export async function uploadStaffIdPhoto(type, id, file) {
-  const token = localStorage.getItem('token')
+  const token = getAccessToken()
   const form = new FormData()
   form.append('file', file)
   const response = await fetch(`${API_BASE_URL}/franchise-staff/${type}/${id}/photo`, {
