@@ -64,6 +64,7 @@ class OfficeDetailsUpdateRequest(BaseModel):
 
 class OfficeReassignRequest(BaseModel):
     new_address: str
+    new_area_id: int | None = None
 
 
 def _ensure_office_qr_schema(db: Session):
@@ -1481,13 +1482,13 @@ def list_office_qr_codes(current_user: User = Depends(get_current_user), db: Ses
         raise HTTPException(status_code=403, detail='Only SuperUser, Franchise or Manager users can print office QR codes')
 
     params = {}
-    where = '1 = 1'
+    where = 'COALESCE(a.is_archived, FALSE) = FALSE'
     if 'SuperUser' not in roles:
         fid, _ = _franchise_scope_for_user(db, current_user.id)
         if not fid:
             raise HTTPException(status_code=403, detail='No franchise scope found')
         _sync_franchise_address_areas(db, int(fid))
-        where = 'a.franchise_user_id = :fid'
+        where = 'a.franchise_user_id = :fid AND COALESCE(a.is_archived, FALSE) = FALSE'
         params['fid'] = int(fid)
         if 'ManagerUser' in roles and 'FranchiseUser' not in roles:
             assigned = db.execute(text("""
@@ -1664,6 +1665,13 @@ def reassign_linked_staff(area_id: int, payload: OfficeReassignRequest, current_
     new_address = str(payload.new_address or '').strip()
     if not new_address:
         raise HTTPException(status_code=400, detail='A replacement address is required')
+    replacement = None
+    if payload.new_area_id:
+        replacement = _office_qr_row(db, int(payload.new_area_id))
+        _assert_office_area_access(db, current_user, replacement, write=True)
+        if replacement.get('is_archived') or int(replacement['id']) == int(area_id):
+            raise HTTPException(status_code=400, detail='Select a different active registered address')
+        new_address = _office_address(replacement)
     assigned_count = db.execute(text('SELECT COUNT(*) FROM gps_allocations_per_user WHERE area_id=:area_id AND COALESCE(is_active, TRUE)=TRUE'), {'area_id': area_id}).scalar() or 0
     now = now_sa_naive()
     if assigned_count:
@@ -1675,7 +1683,10 @@ def reassign_linked_staff(area_id: int, payload: OfficeReassignRequest, current_
             UPDATE manager_users SET office_address_assigned=:address, updated_at=:now
             WHERE user_id IN (SELECT user_id FROM gps_allocations_per_user WHERE area_id=:area_id AND COALESCE(is_active, TRUE)=TRUE)
         '''), {'address': new_address, 'now': now, 'area_id': area_id})
-        db.execute(text('UPDATE gps_allocations_per_user SET is_active=FALSE, updated_at=:now WHERE area_id=:area_id AND COALESCE(is_active, TRUE)=TRUE'), {'now': now, 'area_id': area_id})
+        if replacement:
+            db.execute(text('UPDATE gps_allocations_per_user SET area_id=:new_area_id, updated_at=:now WHERE area_id=:area_id AND COALESCE(is_active, TRUE)=TRUE'), {'new_area_id': replacement['id'], 'now': now, 'area_id': area_id})
+        else:
+            db.execute(text('UPDATE gps_allocations_per_user SET is_active=FALSE, updated_at=:now WHERE area_id=:area_id AND COALESCE(is_active, TRUE)=TRUE'), {'now': now, 'area_id': area_id})
     if area.get('franchise_user_id'):
         db.execute(text('UPDATE franchise_users SET office_address=:address, updated_at=:now WHERE id=:fid'), {'address': new_address, 'now': now, 'fid': area['franchise_user_id']})
         email = db.execute(text('SELECT u.email FROM franchise_users fu JOIN users u ON u.id=fu.user_id WHERE fu.id=:fid'), {'fid': area['franchise_user_id']}).scalar()

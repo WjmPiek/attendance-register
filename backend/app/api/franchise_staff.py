@@ -867,11 +867,23 @@ def list_offices(current_user: User = Depends(get_current_user), db: Session = D
     names = _roles(db, current_user)
     if "FranchiseUser" not in names and "SuperUser" not in names and "ManagerUser" not in names:
         raise HTTPException(status_code=403, detail="Access denied")
-    rows = db.execute(text("""
-        SELECT id, name, code, description, latitude, longitude, allowed_radius_m
+    params = {}
+    where = ["COALESCE(is_archived, FALSE) = FALSE"]
+    if "SuperUser" not in names:
+        franchise_user_id = _franchise_profile_id(db, current_user.id) if "FranchiseUser" in names else db.execute(
+            text("SELECT franchise_user_id FROM manager_users WHERE user_id=:uid AND COALESCE(is_active, TRUE)=TRUE"),
+            {"uid": current_user.id},
+        ).scalar()
+        if not franchise_user_id:
+            raise HTTPException(status_code=403, detail="No franchise scope found")
+        where.append("franchise_user_id = :fid")
+        params["fid"] = int(franchise_user_id)
+    rows = db.execute(text(f"""
+        SELECT id, name, code, description, office_address, latitude, longitude, allowed_radius_m
         FROM areas
+        WHERE {' AND '.join(where)}
         ORDER BY name ASC
-    """)).mappings().all()
+    """), params).mappings().all()
     return [dict(row) for row in rows]
 
 @router.get("/employee-roles")
@@ -1212,7 +1224,10 @@ def create_employee(payload: CreateEmployeeRequest, current_user: User = Depends
     full_name = f"{payload.name} {payload.surname}".strip()
     login_email = str(payload.email) if payload.email else _safe_email("employee", payload.name, payload.surname)
     login_username = _unique_username(db, payload.username or _safe_username("employee", payload.name, payload.surname))
-    
+    user_id = _create_user(
+        db, full_name, login_email, payload.password or "Temp123!", "EmployeeUser", login_username
+    )
+
     employee_id = db.execute(text("""
         INSERT INTO employee_users (
             user_id,

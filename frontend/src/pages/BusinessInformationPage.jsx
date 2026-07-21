@@ -23,7 +23,6 @@ const normalizeAddress = (value) => String(value || '').trim().toLowerCase().rep
 export default function BusinessInformationPage() {
   const [form, setForm] = useState(emptyForm)
   const [office, setOffice] = useState(null)
-  const [addressHistory, setAddressHistory] = useState([])
   const [allOffices, setAllOffices] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -33,7 +32,7 @@ export default function BusinessInformationPage() {
   const [pickedLocation, setPickedLocation] = useState(null)
   const [radius, setRadius] = useState(100)
   const [deleteDialog, setDeleteDialog] = useState(null)
-  const [replacementAddress, setReplacementAddress] = useState('')
+  const [replacementAreaId, setReplacementAreaId] = useState('')
 
   const load = async () => {
     setLoading(true); setError('')
@@ -41,14 +40,13 @@ export default function BusinessInformationPage() {
       const [data, offices] = await Promise.all([getMyBusinessInformation(), getOfficeQrCodes()])
       const nextForm = Object.fromEntries(Object.keys(emptyForm).map((key) => [key, data?.[key] || '']))
       setForm(nextForm)
-      setAllOffices(offices || [])
+      setAllOffices((offices || []).filter((item) => !item.is_archived))
       const businessAddress = normalizeAddress(nextForm.office_address)
       const activeOffices = (offices || []).filter((item) => !item.is_archived)
       const headOffice = activeOffices.find((item) => normalizeAddress(item.address) === businessAddress)
         || activeOffices[0]
         || null
       setOffice(headOffice)
-      setAddressHistory((offices || []).filter((item) => item.is_archived))
       setRadius(headOffice?.allowed_radius_m || 100)
     } catch (err) { setError(err.message || 'Unable to load business information') }
     finally { setLoading(false) }
@@ -133,7 +131,7 @@ export default function BusinessInformationPage() {
     try {
       const linked = await getOfficeLinkedStaff(office.id)
       setDeleteDialog(linked)
-      setReplacementAddress('')
+      setReplacementAreaId('')
     } catch (err) { setError(err.message || 'Unable to check linked staff') }
   }
 
@@ -142,8 +140,9 @@ export default function BusinessInformationPage() {
     setSaving(true); setError(''); setMessage('')
     try {
       if (deleteDialog.count > 0) {
-        if (!replacementAddress.trim()) throw new Error('Enter the new address for all linked employees and managers first.')
-        await reassignOfficeLinkedStaff(office.id, replacementAddress.trim())
+        const replacementOffice = allOffices.find((item) => String(item.id) === String(replacementAreaId) && Number(item.id) !== Number(office.id))
+        if (!replacementOffice) throw new Error('Select one of the active registered franchise addresses first.')
+        await reassignOfficeLinkedStaff(office.id, replacementOffice)
       }
       await deleteOffice(office.id)
       setDeleteDialog(null)
@@ -177,7 +176,7 @@ export default function BusinessInformationPage() {
     try {
       const linked = await getOfficeLinkedStaff(item.id)
       setDeleteDialog(linked)
-      setReplacementAddress('')
+      setReplacementAreaId('')
     } catch (err) { setError(err.message || 'Unable to check linked staff') }
   }
 
@@ -209,9 +208,9 @@ export default function BusinessInformationPage() {
       </form>
 
       <section className="form-card registered-addresses-card">
-        <div><p className="eyebrow">Address register</p><h2>All Registered Addresses</h2><p className="muted">Active and historical addresses remain visible. Deleting an active address archives it after linked staff are reassigned.</p></div>
+        <div><p className="eyebrow">Address register</p><h2>All Registered Addresses</h2><p className="muted">Only active franchise addresses are shown. Deleted addresses remain preserved in the database for audit history but are hidden from the system.</p></div>
         <div className="table-wrap"><table><thead><tr><th>Business / Office</th><th>Address</th><th>Status</th><th>Actions</th></tr></thead><tbody>
-          {allOffices.map((item) => { const maps = item.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(item.address)}` : ''; return <tr key={item.id}><td><strong>{item.name || form.business_name || form.franchise_name || 'Business'}</strong></td><td>{item.address || '—'}</td><td><span className={`status-pill ${item.is_archived ? 'declined' : 'approved'}`}>{item.is_archived ? 'Archived' : 'Active'}</span></td><td><div className="action-row">{maps ? <a className="link-button" href={maps} target="_blank" rel="noreferrer">View (Google Maps)</a> : null}<button type="button" className="link-button" onClick={() => editRegisteredAddress(item)}>Edit</button><button type="button" className="link-button danger" disabled={item.is_archived} title={item.is_archived ? 'Historical records are retained permanently' : 'Reassign linked staff and archive this address'} onClick={() => selectAddressForArchive(item)}>{item.is_archived ? 'Retained' : 'Delete'}</button></div></td></tr> })}
+          {allOffices.filter((item) => !item.is_archived).map((item) => { const maps = item.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(item.address)}` : ''; return <tr key={item.id}><td><strong>{item.name || form.business_name || form.franchise_name || 'Business'}</strong></td><td>{item.address || '—'}</td><td><span className={`status-pill ${item.is_archived ? 'declined' : 'approved'}`}>{item.is_archived ? 'Archived' : 'Active'}</span></td><td><div className="action-row">{maps ? <a className="link-button" href={maps} target="_blank" rel="noreferrer">View (Google Maps)</a> : null}<button type="button" className="link-button" onClick={() => editRegisteredAddress(item)}>Edit</button><button type="button" className="link-button danger" disabled={item.is_archived} title={item.is_archived ? 'Historical records are retained permanently' : 'Reassign linked staff and archive this address'} onClick={() => selectAddressForArchive(item)}>{item.is_archived ? 'Retained' : 'Delete'}</button></div></td></tr> })}
           {!allOffices.length ? <tr><td colSpan="4" className="muted">No registered addresses found.</td></tr> : null}
         </tbody></table></div>
       </section>
@@ -230,16 +229,6 @@ export default function BusinessInformationPage() {
       </section>
 
 
-      <section className="form-card business-address-history-card">
-        <div><p className="eyebrow">Permanent record</p><h2>Previous Business Addresses</h2><p className="muted">Old addresses are retained permanently for audit and attendance history. Archived QR codes remain invalid and cannot be used for attendance.</p></div>
-        {addressHistory.length ? <div className="linked-staff-list">
-          {addressHistory.map((item) => <div className="linked-staff-row" key={item.id}>
-            <div><strong>{item.name || form.business_name || form.franchise_name || 'Business'}</strong><span>{item.address || 'No address recorded'}</span></div>
-            <span className="status-chip">Archived{item.archived_at ? ` · ${new Date(item.archived_at).toLocaleDateString()}` : ''}</span>
-          </div>)}
-        </div> : <p className="muted">No previous business addresses have been archived.</p>}
-      </section>
-
       <section className="form-card business-qr-card">
         <div><p className="eyebrow">Attendance QR</p><h2>Head Office QR Management</h2><p className="muted">There is one active QR code for the business address. Registered staff assigned to this address scan the same code to open the sign-in or sign-out page.</p></div>
         {office ? <div className="business-qr-actions">
@@ -248,7 +237,7 @@ export default function BusinessInformationPage() {
           <p className="muted small">Generating a new code invalidates every previously printed copy immediately. The address, GPS coordinates and radius are preserved.</p>
         </div> : <p className="muted">No Head Office QR is available until the business address is saved.</p>}
       </section>
-      {deleteDialog ? <div className="modal-backdrop"><section className="form-card office-delete-modal"><h2>Staff linked to this address</h2><p className="muted">Every linked employee, agent and manager must receive a replacement address before this address is archived. No historical records will be deleted.</p><div className="linked-staff-list">{deleteDialog.items?.length ? deleteDialog.items.map((item) => <div className="linked-staff-row" key={`${item.staff_type}-${item.staff_id}`}><strong>{item.full_name || item.employee_number}</strong><span>{item.staff_type} · {item.employee_number || 'No employee number'}</span></div>) : <p>No active staff are linked to this office.</p>}</div>{deleteDialog.count > 0 ? <label>Replacement address for all linked staff<textarea rows="3" value={replacementAddress} onChange={(e) => setReplacementAddress(e.target.value)} placeholder="Street, suburb, city, province, postal code" /></label> : null}<div className="button-row"><button type="button" className="danger-button" onClick={confirmDeleteOffice} disabled={saving}>{saving ? 'Updating...' : 'Update staff and archive address'}</button><button type="button" className="glass-button" onClick={() => setDeleteDialog(null)} disabled={saving}>Cancel</button></div></section></div> : null}
+      {deleteDialog ? <div className="modal-backdrop"><section className="form-card office-delete-modal"><h2>Staff linked to this address</h2><p className="muted">Every linked employee, agent and manager must receive a replacement address before this address is archived. No historical records will be deleted.</p><div className="linked-staff-list">{deleteDialog.items?.length ? deleteDialog.items.map((item) => <div className="linked-staff-row" key={`${item.staff_type}-${item.staff_id}`}><strong>{item.full_name || item.employee_number}</strong><span>{item.staff_type} · {item.employee_number || 'No employee number'}</span></div>) : <p>No active staff are linked to this office.</p>}</div>{deleteDialog.count > 0 ? <label>Replacement registered address<select value={replacementAreaId} onChange={(e) => setReplacementAreaId(e.target.value)}><option value="">Select an active franchise address</option>{allOffices.filter((item) => !item.is_archived && Number(item.id) !== Number(office?.id)).map((item) => <option key={item.id} value={item.id}>{item.name || 'Business'} — {item.address}</option>)}</select></label> : null}<div className="button-row"><button type="button" className="danger-button" onClick={confirmDeleteOffice} disabled={saving}>{saving ? 'Updating...' : 'Update staff and archive address'}</button><button type="button" className="glass-button" onClick={() => setDeleteDialog(null)} disabled={saving}>Cancel</button></div></section></div> : null}
     </div>
   )
 }

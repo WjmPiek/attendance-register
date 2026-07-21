@@ -453,10 +453,13 @@ export async function getOfficeLinkedStaff(areaId) {
   return apiRequest(`/attendance/office-qr/offices/${areaId}/linked-staff`)
 }
 
-export async function reassignOfficeLinkedStaff(areaId, newAddress) {
+export async function reassignOfficeLinkedStaff(areaId, replacementOffice) {
   return apiRequest(`/attendance/office-qr/offices/${areaId}/reassign-linked-staff`, {
     method: 'POST',
-    body: JSON.stringify({ new_address: newAddress }),
+    body: JSON.stringify({
+      new_address: replacementOffice?.address || '',
+      new_area_id: replacementOffice?.id || null,
+    }),
   })
 }
 export async function getCommissionTypes() { return apiRequest('/commission/types') }
