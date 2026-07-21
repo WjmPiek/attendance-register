@@ -673,12 +673,6 @@ export default function FranchiseStaffPage() {
           My Payslips
         </button>
 
-        <button
-          className={activeSubTab === 'qr' ? 'active' : ''}
-          onClick={() => setActiveSubTab('qr')}
-        >
-          Office QR Codes
-        </button>
       </div>
 
       {activeSubTab === 'payslips' ? (

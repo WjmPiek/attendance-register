@@ -1587,6 +1587,25 @@ def print_office_qr_pdf(area_id: int, current_user: User = Depends(get_current_u
     return Response(buffer.getvalue(), media_type='application/pdf', headers={'Content-Disposition': f'attachment; filename="office_qr_{safe_name}.pdf"'})
 
 
+@router.post('/office-qr/offices/{area_id}/regenerate')
+def regenerate_office_qr(area_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    area = _office_qr_row(db, area_id)
+    _assert_office_area_access(db, current_user, area, write=True)
+    new_token = secrets.token_urlsafe(32)
+    now = now_sa_naive()
+    db.execute(text("""
+        UPDATE areas
+        SET qr_token = :token, qr_enabled = TRUE, qr_updated_at = :now, updated_at = :now
+        WHERE id = :area_id
+    """), {'token': new_token, 'now': now, 'area_id': area_id})
+    db.commit()
+    updated = _office_qr_row(db, area_id)
+    return {
+        'message': 'A new office QR code was generated. The previous printed QR code is now invalid.',
+        'office': updated,
+    }
+
+
 @router.patch('/office-qr/offices/{area_id}')
 def update_office_details(area_id: int, payload: OfficeDetailsUpdateRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     area_data = _office_qr_row(db, area_id)

@@ -1919,3 +1919,37 @@ input[type="date"]::-webkit-date-and-time-value,
 @media (max-width: 720px) {
   .office-map-search-row { grid-template-columns: 1fr; }
 }
+
+/* Business Information integrated Head Office QR management */
+.business-qr-card,
+.business-map-card,
+.business-info-form,
+.business-info-hero {
+  width: 100%;
+  box-sizing: border-box;
+}
+.business-qr-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+  margin-top: 18px;
+}
+.business-qr-actions p {
+  flex-basis: 100%;
+  margin: 0;
+}
+.business-qr-settings {
+  margin-top: 18px;
+  align-items: end;
+}
+.business-qr-status {
+  display: flex;
+  min-height: 70px;
+  flex-direction: column;
+  justify-content: center;
+  padding: 14px 16px;
+  border: 1px solid rgba(108, 76, 166, 0.14);
+  border-radius: 18px;
+  background: rgba(255,255,255,0.55);
+}

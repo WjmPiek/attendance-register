@@ -120,6 +120,10 @@ export async function downloadOfficeQrPdf(areaId) {
   return apiBlob(`/attendance/office-qr/${areaId}/pdf`)
 }
 
+export async function regenerateOfficeQr(areaId) {
+  return apiRequest(`/attendance/office-qr/offices/${areaId}/regenerate`, { method: 'POST' })
+}
+
 export async function getAttendanceApprovals({ approvalStatus = 'pending', userId = '', franchiseId = '' } = {}) {
   const params = new URLSearchParams()
   params.set('approval_status', approvalStatus)
