@@ -7,6 +7,9 @@ import {
   updateMyBusinessInformation,
   updateOfficeDetails,
   updateOfficeLocation,
+  deleteOffice,
+  getOfficeLinkedStaff,
+  reassignOfficeLinkedStaff,
 } from '../api/client'
 import OfficeLocationMap from '../components/OfficeLocationMap'
 
@@ -27,6 +30,8 @@ export default function BusinessInformationPage() {
   const [error, setError] = useState('')
   const [pickedLocation, setPickedLocation] = useState(null)
   const [radius, setRadius] = useState(100)
+  const [deleteDialog, setDeleteDialog] = useState(null)
+  const [replacementAddress, setReplacementAddress] = useState('')
 
   const load = async () => {
     setLoading(true); setError('')
@@ -116,6 +121,33 @@ export default function BusinessInformationPage() {
     finally { setRegenerating(false) }
   }
 
+
+  const beginDeleteOffice = async () => {
+    if (!office) return
+    setError(''); setMessage('')
+    try {
+      const linked = await getOfficeLinkedStaff(office.id)
+      setDeleteDialog(linked)
+      setReplacementAddress('')
+    } catch (err) { setError(err.message || 'Unable to check linked staff') }
+  }
+
+  const confirmDeleteOffice = async () => {
+    if (!office || !deleteDialog) return
+    setSaving(true); setError(''); setMessage('')
+    try {
+      if (deleteDialog.count > 0) {
+        if (!replacementAddress.trim()) throw new Error('Enter the new address for all linked employees and managers first.')
+        await reassignOfficeLinkedStaff(office.id, replacementAddress.trim())
+      }
+      await deleteOffice(office.id)
+      setDeleteDialog(null)
+      setMessage('Office address deleted. Linked staff were moved to the replacement address.')
+      await load()
+    } catch (err) { setError(err.message || 'Unable to delete office address') }
+    finally { setSaving(false) }
+  }
+
   if (loading) return <section className="form-card"><p>Loading business information...</p></section>
 
   return (
@@ -152,7 +184,7 @@ export default function BusinessInformationPage() {
             <div className="business-qr-status"><span className="muted small">Current QR status</span><strong>{office.qr_enabled === false ? 'Inactive' : 'Active'}</strong></div>
           </div>
           {pickedLocation ? <p className="muted small">Selected GPS: {pickedLocation.latitude.toFixed(6)}, {pickedLocation.longitude.toFixed(6)}</p> : null}
-          <div className="button-row"><button type="button" onClick={saveOfficeSettings} disabled={saving}>Save GPS and radius</button></div>
+          <div className="button-row"><button type="button" onClick={saveOfficeSettings} disabled={saving}>Save GPS and radius</button><button type="button" className="danger-button" onClick={beginDeleteOffice} disabled={saving}>Delete office address</button></div>
         </> : <p className="muted">Save a complete business address first. The system will create the single Head Office QR location automatically.</p>}
       </section>
 
@@ -164,6 +196,7 @@ export default function BusinessInformationPage() {
           <p className="muted small">Generating a new code invalidates every previously printed copy immediately. The address, GPS coordinates and radius are preserved.</p>
         </div> : <p className="muted">No Head Office QR is available until the business address is saved.</p>}
       </section>
+      {deleteDialog ? <div className="modal-backdrop"><section className="form-card office-delete-modal"><h2>Employees linked to this address</h2><p className="muted">Every linked employee and manager must receive a replacement address before this office can be deleted.</p><div className="linked-staff-list">{deleteDialog.items?.length ? deleteDialog.items.map((item) => <div className="linked-staff-row" key={`${item.staff_type}-${item.staff_id}`}><strong>{item.full_name || item.employee_number}</strong><span>{item.staff_type} · {item.employee_number || 'No employee number'}</span></div>) : <p>No active staff are linked to this office.</p>}</div>{deleteDialog.count > 0 ? <label>Replacement address for all linked staff<textarea rows="3" value={replacementAddress} onChange={(e) => setReplacementAddress(e.target.value)} placeholder="Street, suburb, city, province, postal code" /></label> : null}<div className="button-row"><button type="button" className="danger-button" onClick={confirmDeleteOffice} disabled={saving}>{saving ? 'Updating...' : 'Update staff and delete office'}</button><button type="button" className="glass-button" onClick={() => setDeleteDialog(null)} disabled={saving}>Cancel</button></div></section></div> : null}
     </div>
   )
 }

@@ -507,6 +507,8 @@ def _update_live_franchise_user(franchise_user_id: int, payload: FranchiseUserUp
         raise HTTPException(status_code=404, detail="Franchise user not found")
 
     data = _normalise_franchise_user_payload(payload)
+    previous_office_address = str(existing.get("office_address") or "").strip()
+    new_office_address = str(data.get("office_address") or previous_office_address).strip()
     allowed = [
         "franchise_name", "business_name", "trading_as", "business_registration_number", "vat_number",
         "office_address", "website", "office_number", "twenty_four_hour_number", "contact_number",
@@ -523,6 +525,25 @@ def _update_live_franchise_user(franchise_user_id: int, payload: FranchiseUserUp
         WHERE id = :fid
         RETURNING *
     """), params).mappings().first()
+
+    # When the franchise business address changes, update every linked record that still
+    # points to the previous address. Staff who were deliberately assigned elsewhere are untouched.
+    if updated and "office_address" in data and previous_office_address and new_office_address and previous_office_address.lower() != new_office_address.lower():
+        sync_params = {"fid": franchise_user_id, "old_address": previous_office_address, "new_address": new_office_address, "updated_at": datetime.utcnow()}
+        for table_name in ("employee_users", "manager_users"):
+            db.execute(text(f"""
+                UPDATE {table_name}
+                SET office_address_assigned = :new_address, updated_at = :updated_at
+                WHERE franchise_user_id = :fid
+                  AND LOWER(TRIM(COALESCE(office_address_assigned, ''))) = LOWER(TRIM(:old_address))
+            """), sync_params)
+        db.execute(text("""
+            UPDATE areas
+            SET description = :new_address, office_address = :new_address, updated_at = :updated_at
+            WHERE franchise_user_id = :fid
+              AND (LOWER(TRIM(COALESCE(office_address, ''))) = LOWER(TRIM(:old_address))
+                   OR LOWER(TRIM(COALESCE(description, ''))) = LOWER(TRIM(:old_address)))
+        """), sync_params)
 
     # Keep matching approved registration in sync too, when the email links both records.
     if updated:

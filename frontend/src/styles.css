@@ -1953,3 +1953,15 @@ input[type="date"]::-webkit-date-and-time-value,
   border-radius: 18px;
   background: rgba(255,255,255,0.55);
 }
+
+/* Final alignment for overview action cards and office delete workflow */
+.overview-action-row.enterprise-action-stack { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px; }
+.overview-action-row.enterprise-action-stack > .form-card { min-height:320px; border-radius:24px; padding:24px; box-shadow:var(--shadow-soft); }
+.overview-dashboard-pro .suggestions-card,
+.overview-dashboard-pro .notifications-card { background:var(--card-bg, rgba(255,255,255,.86)); border:1px solid rgba(108,76,166,.12); }
+.modal-backdrop { position:fixed; inset:0; background:rgba(24,18,38,.48); display:grid; place-items:center; padding:20px; z-index:9999; }
+.office-delete-modal { width:min(680px,100%); max-height:88vh; overflow:auto; }
+.linked-staff-list { display:grid; gap:10px; margin:16px 0; }
+.linked-staff-row { display:flex; justify-content:space-between; gap:16px; padding:12px 14px; border:1px solid rgba(108,76,166,.14); border-radius:14px; background:rgba(255,255,255,.62); }
+.danger-button { background:#b91c1c; color:#fff; }
+@media (max-width:760px){ .overview-action-row.enterprise-action-stack{grid-template-columns:1fr;} .linked-staff-row{flex-direction:column;} }

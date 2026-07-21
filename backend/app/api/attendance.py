@@ -62,6 +62,9 @@ class OfficeDetailsUpdateRequest(BaseModel):
     address: str
     allowed_radius_m: int = 100
 
+class OfficeReassignRequest(BaseModel):
+    new_address: str
+
 
 def _ensure_office_qr_schema(db: Session):
     """Request-time, lightweight schema compatibility for office QR attendance."""
@@ -1573,7 +1576,7 @@ def print_office_qr_pdf(area_id: int, current_user: User = Depends(get_current_u
     logo_path = Path(__file__).resolve().parents[1] / 'static' / 'logo.png'
     header_items = []
     if logo_path.exists():
-        header_items.append(Image(str(logo_path), width=42*mm, height=21*mm, kind='proportional'))
+        header_items.append(Image(str(logo_path), width=68*mm, height=34*mm, kind='proportional'))
     header_items.extend([Paragraph('OFFICE ATTENDANCE', title_style), Paragraph(office_name, office_style), Paragraph(address, center_style)])
     header = Table([[item] for item in header_items], colWidths=[186*mm])
     header.setStyle(TableStyle([('ALIGN',(0,0),(-1,-1),'CENTER'),('VALIGN',(0,0),(-1,-1),'MIDDLE'),('BOTTOMPADDING',(0,0),(-1,-1),2*mm)]))
@@ -1623,6 +1626,57 @@ def update_office_details(area_id: int, payload: OfficeDetailsUpdateRequest, cur
             db.execute(text('UPDATE franchise_users SET office_address=:address, updated_at=:now WHERE id=:fid'), {'address':address,'now':now_sa_naive(),'fid':area_data['franchise_user_id']})
     db.commit()
     return {'message':'Office updated','office':_office_qr_row(db, area_id)}
+
+
+@router.get('/office-qr/offices/{area_id}/linked-staff')
+def office_linked_staff(area_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    area = _office_qr_row(db, area_id)
+    _assert_office_area_access(db, current_user, area, write=True)
+    rows = db.execute(text("""
+        SELECT 'employee' AS staff_type, eu.id AS staff_id, eu.user_id,
+               TRIM(COALESCE(eu.name, '') || ' ' || COALESCE(eu.surname, '')) AS full_name,
+               eu.employee_number, eu.office_address_assigned
+        FROM employee_users eu
+        JOIN gps_allocations_per_user ga ON ga.user_id = eu.user_id
+        WHERE ga.area_id = :area_id AND COALESCE(ga.is_active, TRUE) = TRUE AND COALESCE(eu.is_active, TRUE) = TRUE
+        UNION ALL
+        SELECT 'manager' AS staff_type, mu.id AS staff_id, mu.user_id,
+               TRIM(COALESCE(mu.name, '') || ' ' || COALESCE(mu.surname, '')) AS full_name,
+               mu.employee_number, mu.office_address_assigned
+        FROM manager_users mu
+        JOIN gps_allocations_per_user ga ON ga.user_id = mu.user_id
+        WHERE ga.area_id = :area_id AND COALESCE(ga.is_active, TRUE) = TRUE AND COALESCE(mu.is_active, TRUE) = TRUE
+        ORDER BY full_name
+    """), {'area_id': area_id}).mappings().all()
+    return {'office': area, 'items': [dict(row) for row in rows], 'count': len(rows)}
+
+
+@router.post('/office-qr/offices/{area_id}/reassign-linked-staff')
+def reassign_linked_staff(area_id: int, payload: OfficeReassignRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    area = _office_qr_row(db, area_id)
+    _assert_office_area_access(db, current_user, area, write=True)
+    new_address = str(payload.new_address or '').strip()
+    if not new_address:
+        raise HTTPException(status_code=400, detail='A replacement address is required')
+    assigned_count = db.execute(text('SELECT COUNT(*) FROM gps_allocations_per_user WHERE area_id=:area_id AND COALESCE(is_active, TRUE)=TRUE'), {'area_id': area_id}).scalar() or 0
+    now = now_sa_naive()
+    if assigned_count:
+        db.execute(text('''
+            UPDATE employee_users SET office_address_assigned=:address, updated_at=:now
+            WHERE user_id IN (SELECT user_id FROM gps_allocations_per_user WHERE area_id=:area_id AND COALESCE(is_active, TRUE)=TRUE)
+        '''), {'address': new_address, 'now': now, 'area_id': area_id})
+        db.execute(text('''
+            UPDATE manager_users SET office_address_assigned=:address, updated_at=:now
+            WHERE user_id IN (SELECT user_id FROM gps_allocations_per_user WHERE area_id=:area_id AND COALESCE(is_active, TRUE)=TRUE)
+        '''), {'address': new_address, 'now': now, 'area_id': area_id})
+        db.execute(text('UPDATE gps_allocations_per_user SET is_active=FALSE, updated_at=:now WHERE area_id=:area_id AND COALESCE(is_active, TRUE)=TRUE'), {'now': now, 'area_id': area_id})
+    if area.get('franchise_user_id'):
+        db.execute(text('UPDATE franchise_users SET office_address=:address, updated_at=:now WHERE id=:fid'), {'address': new_address, 'now': now, 'fid': area['franchise_user_id']})
+        email = db.execute(text('SELECT u.email FROM franchise_users fu JOIN users u ON u.id=fu.user_id WHERE fu.id=:fid'), {'fid': area['franchise_user_id']}).scalar()
+        if email:
+            db.execute(text('UPDATE franchise_registrations SET office_address=:address, updated_at=:now WHERE LOWER(email)=LOWER(:email)'), {'address': new_address, 'now': now, 'email': email})
+    db.commit()
+    return {'message': 'Linked staff were moved to the replacement address and detached from this office.', 'updated_staff': int(assigned_count)}
 
 
 @router.delete('/office-qr/offices/{area_id}')

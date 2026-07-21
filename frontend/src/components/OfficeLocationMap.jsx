@@ -47,6 +47,9 @@ export default function OfficeLocationMap({ office, onPick }) {
   const googleRef = useRef(null);
   const [address, setAddress] = useState(office?.address || '');
   const [mapMessage, setMapMessage] = useState('');
+  const hasApiKey = Boolean(import.meta.env.VITE_GOOGLE_MAPS_API_KEY);
+  const fallbackMapUrl = address ? `https://www.google.com/maps?q=${encodeURIComponent(address)}&output=embed` : '';
+  const openMapUrl = address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}` : ''; 
 
   const placePoint = (latLng, formattedAddress = '') => {
     if (!latLng || !markerRef.current || !circleRef.current || !mapObjectRef.current) return;
@@ -112,9 +115,10 @@ export default function OfficeLocationMap({ office, onPick }) {
       marker.addListener('dragend', (e) => setLocation(e.latLng));
       onPick({ latitude: center.lat, longitude: center.lng, allowed_radius_m: Number(office.allowed_radius_m) || 100 });
     }
-    init().catch((err) => setMapMessage(err.message || 'Google Maps failed to load'));
+    if (hasApiKey) init().catch((err) => setMapMessage(err.message || 'Google Maps failed to load'));
+    else setMapMessage('Interactive map needs a Google Maps API key. The live address preview below still works.');
     return () => { cancelled = true; };
-  }, [office, onPick]);
+  }, [office?.id, office?.address, office?.latitude, office?.longitude, office?.allowed_radius_m, onPick, hasApiKey]);
 
   return (
     <div className="office-location-map-shell">
@@ -123,10 +127,10 @@ export default function OfficeLocationMap({ office, onPick }) {
           Find the exact office address
           <input value={address} onChange={(event) => setAddress(event.target.value)} placeholder="Street number, street, suburb, city, postal code" />
         </label>
-        <button type="button" onClick={findAddress}>Find on Google Maps</button>
+        {hasApiKey ? <button type="button" onClick={findAddress}>Find on Google Maps</button> : <a className="glass-button" href={openMapUrl} target="_blank" rel="noreferrer">Open in Google Maps</a>}
       </div>
       {mapMessage ? <p className="muted small">{mapMessage}</p> : null}
-      <div style={{ height: 360, width: '100%', borderRadius: 16, overflow: 'hidden' }} ref={mapRef} />
+      {hasApiKey ? <div style={{ height: 360, width: '100%', borderRadius: 16, overflow: 'hidden' }} ref={mapRef} /> : (fallbackMapUrl ? <iframe title="Business address map" src={fallbackMapUrl} loading="lazy" referrerPolicy="no-referrer-when-downgrade" style={{ height: 360, width: '100%', border: 0, borderRadius: 16 }} /> : null)}
     </div>
   );
 }
