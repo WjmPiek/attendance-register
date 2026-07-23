@@ -1,5 +1,3 @@
-import threading
-import traceback
 
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
@@ -7,13 +5,12 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import auth, users, roles, meta, attendance, franchise, franchise_staff, franchise_dashboard, user_management, alerts, irp5, leave, payroll, audit, commission
 from app import models  # noqa: F401
-from app.db.base import Base
 from app.db.session import engine
 from app.services.seed import seed_initial_data
-from app.services.schema_migrations import ensure_runtime_schema
+from app.services.schema_guard import assert_operational_schema
 
 
-app = FastAPI(title="Attendance Register Platform API", version="0.1.0")
+app = FastAPI(title="Attendance Register Platform API", version="3.0.0")
 
 # CORS for local Vite/frontend during development and LAN testing.
 # This intentionally allows localhost/127.0.0.1 on any port, so the frontend
@@ -86,29 +83,15 @@ def favicon():
 
 
 def _initialize_database() -> None:
-    try:
-        print("Starting database initialization...", flush=True)
-        Base.metadata.create_all(bind=engine)
-        print("Base tables checked.", flush=True)
-
-        ensure_runtime_schema()
-        print("Runtime schema checked.", flush=True)
-
-        seed_initial_data()
-        print("Database initialization completed.", flush=True)
-    except Exception:
-        print("Database initialization failed:", flush=True)
-        traceback.print_exc()
+    # Render build runs Alembic before Uvicorn starts. Startup verifies the
+    # contract instead of changing production schema from request processes.
+    assert_operational_schema(engine)
+    seed_initial_data()
 
 
 @app.on_event("startup")
 def on_startup() -> None:
-    thread = threading.Thread(
-        target=_initialize_database,
-        name="database-initializer",
-        daemon=True,
-    )
-    thread.start()
+    _initialize_database()
 
 
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
