@@ -1,0 +1,18 @@
+{
+  "appId": "com.martins.attendance",
+  "appName": "Martins Attendance",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 1800,
+      "launchAutoHide": true,
+      "backgroundColor": "#f4f5f8",
+      "androidSplashResourceName": "splash",
+      "showSpinner": false
+    }
+  }
+}
