@@ -55,6 +55,10 @@ export async function forgotPassword(email) {
   return apiRequest('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) })
 }
 
+export async function resetForgottenPassword(token, password) {
+  return apiRequest('/auth/reset-password', { method: 'POST', body: JSON.stringify({ token, password }) })
+}
+
 export async function getMe() {
   return apiRequest('/auth/me')
 }
@@ -488,3 +492,5 @@ export async function downloadCommissionReport(filters = {}) {
   if (filters.toDate) params.set('to_date', filters.toDate)
   return apiBlob(`/commission/report.pdf${params.toString() ? `?${params}` : ''}`)
 }
+
+export async function createOffice(payload) { return apiRequest('/attendance/office-qr/offices', { method: 'POST', body: JSON.stringify(payload) }) }

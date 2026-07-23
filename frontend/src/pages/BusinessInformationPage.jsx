@@ -10,6 +10,7 @@ import {
   deleteOffice,
   getOfficeLinkedStaff,
   reassignOfficeLinkedStaff,
+  createOffice,
 } from '../api/client'
 import OfficeLocationMap from '../components/OfficeLocationMap'
 
@@ -33,6 +34,7 @@ export default function BusinessInformationPage() {
   const [radius, setRadius] = useState(100)
   const [deleteDialog, setDeleteDialog] = useState(null)
   const [replacementAreaId, setReplacementAreaId] = useState('')
+  const [newOffice, setNewOffice] = useState({ name: '', address: '', allowed_radius_m: 100 })
 
   const load = async () => {
     setLoading(true); setError('')
@@ -169,6 +171,17 @@ export default function BusinessInformationPage() {
     finally { setSaving(false) }
   }
 
+
+  const addOffice = async (event) => {
+    event.preventDefault(); setSaving(true); setError(''); setMessage('')
+    try {
+      await createOffice({ ...newOffice, allowed_radius_m: Number(newOffice.allowed_radius_m || 100) })
+      setNewOffice({ name: '', address: '', allowed_radius_m: 100 })
+      setMessage('Additional office address added. It is now available for staff assignment and QR attendance.')
+      await load()
+    } catch (err) { setError(err.message || 'Unable to add office address') }
+    finally { setSaving(false) }
+  }
   const selectAddressForArchive = async (item) => {
     if (item.is_archived) return
     setOffice(item)
@@ -205,6 +218,16 @@ export default function BusinessInformationPage() {
           <label className="full-width-field">Business address<textarea rows="4" value={form.office_address} onChange={change('office_address')} placeholder="Street, suburb, city, province, postal code, South Africa" /></label>
         </div>
         <div className="button-row"><button type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save all business information'}</button><button type="button" className="glass-button" onClick={load} disabled={saving}>Reset</button></div>
+      </form>
+
+      <form className="form-card" onSubmit={addOffice}>
+        <div><p className="eyebrow">Additional location</p><h2>Add Office Address</h2></div>
+        <div className="form-grid two-column-grid">
+          <label>Office name<input required value={newOffice.name} onChange={(e) => setNewOffice((v) => ({ ...v, name: e.target.value }))} /></label>
+          <label>Attendance radius (metres)<input type="number" min="10" value={newOffice.allowed_radius_m} onChange={(e) => setNewOffice((v) => ({ ...v, allowed_radius_m: e.target.value }))} /></label>
+          <label className="full-width-field">Office address<textarea required rows="3" value={newOffice.address} onChange={(e) => setNewOffice((v) => ({ ...v, address: e.target.value }))} /></label>
+        </div>
+        <button type="submit" disabled={saving}>{saving ? 'Adding...' : 'Add additional office address'}</button>
       </form>
 
       <section className="form-card registered-addresses-card">

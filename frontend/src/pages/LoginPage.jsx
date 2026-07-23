@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { forgotPassword, registerFranchise } from '../api/client'
+import { forgotPassword, registerFranchise, resetForgottenPassword } from '../api/client'
 import Card from '../components/Card'
 import InstallPrompt from '../components/InstallPrompt'
 
@@ -24,6 +24,10 @@ export default function LoginPage({ onLogin, loading, error }) {
   const [mode, setMode] = useState('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const resetToken = new URLSearchParams(window.location.search).get('reset_token') || ''
+  const [resetPassword, setResetPassword] = useState('')
+  const [resetMessage, setResetMessage] = useState('')
   const [registration, setRegistration] = useState(emptyRegistration)
   const [registering, setRegistering] = useState(false)
   const [registrationMessage, setRegistrationMessage] = useState('')
@@ -133,14 +137,22 @@ export default function LoginPage({ onLogin, loading, error }) {
       <Card title={mode === 'login' ? '' : 'Register New Franchise'} className={mode === 'login' ? 'form-card login-card login-card-compact' : 'form-card wide-form login-card'}>
         <img className="login-logo" src="/logo.png" alt="Martins logo" />
 
-        {mode === 'login' ? (
+        {resetToken ? (
+          <form className="login-form" onSubmit={async (event) => { event.preventDefault(); try { const data = await resetForgottenPassword(resetToken, resetPassword); setResetMessage(data.message || 'Password changed.'); window.history.replaceState({}, '', window.location.pathname); } catch (err) { setResetMessage(err.message || 'Reset failed.'); } }}>
+            <h2>Create a new password</h2>
+            <label>New password<input type={showPassword ? 'text' : 'password'} minLength="8" required value={resetPassword} onChange={(e) => setResetPassword(e.target.value)} /></label>
+            <label><input type="checkbox" checked={showPassword} onChange={(e) => setShowPassword(e.target.checked)} /> Show password</label>
+            <button type="submit">Save new password</button>
+            {resetMessage ? <p>{resetMessage}</p> : null}
+          </form>
+        ) : mode === 'login' ? (
           <>
             <form className="login-form" onSubmit={submitLogin}>
               <label>Email or username
                 <input value={email} onChange={(event) => setEmail(event.target.value)} type="text" autoComplete="username" required />
               </label>
               <label>Password
-                <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" required />
+                <div className="password-input-row"><input value={password} onChange={(event) => setPassword(event.target.value)} type={showPassword ? 'text' : 'password'} required /><button type="button" className="glass-button password-toggle" onClick={() => setShowPassword((v) => !v)}>{showPassword ? 'Hide' : 'Show'}</button></div>
               </label>
               <div className="login-form-actions">
                 <button type="submit" disabled={loading}>{loading ? 'Logging in...' : 'Login'}</button>

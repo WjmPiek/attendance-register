@@ -57,6 +57,14 @@ class OfficeLocationUpdateRequest(BaseModel):
 class OfficeQrValidateRequest(BaseModel):
     qr_value: str
 
+
+class OfficeCreateRequest(BaseModel):
+    name: str
+    address: str
+    allowed_radius_m: int = 100
+    latitude: float | None = None
+    longitude: float | None = None
+
 class OfficeDetailsUpdateRequest(BaseModel):
     name: str
     address: str
@@ -1473,6 +1481,28 @@ def attendance_export_batch(view: str = Query(default='sessions', pattern='^(ses
 
 
 
+
+
+@router.post('/office-qr/offices')
+def create_office(payload: OfficeCreateRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    roles=set(_get_role_names(db,current_user.id))
+    if 'FranchiseUser' not in roles and 'SuperUser' not in roles:
+        raise HTTPException(status_code=403, detail='Only a franchise user can add an office address')
+    fid,_=_franchise_scope_for_user(db,current_user.id)
+    if not fid:
+        raise HTTPException(status_code=400, detail='Franchise profile required')
+    name=str(payload.name or '').strip(); address=str(payload.address or '').strip()
+    if not name or not address:
+        raise HTTPException(status_code=400, detail='Office name and address are required')
+    existing=db.execute(text("SELECT id FROM areas WHERE franchise_user_id=:fid AND LOWER(COALESCE(office_address,description,''))=LOWER(:address) AND COALESCE(is_archived,FALSE)=FALSE"), {'fid':fid,'address':address}).scalar()
+    if existing:
+        raise HTTPException(status_code=409, detail='This office address already exists')
+    token=secrets.token_urlsafe(24)
+    row=db.execute(text("""INSERT INTO areas(name,code,description,office_address,latitude,longitude,allowed_radius_m,franchise_user_id,qr_token,qr_enabled,is_archived,created_at,updated_at)
+      VALUES(:name,:code,:address,:address,:lat,:lng,:radius,:fid,:token,TRUE,FALSE,:now,:now) RETURNING id"""),
+      {'name':name,'code':f'OFF-{int(datetime.utcnow().timestamp())}','address':address,'lat':payload.latitude,'lng':payload.longitude,'radius':max(10,int(payload.allowed_radius_m or 100)),'fid':fid,'token':token,'now':now_sa_naive()}).scalar()
+    db.commit()
+    return {'message':'Office address added','office':_office_qr_row(db,int(row))}
 
 @router.get('/office-qr/offices')
 def list_office_qr_codes(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):

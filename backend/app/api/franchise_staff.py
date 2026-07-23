@@ -927,6 +927,23 @@ def list_managers(current_user: User = Depends(get_current_user), db: Session = 
             ORDER BY mu.id DESC
         """)).mappings().all()
     else:
+        names = set(_roles(db, current_user))
+        if "ManagerUser" in names and "FranchiseUser" not in names:
+            rows = db.execute(text("""
+                SELECT mu.id, mu.user_id, mu.franchise_user_id, mu.name, mu.surname, mu.employee_number,
+                       mu.email AS email, mu.contact_number, mu.office_address_assigned,
+                       COALESCE(mu.work_start_time, '08:00') AS work_start_time,
+                       COALESCE(mu.work_end_time, '17:00') AS work_end_time, g.area_id AS office_area_id,
+                       a.name AS office_name, COALESCE(mu.is_active, TRUE) AS is_active,
+                       u.is_active AS login_active, u.username AS username,
+                       COALESCE(mu.profile_photo, u.profile_photo) AS profile_photo,
+                       COALESCE(mu.profile_photo_mime, u.profile_photo_mime, 'image/png') AS profile_photo_mime
+                FROM manager_users mu JOIN users u ON u.id=mu.user_id
+                LEFT JOIN gps_allocations_per_user g ON g.user_id=mu.user_id AND COALESCE(g.is_active,TRUE)=TRUE
+                LEFT JOIN areas a ON a.id=g.area_id
+                WHERE mu.user_id=:uid AND COALESCE(mu.is_active,TRUE)=TRUE AND COALESCE(u.is_active,TRUE)=TRUE
+            """), {"uid": current_user.id}).mappings().all()
+            return [_public_staff_dict(row) for row in rows]
         franchise_user_id = _require_franchise(db, current_user)
         rows = db.execute(text("""
             SELECT
@@ -1026,6 +1043,26 @@ def list_employees(current_user: User = Depends(get_current_user), db: Session =
             ORDER BY eu.id DESC
         """)).mappings().all()
     else:
+        names = set(_roles(db, current_user))
+        if "ManagerUser" in names and "FranchiseUser" not in names:
+            manager_row = db.execute(text("SELECT id, franchise_user_id FROM manager_users WHERE user_id=:uid AND COALESCE(is_active,TRUE)=TRUE"), {"uid": current_user.id}).mappings().first()
+            if not manager_row:
+                raise HTTPException(status_code=403, detail="No manager profile found")
+            rows = db.execute(text("""
+                SELECT eu.id, eu.user_id, eu.franchise_user_id, eu.manager_user_id, eu.employee_role, eu.employee_number,
+                       eu.name, eu.surname, eu.email AS email, eu.contact_number, eu.office_address_assigned,
+                       COALESCE(eu.work_start_time,'08:00') work_start_time, COALESCE(eu.work_end_time,'17:00') work_end_time,
+                       g.area_id AS office_area_id, a.name AS office_name, COALESCE(eu.is_active,TRUE) is_active,
+                       u.is_active login_active, u.username, COALESCE(eu.profile_photo,u.profile_photo) profile_photo,
+                       COALESCE(eu.profile_photo_mime,u.profile_photo_mime,'image/png') profile_photo_mime
+                FROM employee_users eu JOIN users u ON u.id=eu.user_id
+                LEFT JOIN gps_allocations_per_user g ON g.user_id=eu.user_id AND COALESCE(g.is_active,TRUE)=TRUE
+                LEFT JOIN areas a ON a.id=g.area_id
+                WHERE eu.manager_user_id=:mid AND eu.franchise_user_id=:fid
+                  AND COALESCE(eu.is_active,TRUE)=TRUE AND COALESCE(u.is_active,TRUE)=TRUE
+                ORDER BY eu.id DESC
+            """), {"mid": manager_row["id"], "fid": manager_row["franchise_user_id"]}).mappings().all()
+            return [_public_staff_dict(row) for row in rows]
         franchise_user_id = _require_franchise(db, current_user)
         rows = db.execute(text("""
             SELECT
@@ -1367,7 +1404,7 @@ def get_employee(employee_id: int, current_user: User = Depends(get_current_user
 def update_manager(manager_id: int, payload: UpdateManagerRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _ensure_office_hours_columns(db)
     row = _staff_scope_filter(db, current_user, "manager_users", manager_id)
-    values = payload.model_dump(exclude_unset=True)
+    values = {k: v for k, v in payload.model_dump(exclude_unset=True).items() if v is not None}
     if 'work_start_time' in values:
         values['work_start_time'] = _valid_hhmm(values.get('work_start_time'), '08:00')
     if 'work_end_time' in values:
@@ -1411,7 +1448,7 @@ def update_manager(manager_id: int, payload: UpdateManagerRequest, current_user:
 def update_employee(employee_id: int, payload: UpdateEmployeeRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _ensure_office_hours_columns(db)
     row = _staff_scope_filter(db, current_user, "employee_users", employee_id)
-    values = payload.model_dump(exclude_unset=True)
+    values = {k: v for k, v in payload.model_dump(exclude_unset=True).items() if v is not None}
     if 'work_start_time' in values:
         values['work_start_time'] = _valid_hhmm(values.get('work_start_time'), '08:00')
     if 'work_end_time' in values:

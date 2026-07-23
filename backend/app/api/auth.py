@@ -1,5 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, EmailStr
+from datetime import datetime, timedelta
+import hashlib, os, secrets
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import or_, text
 from sqlalchemy.orm import Session
 
@@ -8,6 +10,7 @@ from app.core.security import create_access_token, hash_password, verify_passwor
 from app.db.session import get_db
 from app.models.core import Role, SuperUser, User, UserRole
 from app.schemas.auth import CurrentUserResponse, LoginRequest, TokenResponse
+from app.services.email_service import send_smtp_email
 
 router = APIRouter()
 
@@ -94,39 +97,38 @@ class ForgotPasswordRequest(BaseModel):
 
 @router.post("/forgot-password")
 def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.email == str(payload.email)).first()
+    email = str(payload.email).strip().lower()
+    user = db.query(User).filter(User.email.ilike(email), User.is_active == True).first()
+    generic = {"message": "If the account exists, a password reset email has been sent."}
     if not user:
-        return {
-            "message": "If this email exists, a password reset can be done by the responsible administrator.",
-            "reset_path": "Ask your FranchiseUser or SuperUser to open HR Staff, select the staff member, and use Reset Password.",
-        }
-    manager = db.execute(text("""
-        SELECT mu.franchise_user_id, fu.email AS franchise_email, fu.franchisee_name, fu.franchisee_surname
-        FROM manager_users mu
-        LEFT JOIN franchise_users fu ON fu.id = mu.franchise_user_id
-        WHERE mu.user_id = :user_id
-        LIMIT 1
-    """), {"user_id": user.id}).mappings().first()
-    employee = db.execute(text("""
-        SELECT eu.franchise_user_id, fu.email AS franchise_email, fu.franchisee_name, fu.franchisee_surname
-        FROM employee_users eu
-        LEFT JOIN franchise_users fu ON fu.id = eu.franchise_user_id
-        WHERE eu.user_id = :user_id
-        LIMIT 1
-    """), {"user_id": user.id}).mappings().first()
-    owner = manager or employee
-    if owner:
-        admin_name = f"{owner.get('franchisee_name') or ''} {owner.get('franchisee_surname') or ''}".strip()
-        return {
-            "message": "Your FranchiseUser can reset this password from HR Staff > View/Edit > Reset Password.",
-            "franchise_admin": admin_name or None,
-            "franchise_admin_email": owner.get('franchise_email'),
-            "reset_path": "HR Staff > View/Edit staff member > Reset Password",
-        }
-    return {
-        "message": "Ask a SuperUser/admin to reset this password.",
-        "reset_path": "SuperUser can reset the user password from staff/user management.",
-    }
+        return generic
+    raw_token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+    expires = datetime.utcnow() + timedelta(minutes=60)
+    db.execute(text("UPDATE password_reset_tokens SET used_at=NOW() WHERE user_id=:uid AND used_at IS NULL"), {"uid": user.id})
+    db.execute(text("INSERT INTO password_reset_tokens(user_id,token_hash,expires_at,created_at) VALUES(:uid,:hash,:expires,NOW())"), {"uid":user.id,"hash":token_hash,"expires":expires})
+    db.commit()
+    frontend = os.getenv("FRONTEND_URL", "").rstrip('/')
+    reset_url = f"{frontend}/?reset_token={raw_token}" if frontend else f"/?reset_token={raw_token}"
+    state, sent_at, error, _ = send_smtp_email(user.email, "Reset your Attendance Register password", f"Hello {user.full_name or 'User'},\n\nUse this secure link within 60 minutes to create a new password:\n{reset_url}\n\nIf you did not request this, ignore this email.")
+    if state != "sent":
+        raise HTTPException(status_code=503, detail=f"Password reset email could not be sent: {error or 'SMTP is not configured'}")
+    return generic
+
+class ResetForgottenPasswordRequest(BaseModel):
+    token: str
+    password: str = Field(min_length=8)
+
+@router.post("/reset-password")
+def reset_forgotten_password(payload: ResetForgottenPasswordRequest, db: Session = Depends(get_db)):
+    token_hash = hashlib.sha256(payload.token.encode()).hexdigest()
+    row = db.execute(text("SELECT id,user_id FROM password_reset_tokens WHERE token_hash=:hash AND used_at IS NULL AND expires_at>NOW() ORDER BY id DESC LIMIT 1"), {"hash":token_hash}).mappings().first()
+    if not row:
+        raise HTTPException(status_code=400, detail="This reset link is invalid or expired")
+    db.execute(text("UPDATE users SET password_hash=:password, updated_at=NOW() WHERE id=:uid"), {"password":hash_password(payload.password),"uid":row["user_id"]})
+    db.execute(text("UPDATE password_reset_tokens SET used_at=NOW() WHERE id=:id"), {"id":row["id"]})
+    db.commit()
+    return {"message":"Password changed successfully. You can now sign in."}
 
 
 @router.get("/me", response_model=CurrentUserResponse)

@@ -255,7 +255,7 @@ export default function FranchiseStaffPage() {
       setEmployees(e.status === 'fulfilled' && Array.isArray(e.value) ? e.value : [])
       setOfficeQrs(qrs.status === 'fulfilled' && Array.isArray(qrs.value) ? qrs.value : [])
       setMyPayslips(payslips.status === 'fulfilled' && Array.isArray(payslips.value) ? payslips.value : [])
-      const failed = results.filter((item) => item.status === 'rejected')
+      const failed = [m, e].filter((item) => item.status === 'rejected')
       if (failed.length) {
         setErr(failed.map((item) => item.reason?.message || 'A staff service failed').join(' | '))
       }

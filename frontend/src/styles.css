@@ -2039,3 +2039,5 @@ input[type="date"]::-webkit-date-and-time-value,
   .commission-employee-row { align-items: flex-start; }
   .commission-open-label { white-space: normal; text-align: right; }
 }
+
+.password-input-row{display:flex;gap:.5rem;align-items:center}.password-input-row input{flex:1}.password-toggle{white-space:nowrap;padding:.65rem .9rem}
