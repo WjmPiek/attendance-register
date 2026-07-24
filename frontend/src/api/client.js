@@ -428,7 +428,7 @@ export async function updateFranchiseUser(franchiseUserId, payload) {
 }
 
 export async function getFranchiseUsers() {
-  return apiRequest('/franchise/users')
+  return normalizeListResponse(await apiRequest('/franchise/users'))
 }
 
 export async function getMyFranchiseProfile() {

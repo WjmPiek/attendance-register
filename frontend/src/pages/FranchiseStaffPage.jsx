@@ -9,7 +9,8 @@ import {
   downloadStaffIdCards,
   updateOfficeLocation,
   updateOfficeDetails,
-  deleteOffice
+  deleteOffice,
+  getFranchiseUsers
 } from '../api/client'
 
 import OfficeLocationMap from '../components/OfficeLocationMap'
@@ -258,8 +259,9 @@ export default function FranchiseStaffPage({ me }) {
     try {
       let scopeId = selectedFranchiseId
       if (isSuperUser) {
-        const franchises = await apiFetch('/franchise/users')
-        const available = Array.isArray(franchises) ? franchises : []
+        const franchises = await getFranchiseUsers()
+        const available = (Array.isArray(franchises) ? franchises : [])
+          .filter((franchise) => franchise.is_active !== false && franchise.login_active !== false)
         setFranchiseUsers(available)
         if (!scopeId) {
           setManagers([])

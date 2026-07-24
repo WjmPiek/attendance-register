@@ -477,7 +477,9 @@ def _franchise_user_select_sql(where_sql: str) -> str:
             fu.contact_number,
             fu.is_active,
             u.email,
-            u.full_name
+            u.username,
+            u.full_name,
+            u.is_active AS login_active
         FROM franchise_users fu
         LEFT JOIN users u ON u.id = fu.user_id
         WHERE {where_sql}
@@ -618,4 +620,3 @@ def update_my_franchise_profile_patch(payload: FranchiseUserUpdate, current_user
     if not row:
         raise HTTPException(status_code=404, detail="Franchise profile not found")
     return _update_live_franchise_user(row["id"], payload, current_user, db)
-
