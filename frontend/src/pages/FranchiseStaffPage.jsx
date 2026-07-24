@@ -261,9 +261,12 @@ export default function FranchiseStaffPage({ me }) {
         const franchises = await apiFetch('/franchise/users')
         const available = Array.isArray(franchises) ? franchises : []
         setFranchiseUsers(available)
-        if (!scopeId && available.length) {
-          scopeId = String(available[0].id)
-          setSelectedFranchiseId(scopeId)
+        if (!scopeId) {
+          setManagers([])
+          setEmployees([])
+          setOfficeQrs([])
+          setMyPayslips([])
+          return
         }
       }
       const scopeQuery = isSuperUser && scopeId
@@ -703,6 +706,45 @@ export default function FranchiseStaffPage({ me }) {
     )
   }
 
+  if (isSuperUser && !selectedFranchiseId) {
+    return (
+      <div className="staff-page">
+        <div className="section-header">
+          <p className="eyebrow">HR Management</p>
+          <h2>Select a Franchise User</h2>
+          <p className="muted">Managers and employees remain hidden until you select their franchise.</p>
+        </div>
+
+        {err ? <p className="error">Franchise data could not load: {err}</p> : null}
+
+        <section className="form-card staff-list-card">
+          <h2>Franchise Users</h2>
+          <div className="commission-employee-list">
+            {franchiseUsers.map((franchise) => (
+              <button
+                type="button"
+                className="commission-employee-row"
+                key={franchise.id}
+                onClick={() => {
+                  resetForm()
+                  setSelectedFranchiseId(String(franchise.id))
+                }}
+              >
+                <div>
+                  <strong>{franchise.franchise_name || franchise.business_name || franchise.full_name || `Franchise ${franchise.id}`}</strong>
+                  <span>{franchise.email || franchise.username || `Franchise user ${franchise.id}`}</span>
+                  {franchise.office_address ? <small>{franchise.office_address}</small> : null}
+                </div>
+                <span className="commission-open-label">Open staff →</span>
+              </button>
+            ))}
+            {!franchiseUsers.length ? <div className="empty-state">No active franchise users found.</div> : null}
+          </div>
+        </section>
+      </div>
+    )
+  }
+
   return (
     <div className="staff-page">
       <div className="section-header">
@@ -729,6 +771,19 @@ export default function FranchiseStaffPage({ me }) {
               ))}
             </select>
           </label>
+          <button
+            type="button"
+            className="glass-button"
+            onClick={() => {
+              resetForm()
+              setManagers([])
+              setEmployees([])
+              setOfficeQrs([])
+              setSelectedFranchiseId('')
+            }}
+          >
+            Back to franchise users
+          </button>
         </section>
       ) : null}
 

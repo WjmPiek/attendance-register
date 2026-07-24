@@ -24,6 +24,7 @@ auth = (ROOT/'backend/app/api/auth.py').read_text()
 login = (ROOT/'frontend/src/pages/LoginPage.jsx').read_text()
 business = (ROOT/'frontend/src/pages/BusinessInformationPage.jsx').read_text()
 mobile = (ROOT/'frontend/src/pages/MobileAttendancePage.jsx').read_text()
+franchise_staff_page = (ROOT/'frontend/src/pages/FranchiseStaffPage.jsx').read_text()
 user_mgmt = (ROOT/'backend/app/api/user_management.py').read_text()
 
 for table in ('notifications','leave_applications','payroll_imports','payroll_import_rows','payroll_payslips','irp5_documents'):
@@ -36,6 +37,8 @@ check('staff hierarchy migration head', 'fk_employee_manager_same_franchise' in 
 check('username-only account migration', 'ALTER COLUMN email DROP NOT NULL' in optional_email_migration)
 check('username persisted during staff creation', 'username=normalised_username' in staff)
 check('superuser franchise staff scope', 'requested_franchise_user_id' in staff)
+check('superuser unscoped staff hidden', staff.count('if franchise_user_id is None:\n            return []') >= 2)
+check('superuser explicit franchise selection', 'Managers and employees remain hidden until you select their franchise.' in franchise_staff_page)
 check('manager staff visibility scope', 's.manager_user_id = :manager_user_id' in staff)
 check('generic creation rejects profile roles', 'Organisational users must be created' in (ROOT/'backend/app/api/users.py').read_text())
 check('manager commission participant', 'manager_users' in commission and "kind == \"manager\"" in commission)

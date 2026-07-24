@@ -1517,6 +1517,8 @@ def list_office_qr_codes(
 
     params = {}
     where = 'COALESCE(a.is_archived, FALSE) = FALSE'
+    if 'SuperUser' in roles and franchise_user_id is None:
+        return []
     if 'SuperUser' in roles and franchise_user_id is not None:
         _sync_franchise_address_areas(db, franchise_user_id)
         where = 'a.franchise_user_id = :fid AND COALESCE(a.is_archived, FALSE) = FALSE'

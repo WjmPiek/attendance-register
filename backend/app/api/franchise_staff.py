@@ -988,6 +988,8 @@ def list_offices(
         raise HTTPException(status_code=403, detail="Access denied")
     params = {}
     where = ["COALESCE(is_archived, FALSE) = FALSE"]
+    if "SuperUser" in names and franchise_user_id is None:
+        return []
     if "SuperUser" in names and franchise_user_id is not None:
         where.append("franchise_user_id = :fid")
         params["fid"] = franchise_user_id
@@ -1025,6 +1027,8 @@ def list_managers(
     _ensure_office_hours_columns(db)
     _ensure_profile_photo_columns(db)
     if _is_superuser(db, current_user):
+        if franchise_user_id is None:
+            return []
         where = ""
         params = {}
         if franchise_user_id is not None:
@@ -1150,6 +1154,8 @@ def list_employees(
     _ensure_office_hours_columns(db)
     _ensure_profile_photo_columns(db)
     if _is_superuser(db, current_user):
+        if franchise_user_id is None:
+            return []
         where = ""
         params = {}
         if franchise_user_id is not None:
