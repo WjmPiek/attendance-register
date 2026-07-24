@@ -468,8 +468,12 @@ export async function reassignOfficeLinkedStaff(areaId, replacementOffice) {
   })
 }
 export async function getCommissionTypes() { return apiRequest('/commission/types') }
-export async function getCommissionEmployees() { return apiRequest('/commission/employees') }
-export async function getCommissionStructures() { return apiRequest('/commission/structures') }
+export async function getCommissionEmployees(franchiseUserId = '') {
+  return apiRequest(`/commission/employees${franchiseUserId ? `?franchise_user_id=${encodeURIComponent(franchiseUserId)}` : ''}`)
+}
+export async function getCommissionStructures(franchiseUserId = '') {
+  return apiRequest(`/commission/structures${franchiseUserId ? `?franchise_user_id=${encodeURIComponent(franchiseUserId)}` : ''}`)
+}
 export async function saveCommissionStructure(payload) { return apiRequest('/commission/structures', { method: 'POST', body: JSON.stringify(payload) }) }
 export async function getCommissionEntries(filters = {}) {
   const params = new URLSearchParams()
@@ -477,7 +481,8 @@ export async function getCommissionEntries(filters = {}) {
   if (filters.fromDate) params.set('from_date', filters.fromDate)
   if (filters.toDate) params.set('to_date', filters.toDate)
   if (filters.status) params.set('status', filters.status)
-  if (filters.search) params.set('search', filters.search)
+    if (filters.search) params.set('search', filters.search)
+    if (filters.franchiseUserId) params.set('franchise_user_id', filters.franchiseUserId)
   const qs = params.toString()
   return apiRequest(`/commission/entries${qs ? `?${qs}` : ''}`)
 }
@@ -486,11 +491,13 @@ export async function deleteCommissionEntry(id) { return apiRequest(`/commission
 export async function reviewCommissionEntry(id, payload) { return apiRequest(`/commission/entries/${id}/review`, { method: 'PUT', body: JSON.stringify(payload) }) }
 export async function bulkReviewCommissionEntries(payload) { return apiRequest('/commission/entries/bulk-review', { method: 'POST', body: JSON.stringify(payload) }) }
 export async function downloadCommissionForm(id) { return apiBlob(`/commission/entries/${id}/form.pdf`) }
+export async function getCommissionEntryHistory(id) { return apiRequest(`/commission/entries/${id}/history`) }
 export async function downloadCommissionReport(filters = {}) {
   const params = new URLSearchParams()
   if (filters.employeeUserId) params.set('employee_user_id', filters.employeeUserId)
   if (filters.fromDate) params.set('from_date', filters.fromDate)
-  if (filters.toDate) params.set('to_date', filters.toDate)
+    if (filters.toDate) params.set('to_date', filters.toDate)
+    if (filters.franchiseUserId) params.set('franchise_user_id', filters.franchiseUserId)
   return apiBlob(`/commission/report.pdf${params.toString() ? `?${params}` : ''}`)
 }
 

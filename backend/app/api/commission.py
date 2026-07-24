@@ -15,9 +15,10 @@ from app.db.session import get_db
 from app.models.core import User
 
 router = APIRouter()
-COMMISSION_TYPES = {"removals","grave_service","full_funeral_service","cremation_service","church_service","invoice_commission","overtime"}
+COMMISSION_TYPES = {"removals","grave_service","full_funeral_service","cremation_service","church_service","invoice_commission","joinings","overtime"}
 
 class StructureIn(BaseModel):
+    franchise_user_id: int | None = None
     commission_type: str
     label: str
     calculation_type: str = Field(pattern="^(fixed|percentage|overtime)$")
@@ -109,6 +110,8 @@ def _calculate(structure, payload):
         rate = Decimal(payload.rate_override if payload.rate_override is not None else (structure["overtime_multiplier"] or structure["rate"] or 1))
         amount = Decimal(payload.hours) * Decimal(payload.hourly_rate) * rate
     else:
+        if qty != qty.to_integral_value():
+            raise HTTPException(400, "Quantity must be a whole number")
         rate = Decimal(payload.rate_override if payload.rate_override is not None else structure["rate"])
         amount = qty * rate
     return rate, amount.quantize(Decimal("0.01"))
@@ -137,18 +140,65 @@ def _audit(db, entry_id, action, actor, old=None, new=None, note=None):
     db.execute(text("INSERT INTO commission_entry_audit(entry_id,action,actor_user_id,old_values,new_values,note) VALUES(:e,:a,:u,:o,:n,:note)"),
       {"e":entry_id,"a":action,"u":actor,"o":json.dumps(old,default=str) if old else None,"n":json.dumps(new,default=str) if new else None,"note":note})
 
+
+def _franchise_scope(db: Session, current_user: User, requested_franchise_user_id: int | None):
+    roles, fid, _, _, kind = _profile(db, current_user)
+    if kind != "super":
+        return fid
+    if requested_franchise_user_id is None:
+        return None
+    exists = db.execute(text(
+        "SELECT 1 FROM franchise_users WHERE id=:id AND COALESCE(is_active,TRUE)=TRUE"
+    ), {"id": requested_franchise_user_id}).scalar()
+    if not exists:
+        raise HTTPException(404, "Franchise user not found")
+    return requested_franchise_user_id
+
+
+def _assert_review_allowed(db: Session, current_user: User, entry, participant):
+    roles, _, manager_profile_id, _, kind = _profile(db, current_user)
+    if entry["status"] != "pending" or entry.get("is_cancelled"):
+        raise HTTPException(409, "Only a pending submission can be reviewed")
+    if int(entry["created_by_user_id"]) == int(current_user.id) or int(entry["employee_user_id"]) == int(current_user.id):
+        raise HTTPException(403, "You cannot approve or reject your own submission")
+    if kind == "manager":
+        if participant["staff_type"] != "employee" or int(participant["manager_user_id"] or 0) != int(manager_profile_id or 0):
+            raise HTTPException(403, "Managers may review only submissions from employees assigned to them")
+    elif not ({"FranchiseUser", "SuperUser"} & roles):
+        raise HTTPException(403, "Review access required")
+
+
+def _assert_not_duplicate(db: Session, franchise_user_id: int, participant_user_id: int, payload: EntryIn, exclude_entry_id: int | None = None):
+    duplicate = db.execute(text("""
+        SELECT id FROM commission_entries
+        WHERE franchise_user_id=:fid AND employee_user_id=:employee
+          AND commission_type=:type AND service_date=:date
+          AND LOWER(TRIM(COALESCE(reference,'')))=LOWER(TRIM(:reference))
+          AND COALESCE(is_cancelled,FALSE)=FALSE
+          AND (:exclude_id IS NULL OR id<>CAST(:exclude_id AS INTEGER))
+        LIMIT 1
+    """), {
+        "fid": franchise_user_id, "employee": participant_user_id,
+        "type": payload.commission_type, "date": payload.service_date,
+        "reference": payload.reference, "exclude_id": exclude_entry_id,
+    }).scalar()
+    if duplicate:
+        raise HTTPException(409, "This staff member already has a commission entry with the same type, date and reference")
+
 @router.get('/types')
 def types():
     return [{"value": x, "label": x.replace('_',' ').title()} for x in sorted(COMMISSION_TYPES)]
 
 @router.get('/employees')
-def employees(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def employees(franchise_user_id: int | None = None, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     roles, fid, manager_profile_id, own_user_id, kind = _profile(db, current_user)
+    fid = _franchise_scope(db, current_user, franchise_user_id)
+    if kind == "super" and fid is None:
+        return []
     params = {}
     conditions = ["COALESCE(active,TRUE)=TRUE"]
-    if "SuperUser" not in roles:
-        conditions.append("franchise_user_id=:fid")
-        params["fid"] = fid
+    conditions.append("franchise_user_id=:fid")
+    params["fid"] = fid
     if kind == "manager":
         conditions.append("(staff_type='manager' AND user_id=:uid OR staff_type='employee' AND manager_user_id=:mid)")
         params.update({"uid": current_user.id, "mid": manager_profile_id})
@@ -178,6 +228,7 @@ def _ensure_default_structures(db: Session, fid: int, actor_user_id: int):
         ("full_funeral_service", "Full Funeral Service", "fixed", Decimal("0"), None),
         ("cremation_service", "Cremation Service", "fixed", Decimal("0"), None),
         ("church_service", "Church Service", "fixed", Decimal("0"), None),
+        ("joinings", "Joinings", "fixed", Decimal("0"), None),
         ("invoice_commission", "Invoice Commission", "percentage", Decimal("0"), None),
         ("overtime", "Overtime", "overtime", Decimal("0"), Decimal("1.5")),
     ]
@@ -190,8 +241,8 @@ def _ensure_default_structures(db: Session, fid: int, actor_user_id: int):
     db.commit()
 
 @router.get('/structures')
-def structures(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    _, fid, _, _, _ = _profile(db, current_user)
+def structures(franchise_user_id: int | None = None, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    fid = _franchise_scope(db, current_user, franchise_user_id)
     if not fid:
         return []
     _ensure_default_structures(db, int(fid), current_user.id)
@@ -204,8 +255,9 @@ def save_structure(payload: StructureIn, current_user: User = Depends(get_curren
         raise HTTPException(403, "Only a franchise user can manage commission structures")
     if payload.commission_type not in COMMISSION_TYPES:
         raise HTTPException(400, "Invalid commission type")
+    fid = _franchise_scope(db, current_user, payload.franchise_user_id)
     if not fid:
-        raise HTTPException(400, "Franchise profile required")
+        raise HTTPException(400, "Select a franchise user before managing commission structures")
     row = db.execute(text("""INSERT INTO commission_structures(franchise_user_id,commission_type,label,calculation_type,rate,overtime_multiplier,is_active,created_by_user_id,updated_at)
       VALUES(:fid,:type,:label,:calc,:rate,:mult,:active,:uid,NOW()) ON CONFLICT(franchise_user_id,commission_type) DO UPDATE SET label=EXCLUDED.label,calculation_type=EXCLUDED.calculation_type,rate=EXCLUDED.rate,overtime_multiplier=EXCLUDED.overtime_multiplier,is_active=EXCLUDED.is_active,updated_at=NOW() RETURNING *"""),
       {"fid":fid,"type":payload.commission_type,"label":payload.label,"calc":payload.calculation_type,"rate":payload.rate,"mult":payload.overtime_multiplier,"active":payload.is_active,"uid":current_user.id}).mappings().first()
@@ -217,6 +269,8 @@ def create_entry(payload: EntryIn, current_user: User = Depends(get_current_user
     roles, _, _, own_user_id, kind = _profile(db, current_user)
     self_submit = kind in {"employee", "manager"}
     if self_submit:
+        if payload.rate_override is not None:
+            raise HTTPException(403, "Staff submissions cannot override configured commission rates")
         participant_user_id = current_user.id
         status = "pending"
     elif "FranchiseUser" in roles or "SuperUser" in roles:
@@ -230,6 +284,7 @@ def create_entry(payload: EntryIn, current_user: User = Depends(get_current_user
     structure = db.execute(text("SELECT * FROM commission_structures WHERE franchise_user_id=:fid AND commission_type=:type AND is_active=TRUE"), {"fid": participant["franchise_user_id"], "type": payload.commission_type}).mappings().first()
     if not structure:
         raise HTTPException(400, "This commission type is not active. Ask the franchise user to configure it.")
+    _assert_not_duplicate(db, int(participant["franchise_user_id"]), int(participant_user_id), payload)
     rate, amount = _calculate(structure, payload)
     row = db.execute(text("""INSERT INTO commission_entries(franchise_user_id,employee_user_id,commission_type,service_date,reference,quantity,invoice_value_before_tax,hours,hourly_rate,applied_rate,calculated_amount,notes,created_by_user_id,status,submitted_at,reviewed_at,reviewed_by_user_id,last_edited_by_user_id)
       VALUES(:fid,:employee,:type,:date,:ref,:qty,:invoice,:hours,:hourly,:rate,:amount,:notes,:uid,:status,NOW(),CASE WHEN :status='approved' THEN NOW() ELSE NULL END,CASE WHEN :status='approved' THEN :uid ELSE NULL END,:uid) RETURNING *"""),
@@ -238,16 +293,23 @@ def create_entry(payload: EntryIn, current_user: User = Depends(get_current_user
     if status == "pending":
         for uid in _reviewer_ids(db, participant):
             _notify(db, uid, "New commission submitted", f"{participant['full_name']} submitted {structure['label']} reference {payload.reference}.", row["id"], "warning")
+    else:
+        _notify(db, participant_user_id, "Commission entry added", f"{structure['label']} reference {payload.reference} was added and approved.", row["id"], "success")
     db.commit()
     return dict(row)
 
 
-def _rows(db, user, employee_user_id=None, from_date=None, to_date=None, status=None, search=None):
+def _rows(db, user, employee_user_id=None, from_date=None, to_date=None, status=None, search=None, franchise_user_id=None):
     roles, fid, manager_profile_id, own_user_id, kind = _profile(db, user)
+    fid = _franchise_scope(db, user, franchise_user_id)
     where = ["1=1"]
     params = {}
+    if kind == "super" and fid is None:
+        return []
     if employee_user_id:
-        _participant(db, user, employee_user_id)
+        participant = _participant(db, user, employee_user_id)
+        if kind == "super" and int(participant["franchise_user_id"] or 0) != int(fid or 0):
+            raise HTTPException(403, "Staff member is outside the selected franchise")
         where.append("c.employee_user_id=:employee")
         params["employee"] = employee_user_id
     elif kind == "franchise":
@@ -259,6 +321,11 @@ def _rows(db, user, employee_user_id=None, from_date=None, to_date=None, status=
     elif kind == "employee":
         where.append("c.employee_user_id=:uid")
         params["uid"] = user.id
+    elif kind == "super":
+        if fid is None:
+            return []
+        where.append("c.franchise_user_id=:fid")
+        params["fid"] = fid
     if from_date:
         where.append("c.service_date>=:fd"); params["fd"] = from_date
     if to_date:
@@ -277,12 +344,12 @@ def _rows(db, user, employee_user_id=None, from_date=None, to_date=None, status=
       WHERE {' AND '.join(where)} ORDER BY CASE WHEN c.status='pending' THEN 0 ELSE 1 END,c.service_date DESC,c.id DESC"""), params).mappings().all()
 
 @router.get('/entries')
-def entries(employee_user_id:int|None=None,from_date:date|None=None,to_date:date|None=None,status:str|None=None,search:str|None=None,current_user:User=Depends(get_current_user),db:Session=Depends(get_db)):
-    rows = _rows(db,current_user,employee_user_id,from_date,to_date,status,search)
+def entries(employee_user_id:int|None=None,from_date:date|None=None,to_date:date|None=None,status:str|None=None,search:str|None=None,franchise_user_id:int|None=None,current_user:User=Depends(get_current_user),db:Session=Depends(get_db)):
+    rows = _rows(db,current_user,employee_user_id,from_date,to_date,status,search,franchise_user_id)
     approved = [r for r in rows if r["status"] == "approved"]
     total = sum((Decimal(r["calculated_amount"] or 0) for r in approved), Decimal(0))
     overtime = sum((Decimal(r["calculated_amount"] or 0) for r in approved if r["commission_type"] == "overtime"), Decimal(0))
-    counts = {x: sum(1 for r in rows if r["status"] == x) for x in ["pending","approved","rejected"]}
+    counts = {x: sum(1 for r in rows if r["status"] == x) for x in ["pending","approved","rejected","cancelled"]}
     return {"items":[dict(r) for r in rows],"total":total,"commission_total":total-overtime,"overtime_total":overtime,"counts":counts}
 
 @router.put('/entries/{entry_id}/review')
@@ -293,6 +360,8 @@ def review(entry_id:int,payload:ReviewIn,current_user:User=Depends(get_current_u
     old = db.execute(text("SELECT * FROM commission_entries WHERE id=:id"),{"id":entry_id}).mappings().first()
     if not old: raise HTTPException(404,"Entry not found")
     participant = _participant(db,current_user,int(old["employee_user_id"]),write=True)
+    _assert_review_allowed(db, current_user, old, participant)
+    _assert_not_duplicate(db, int(old["franchise_user_id"]), int(old["employee_user_id"]), payload, entry_id)
     structure = db.execute(text("SELECT * FROM commission_structures WHERE franchise_user_id=:fid AND commission_type=:type AND is_active=TRUE"),{"fid":participant["franchise_user_id"],"type":payload.commission_type}).mappings().first()
     if not structure: raise HTTPException(400,"This commission type is not active")
     rate,amount = _calculate(structure,payload)
@@ -310,7 +379,8 @@ def bulk_review(payload:BulkReviewIn,current_user:User=Depends(get_current_user)
     for eid in payload.entry_ids:
         row=db.execute(text("SELECT * FROM commission_entries WHERE id=:id"),{"id":eid}).mappings().first()
         if not row: continue
-        _participant(db,current_user,int(row["employee_user_id"]),write=True)
+        participant = _participant(db,current_user,int(row["employee_user_id"]),write=True)
+        _assert_review_allowed(db, current_user, row, participant)
         db.execute(text("UPDATE commission_entries SET status=:s,review_notes=:n,reviewed_at=NOW(),reviewed_by_user_id=:u,last_edited_by_user_id=:u,updated_at=NOW() WHERE id=:id"),{"s":payload.status,"n":payload.review_notes,"u":current_user.id,"id":eid})
         _audit(db,eid,f"bulk_{payload.status}",current_user.id,note=payload.review_notes)
         _notify(db,int(row["employee_user_id"]),"Commission approved" if payload.status=="approved" else "Commission rejected",f"Your commission reference {row['reference']} was {payload.status}.",eid,"success" if payload.status=="approved" else "danger")
@@ -321,10 +391,29 @@ def bulk_review(payload:BulkReviewIn,current_user:User=Depends(get_current_user)
 def delete_entry(entry_id:int,current_user:User=Depends(get_current_user),db:Session=Depends(get_db)):
     roles,_,_,_,_ = _profile(db,current_user)
     if "FranchiseUser" not in roles and "SuperUser" not in roles: raise HTTPException(403,"Only a franchise user can delete entries")
-    row=db.execute(text("SELECT employee_user_id FROM commission_entries WHERE id=:id"),{"id":entry_id}).mappings().first()
+    row=db.execute(text("SELECT * FROM commission_entries WHERE id=:id"),{"id":entry_id}).mappings().first()
     if not row: raise HTTPException(404,"Entry not found")
     _participant(db,current_user,int(row["employee_user_id"]),write=True)
-    db.execute(text("DELETE FROM commission_entries WHERE id=:id"),{"id":entry_id}); db.commit(); return {"ok":True}
+    if row["status"] == "approved":
+        raise HTTPException(409, "Approved commission entries cannot be cancelled")
+    updated = db.execute(text("""UPDATE commission_entries
+      SET status='cancelled',is_cancelled=TRUE,cancelled_at=NOW(),cancelled_by_user_id=:uid,
+          last_edited_by_user_id=:uid,updated_at=NOW() WHERE id=:id RETURNING *"""),
+      {"uid":current_user.id,"id":entry_id}).mappings().first()
+    _audit(db,entry_id,"cancelled",current_user.id,old=dict(row),new=dict(updated))
+    db.commit(); return {"ok":True,"status":"cancelled"}
+
+
+@router.get('/entries/{entry_id}/history')
+def entry_history(entry_id:int,current_user:User=Depends(get_current_user),db:Session=Depends(get_db)):
+    entry = db.execute(text("SELECT * FROM commission_entries WHERE id=:id"), {"id": entry_id}).mappings().first()
+    if not entry:
+        raise HTTPException(404, "Entry not found")
+    _participant(db, current_user, int(entry["employee_user_id"]))
+    rows = db.execute(text("""SELECT a.*,u.full_name actor_name
+      FROM commission_entry_audit a JOIN users u ON u.id=a.actor_user_id
+      WHERE a.entry_id=:id ORDER BY a.created_at DESC,a.id DESC"""), {"id": entry_id}).mappings().all()
+    return [dict(row) for row in rows]
 
 
 def _pdf(rows,title):
@@ -350,11 +439,13 @@ def _pdf(rows,title):
     story.extend([table,Spacer(1,8*mm),Paragraph('Authorisation',styles['Heading3']),Paragraph('Approved by: ______________________________    Date: ____________________',styles['Normal'])]);doc.build(story);buf.seek(0);return buf
 
 @router.get('/report.pdf')
-def report_pdf(employee_user_id:int|None=Query(default=None),from_date:date|None=None,to_date:date|None=None,status:str|None=None,current_user:User=Depends(get_current_user),db:Session=Depends(get_db)):
-    return StreamingResponse(_pdf(_rows(db,current_user,employee_user_id,from_date,to_date,status),"Staff Commission & Overtime Report"),media_type='application/pdf',headers={'Content-Disposition':'attachment; filename=commission-overtime-report.pdf'})
+def report_pdf(employee_user_id:int|None=Query(default=None),from_date:date|None=None,to_date:date|None=None,status:str|None=None,franchise_user_id:int|None=None,current_user:User=Depends(get_current_user),db:Session=Depends(get_db)):
+    return StreamingResponse(_pdf(_rows(db,current_user,employee_user_id,from_date,to_date,status,franchise_user_id=franchise_user_id),"Staff Commission & Overtime Report"),media_type='application/pdf',headers={'Content-Disposition':'attachment; filename=commission-overtime-report.pdf'})
 
 @router.get('/entries/{entry_id}/form.pdf')
 def form_pdf(entry_id:int,current_user:User=Depends(get_current_user),db:Session=Depends(get_db)):
-    selected=[r for r in _rows(db,current_user) if int(r['id'])==entry_id]
+    entry=db.execute(text("SELECT employee_user_id,franchise_user_id FROM commission_entries WHERE id=:id"),{"id":entry_id}).mappings().first()
+    if not entry: raise HTTPException(404,"Entry not found")
+    selected=[r for r in _rows(db,current_user,int(entry["employee_user_id"]),franchise_user_id=int(entry["franchise_user_id"])) if int(r['id'])==entry_id]
     if not selected: raise HTTPException(404,"Entry not found")
     return StreamingResponse(_pdf(selected,"Commission Review Form"),media_type='application/pdf',headers={'Content-Disposition':f'attachment; filename=commission-form-{entry_id}.pdf'})
