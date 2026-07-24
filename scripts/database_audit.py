@@ -19,6 +19,10 @@ REQUIRED_COLUMNS = {
     "payroll_payslips": {"id", "user_id", "franchise_user_id", "original_filename", "file_content", "is_active"},
 }
 
+REQUIRED_NULLABLE_COLUMNS = {
+    "users": {"email", "username"},
+}
+
 
 def main() -> None:
     inspector = inspect(engine)
@@ -34,8 +38,17 @@ def main() -> None:
         actual = {column["name"] for column in inspector.get_columns(table)}
         for column in sorted(required - actual):
             failures.append(f"Missing column: {table}.{column}")
+        columns = {column["name"]: column for column in inspector.get_columns(table)}
+        for column in sorted(REQUIRED_NULLABLE_COLUMNS.get(table, set())):
+            if column in columns and not columns[column].get("nullable", False):
+                failures.append(f"Column must allow NULL: {table}.{column}")
 
     integrity_queries = {
+        "missing_required_system_roles": """
+            SELECT 4 - COUNT(*)
+            FROM roles
+            WHERE name IN ('SuperUser', 'FranchiseUser', 'ManagerUser', 'EmployeeUser')
+        """,
         "employees_without_user": "SELECT COUNT(*) FROM employee_users e LEFT JOIN users u ON u.id=e.user_id WHERE u.id IS NULL",
         "employees_without_franchise": "SELECT COUNT(*) FROM employee_users WHERE franchise_user_id IS NULL",
         "managers_without_user": "SELECT COUNT(*) FROM manager_users m LEFT JOIN users u ON u.id=m.user_id WHERE u.id IS NULL",

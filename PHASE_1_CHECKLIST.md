@@ -4,6 +4,7 @@
 
 - [x] One atomic user/profile creation flow for managers and employees
 - [x] Username is persisted and can be used to log in when email is absent
+- [x] Legacy databases allow `users.email` to be NULL for username-only accounts
 - [x] Active email and username collisions are rejected
 - [x] Staff accounts receive exactly one expected role assignment
 - [x] Generic user creation rejects roles that require organisational profiles

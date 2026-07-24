@@ -16,10 +16,19 @@ REQUIRED_TABLES = {
 
 
 def assert_operational_schema(engine) -> None:
-    existing = set(inspect(engine).get_table_names())
+    inspector = inspect(engine)
+    existing = set(inspector.get_table_names())
     missing = sorted(REQUIRED_TABLES - existing)
     if missing:
         raise RuntimeError(
             'Database schema is behind the application. Run '
             '`python -m alembic upgrade head`. Missing tables: ' + ', '.join(missing)
+        )
+    user_columns = {column['name']: column for column in inspector.get_columns('users')}
+    email_column = user_columns.get('email')
+    if email_column and not email_column.get('nullable', False):
+        raise RuntimeError(
+            'Database schema is behind the application. Run '
+            '`python -m alembic upgrade head`. users.email must allow NULL '
+            'for username-only staff accounts.'
         )

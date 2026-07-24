@@ -17,6 +17,7 @@ for path in sorted((ROOT / 'backend').rglob('*.py')):
 
 migration = (ROOT/'backend/alembic/versions/006_v3_operational_schema.py').read_text()
 staff_integrity_migration = (ROOT/'backend/alembic/versions/007_staff_hierarchy_integrity.py').read_text()
+optional_email_migration = (ROOT/'backend/alembic/versions/008_optional_staff_email.py').read_text()
 staff = (ROOT/'backend/app/api/franchise_staff.py').read_text()
 commission = (ROOT/'backend/app/api/commission.py').read_text()
 auth = (ROOT/'backend/app/api/auth.py').read_text()
@@ -32,6 +33,7 @@ for role in ('Employee','Agent','Finance','Admin','Arrangement Officer','Driver'
 check('single employee create endpoint', staff.count('@router.post("/employees")') == 1)
 check('single manager create endpoint', staff.count('@router.post("/managers")') == 1)
 check('staff hierarchy migration head', 'fk_employee_manager_same_franchise' in staff_integrity_migration)
+check('username-only account migration', 'ALTER COLUMN email DROP NOT NULL' in optional_email_migration)
 check('username persisted during staff creation', 'username=normalised_username' in staff)
 check('superuser franchise staff scope', 'requested_franchise_user_id' in staff)
 check('manager staff visibility scope', 's.manager_user_id = :manager_user_id' in staff)

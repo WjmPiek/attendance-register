@@ -1,4 +1,4 @@
-
+import logging
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,6 +8,8 @@ from app import models  # noqa: F401
 from app.db.session import engine
 from app.services.seed import seed_initial_data
 from app.services.schema_guard import assert_operational_schema
+
+logger = logging.getLogger(__name__)
 
 
 app = FastAPI(title="Attendance Register Platform API", version="3.0.0")
@@ -44,8 +46,13 @@ async def cors_and_error_safety_middleware(request: Request, call_next):
         return Response(status_code=204, headers=_cors_headers_for_request(request))
     try:
         response = await call_next(request)
-    except Exception as exc:
-        response = JSONResponse(status_code=500, content={"detail": "Internal server error", "error": str(exc)})
+    except Exception:
+        logger.exception(
+            "Unhandled API error: %s %s",
+            request.method,
+            request.url.path,
+        )
+        response = JSONResponse(status_code=500, content={"detail": "Internal server error"})
     for key, value in _cors_headers_for_request(request).items():
         response.headers.setdefault(key, value)
     return response
