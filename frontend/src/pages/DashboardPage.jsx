@@ -44,7 +44,7 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
     { id: 'employee-card', label: 'Employee Card', visible: isEmployee || isManagerUser },
     { id: 'history', label: 'History', visible: isSignCapable || isApprovalCapable },
     { id: 'approvals', label: 'Approvals', visible: isApprovalCapable },
-    { id: 'staff', label: 'HR Staff', visible: isSuperUser || isFranchiseUser },
+    { id: 'staff', label: isManagerUser && !isFranchiseUser ? 'My Staff' : 'HR Staff', visible: isSuperUser || isFranchiseUser || isManagerUser },
     { id: 'business', label: 'Business Information', visible: isFranchiseUser },
     { id: 'franchises', label: 'Franchise Approvals', visible: isSuperUser },
     { id: 'leave', label: 'Leave', visible: isEmployee || isManagerUser || isFranchiseUser || isSuperUser },
@@ -126,7 +126,7 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
         {activeTab === 'employee-card' && (isEmployee || isManagerUser) ? <DigitalIdCard /> : null}
         {activeTab === 'history' && (isSignCapable || isApprovalCapable) ? <AttendanceHistoryPage me={me} /> : null}
         {activeTab === 'approvals' && isApprovalCapable ? <AttendanceApprovalPage me={me} /> : null}
-        {activeTab === 'staff' && (isSuperUser || isFranchiseUser) ? <FranchiseStaffPage me={me} /> : null}
+        {activeTab === 'staff' && (isSuperUser || isFranchiseUser || isManagerUser) ? <FranchiseStaffPage me={me} /> : null}
         {activeTab === 'business' && isFranchiseUser ? <BusinessInformationPage /> : null}
         {activeTab === 'franchises' && isSuperUser ? <FranchiseRegistrationApprovalPage me={me} /> : null}
         {activeTab === 'leave' ? <LeavePage me={me} /> : null}

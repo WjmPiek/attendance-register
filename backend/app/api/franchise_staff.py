@@ -6,7 +6,7 @@ from pathlib import Path
 from urllib.parse import quote_plus
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Response, Query
 from pydantic import BaseModel, EmailStr, Field
-from sqlalchemy import text
+from sqlalchemy import or_, text
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
@@ -33,6 +33,7 @@ EMPLOYEE_ROLES = [
 
 
 class CreateManagerRequest(BaseModel):
+    franchise_user_id: int | None = None
     employee_number: str | None = None
     username: str | None = None
     name: str
@@ -48,6 +49,7 @@ class CreateManagerRequest(BaseModel):
 
 
 class CreateEmployeeRequest(BaseModel):
+    franchise_user_id: int | None = None
     username: str | None = None
     employee_number: str | None = None
     employee_role: str
@@ -121,21 +123,28 @@ def _role_id(db: Session, name: str) -> int:
 
 
 
-def _area_row(db: Session, area_id: int | None):
+def _area_row(db: Session, area_id: int | None, franchise_user_id: int | None = None):
     if not area_id:
         return None
     row = db.execute(text("""
         SELECT id, name, latitude, longitude, allowed_radius_m
         FROM areas
         WHERE id = :area_id
-    """), {"area_id": area_id}).mappings().first()
+          AND (:franchise_user_id IS NULL OR franchise_user_id = :franchise_user_id)
+          AND COALESCE(is_archived, FALSE) = FALSE
+    """), {"area_id": area_id, "franchise_user_id": franchise_user_id}).mappings().first()
     if not row:
         raise HTTPException(status_code=400, detail="Selected office location was not found")
     return row
 
 
-def _assign_office_gps(db: Session, user_id: int, area_id: int | None):
-    area = _area_row(db, area_id)
+def _assign_office_gps(
+    db: Session,
+    user_id: int,
+    area_id: int | None,
+    franchise_user_id: int | None = None,
+):
+    area = _area_row(db, area_id, franchise_user_id)
     if not area:
         return
     db.execute(text("""
@@ -182,6 +191,36 @@ def _require_franchise(db: Session, user: User) -> int:
 
 def _is_superuser(db: Session, user: User) -> bool:
     return "SuperUser" in _roles(db, user)
+
+
+def _staff_franchise_id(
+    db: Session,
+    current_user: User,
+    requested_franchise_user_id: int | None = None,
+) -> int:
+    if _is_superuser(db, current_user):
+        if requested_franchise_user_id is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Select a franchise before creating staff",
+            )
+        row = db.execute(text("""
+            SELECT id
+            FROM franchise_users
+            WHERE id = :franchise_user_id
+              AND COALESCE(is_active, TRUE) = TRUE
+        """), {"franchise_user_id": requested_franchise_user_id}).mappings().first()
+        if not row:
+            raise HTTPException(status_code=400, detail="Selected franchise was not found")
+        return int(row["id"])
+
+    own_franchise_user_id = _require_franchise(db, current_user)
+    if (
+        requested_franchise_user_id is not None
+        and int(requested_franchise_user_id) != int(own_franchise_user_id)
+    ):
+        raise HTTPException(status_code=403, detail="Staff must belong to your franchise")
+    return own_franchise_user_id
 
 
 def _safe_email(prefix: str, name: str, surname: str) -> str:
@@ -384,14 +423,76 @@ def _delete_employee_related_records(db: Session, employee_id: int, user_id: int
 def _delete_manager_related_records(db: Session, manager_id: int, user_id: int) -> dict:
     return _delete_staff_related_records(db, "manager", manager_id, user_id)
 
-def _unique_username(db: Session, base: str) -> str:
-    base = (base or "staff_user").strip("_")[:70] or "staff_user"
+def _unique_username(db: Session, base: str, exclude_user_id: int | None = None) -> str:
+    base = (base or "staff_user").strip().lower().strip("_")[:70] or "staff_user"
     candidate = base
     counter = 1
-    while db.execute(text("SELECT 1 FROM users WHERE username = :username"), {"username": candidate}).first():
+    while db.execute(text("""
+        SELECT 1
+        FROM users
+        WHERE LOWER(username) = LOWER(:username)
+          AND (:exclude_user_id IS NULL OR id <> :exclude_user_id)
+    """), {"username": candidate, "exclude_user_id": exclude_user_id}).first():
         counter += 1
         candidate = f"{base}_{counter}"
     return candidate
+
+
+def _ensure_email_available(db: Session, email: str, exclude_user_id: int | None = None) -> str:
+    normalised = email.strip().lower()
+    existing = db.execute(text("""
+        SELECT id
+        FROM users
+        WHERE LOWER(email) = LOWER(:email)
+          AND (:exclude_user_id IS NULL OR id <> :exclude_user_id)
+          AND COALESCE(is_active, TRUE) = TRUE
+        LIMIT 1
+    """), {"email": normalised, "exclude_user_id": exclude_user_id}).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already belongs to an active user")
+    return normalised
+
+
+def _ensure_staff_identity_unique(
+    db: Session,
+    franchise_user_id: int,
+    employee_number: str | None = None,
+    id_number: str | None = None,
+    exclude_user_id: int | None = None,
+) -> None:
+    employee_number = (employee_number or "").strip() or None
+    id_number = (id_number or "").strip() or None
+    if not employee_number and not id_number:
+        return
+    duplicate = db.execute(text("""
+        SELECT user_id, employee_number, id_number
+        FROM (
+            SELECT user_id, employee_number, id_number
+            FROM manager_users
+            WHERE franchise_user_id = :franchise_user_id
+              AND COALESCE(is_active, TRUE) = TRUE
+            UNION ALL
+            SELECT user_id, employee_number, id_number
+            FROM employee_users
+            WHERE franchise_user_id = :franchise_user_id
+              AND COALESCE(is_active, TRUE) = TRUE
+        ) staff
+        WHERE (:exclude_user_id IS NULL OR user_id <> :exclude_user_id)
+          AND (
+              (:employee_number IS NOT NULL AND employee_number = :employee_number)
+              OR (:id_number IS NOT NULL AND id_number = :id_number)
+          )
+        LIMIT 1
+    """), {
+        "franchise_user_id": franchise_user_id,
+        "employee_number": employee_number,
+        "id_number": id_number,
+        "exclude_user_id": exclude_user_id,
+    }).mappings().first()
+    if duplicate:
+        if id_number and duplicate.get("id_number") == id_number:
+            raise HTTPException(status_code=400, detail="ID number already belongs to active staff")
+        raise HTTPException(status_code=400, detail="Employee number already belongs to active staff")
 
 
 def _ensure_user_login_columns(db: Session):
@@ -863,13 +964,20 @@ def _build_id_cards_pdf(staff_rows: list[dict], current_user: User) -> bytes:
     return buffer.getvalue()
 
 @router.get("/offices")
-def list_offices(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def list_offices(
+    franchise_user_id: int | None = Query(default=None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     names = _roles(db, current_user)
     if "FranchiseUser" not in names and "SuperUser" not in names and "ManagerUser" not in names:
         raise HTTPException(status_code=403, detail="Access denied")
     params = {}
     where = ["COALESCE(is_archived, FALSE) = FALSE"]
-    if "SuperUser" not in names:
+    if "SuperUser" in names and franchise_user_id is not None:
+        where.append("franchise_user_id = :fid")
+        params["fid"] = franchise_user_id
+    elif "SuperUser" not in names:
         franchise_user_id = _franchise_profile_id(db, current_user.id) if "FranchiseUser" in names else db.execute(
             text("SELECT franchise_user_id FROM manager_users WHERE user_id=:uid AND COALESCE(is_active, TRUE)=TRUE"),
             {"uid": current_user.id},
@@ -895,11 +1003,20 @@ def employee_roles(current_user: User = Depends(get_current_user), db: Session =
 
 
 @router.get("/managers")
-def list_managers(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def list_managers(
+    franchise_user_id: int | None = Query(default=None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     _ensure_office_hours_columns(db)
     _ensure_profile_photo_columns(db)
     if _is_superuser(db, current_user):
-        rows = db.execute(text("""
+        where = ""
+        params = {}
+        if franchise_user_id is not None:
+            where = "AND mu.franchise_user_id = :franchise_user_id"
+            params["franchise_user_id"] = franchise_user_id
+        rows = db.execute(text(f"""
             SELECT
                 mu.id,
                 mu.user_id,
@@ -923,9 +1040,11 @@ def list_managers(current_user: User = Depends(get_current_user), db: Session = 
             JOIN users u ON u.id = mu.user_id
             LEFT JOIN gps_allocations_per_user g ON g.user_id = mu.user_id AND COALESCE(g.is_active, TRUE) = TRUE
             LEFT JOIN areas a ON a.id = g.area_id
-            WHERE COALESCE(mu.is_active, TRUE) = TRUE AND COALESCE(u.is_active, TRUE) = TRUE
+            WHERE COALESCE(mu.is_active, TRUE) = TRUE
+              AND COALESCE(u.is_active, TRUE) = TRUE
+              {where}
             ORDER BY mu.id DESC
-        """)).mappings().all()
+        """), params).mappings().all()
     else:
         names = set(_roles(db, current_user))
         if "ManagerUser" in names and "FranchiseUser" not in names:
@@ -1009,11 +1128,20 @@ def _ensure_office_hours_columns(db: Session):
         raise
     
 @router.get("/employees")
-def list_employees(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def list_employees(
+    franchise_user_id: int | None = Query(default=None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     _ensure_office_hours_columns(db)
     _ensure_profile_photo_columns(db)
     if _is_superuser(db, current_user):
-        rows = db.execute(text("""
+        where = ""
+        params = {}
+        if franchise_user_id is not None:
+            where = "AND eu.franchise_user_id = :franchise_user_id"
+            params["franchise_user_id"] = franchise_user_id
+        rows = db.execute(text(f"""
             SELECT
                 eu.id,
                 eu.user_id,
@@ -1039,9 +1167,11 @@ def list_employees(current_user: User = Depends(get_current_user), db: Session =
             JOIN users u ON u.id = eu.user_id
             LEFT JOIN gps_allocations_per_user g ON g.user_id = eu.user_id AND COALESCE(g.is_active, TRUE) = TRUE
             LEFT JOIN areas a ON a.id = g.area_id
-            WHERE COALESCE(eu.is_active, TRUE) = TRUE AND COALESCE(u.is_active, TRUE) = TRUE
+            WHERE COALESCE(eu.is_active, TRUE) = TRUE
+              AND COALESCE(u.is_active, TRUE) = TRUE
+              {where}
             ORDER BY eu.id DESC
-        """)).mappings().all()
+        """), params).mappings().all()
     else:
         names = set(_roles(db, current_user))
         if "ManagerUser" in names and "FranchiseUser" not in names:
@@ -1102,36 +1232,40 @@ def _create_user(db: Session, full_name: str, email: str | None, password: str, 
     from app.models.core import User, Role, UserRole
     from app.core.security import hash_password
 
-    login_value = (email or username or "").strip()
-    if not login_value:
+    normalised_email = email.strip().lower() if email else None
+    normalised_username = username.strip().lower() if username else None
+    if not normalised_email and not normalised_username:
         raise HTTPException(status_code=400, detail="Email or username is required")
 
-    # Deleted staff records are kept inactive for audit/foreign-key safety, but their
-    # old login must not block creating a new staff member with the same email/login.
-    # When an inactive user has the requested login, move that old login aside and
-    # then create the new active account normally. Active accounts still remain protected.
-    existing = db.query(User).filter(User.email == login_value).first()
-    if existing:
+    role = db.query(Role).filter(Role.name == role_name).first()
+    if not role:
+        raise HTTPException(status_code=500, detail=f"{role_name} role not found")
+
+    conflicts = db.query(User).filter(or_(
+        User.email == normalised_email if normalised_email else False,
+        User.username == normalised_username if normalised_username else False,
+    )).all()
+    for existing in conflicts:
         if getattr(existing, "is_active", True):
             raise HTTPException(status_code=400, detail="Login already exists")
         archived_suffix = f"deleted_{existing.id}_{int(datetime.utcnow().timestamp())}"
-        existing.email = f"{archived_suffix}_{existing.email or 'user'}"[:250]
+        if getattr(existing, "email", None):
+            existing.email = f"{archived_suffix}_{existing.email}"[:250]
         if getattr(existing, "username", None):
             existing.username = f"{archived_suffix}_{existing.username}"[:100]
-        db.flush()
+    db.flush()
 
     user = User(
         full_name=full_name,
-        email=login_value,
+        email=normalised_email,
+        username=normalised_username,
         password_hash=hash_password(password),
         is_active=True,
     )
     db.add(user)
     db.flush()
 
-    role = db.query(Role).filter(Role.name == role_name).first()
-    if role:
-        db.add(UserRole(user_id=user.id, role_id=role.id))
+    db.add(UserRole(user_id=user.id, role_id=role.id))
 
     db.flush()
     return user.id
@@ -1157,9 +1291,17 @@ def _valid_hhmm(value, fallback="08:00"):
 @router.post("/managers")
 def create_manager(payload: CreateManagerRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _ensure_office_hours_columns(db)
-    franchise_user_id = _require_franchise(db, current_user)
+    franchise_user_id = _staff_franchise_id(db, current_user, payload.franchise_user_id)
+    if payload.office_area_id is None:
+        raise HTTPException(status_code=400, detail="Select a registered franchise office")
+    _ensure_staff_identity_unique(
+        db,
+        franchise_user_id,
+        employee_number=payload.employee_number,
+        id_number=payload.id_number,
+    )
     full_name = f"{payload.name} {payload.surname}".strip()
-    login_email = str(payload.email) if payload.email else _safe_email("manager", payload.name, payload.surname)
+    login_email = _ensure_email_available(db, str(payload.email)) if payload.email else None
     login_username = _unique_username(db, payload.username or _safe_username("manager", payload.name, payload.surname))
     user_id = _create_user(db, full_name, login_email, payload.password or "Temp123!", "ManagerUser", login_username)
 
@@ -1212,7 +1354,7 @@ def create_manager(payload: CreateManagerRequest, current_user: User = Depends(g
         "now": datetime.utcnow(),
     }).scalar_one()
 
-    _assign_office_gps(db, user_id, payload.office_area_id)
+    _assign_office_gps(db, user_id, payload.office_area_id, franchise_user_id)
     write_audit_log(db, actor_user_id=current_user.id, action="create", entity_type="manager", entity_id=manager_id, franchise_user_id=franchise_user_id, new_values=payload.model_dump(exclude={"password"}), note="Manager created")
     db.commit()
     return {"message": "Manager created", "manager_id": manager_id, "user_id": user_id, "username": login_username, "login_name": login_username if not payload.email else login_email}
@@ -1221,7 +1363,15 @@ def create_manager(payload: CreateManagerRequest, current_user: User = Depends(g
 @router.post("/employees")
 def create_employee(payload: CreateEmployeeRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _ensure_office_hours_columns(db)
-    franchise_user_id = _require_franchise(db, current_user)
+    franchise_user_id = _staff_franchise_id(db, current_user, payload.franchise_user_id)
+    if payload.office_area_id is None:
+        raise HTTPException(status_code=400, detail="Select a registered franchise office")
+    _ensure_staff_identity_unique(
+        db,
+        franchise_user_id,
+        employee_number=payload.employee_number,
+        id_number=payload.id_number,
+    )
 
     if payload.employee_role not in EMPLOYEE_ROLES:
         raise HTTPException(status_code=400, detail="Invalid employee role")
@@ -1232,6 +1382,7 @@ def create_employee(payload: CreateEmployeeRequest, current_user: User = Depends
             FROM manager_users
             WHERE id = :manager_user_id
             AND franchise_user_id = :franchise_user_id
+            AND COALESCE(is_active, TRUE) = TRUE
         """), {
             "manager_user_id": payload.manager_user_id,
             "franchise_user_id": franchise_user_id,
@@ -1240,7 +1391,7 @@ def create_employee(payload: CreateEmployeeRequest, current_user: User = Depends
             raise HTTPException(status_code=400, detail="Selected manager is not under your franchise")
 
     full_name = f"{payload.name} {payload.surname}".strip()
-    login_email = str(payload.email) if payload.email else _safe_email("employee", payload.name, payload.surname)
+    login_email = _ensure_email_available(db, str(payload.email)) if payload.email else None
     login_username = _unique_username(db, payload.username or _safe_username("employee", payload.name, payload.surname))
     user_id = _create_user(
         db, full_name, login_email, payload.password or "Temp123!", "EmployeeUser", login_username
@@ -1301,7 +1452,7 @@ def create_employee(payload: CreateEmployeeRequest, current_user: User = Depends
         "now": datetime.utcnow(),
     }).scalar_one()
 
-    _assign_office_gps(db, user_id, payload.office_area_id)
+    _assign_office_gps(db, user_id, payload.office_area_id, franchise_user_id)
     write_audit_log(db, actor_user_id=current_user.id, action="create", entity_type="employee", entity_id=employee_id, franchise_user_id=franchise_user_id, new_values=payload.model_dump(exclude={"password"}), note="Employee created")
     db.commit()
     return {"message": "Employee created", "employee_id": employee_id, "user_id": user_id, "username": login_username, "login_name": login_username if not payload.email else login_email}
@@ -1312,7 +1463,8 @@ def _staff_scope_filter(db: Session, current_user: User, table: str, staff_id: i
         raise HTTPException(status_code=400, detail="Invalid staff type")
     if _is_superuser(db, current_user):
         row = db.execute(text(f"""
-            SELECT s.*, u.email AS login_email, u.full_name AS login_full_name, u.is_active AS login_active,
+            SELECT s.*, u.email AS login_email, u.username AS username,
+                   u.full_name AS login_full_name, u.is_active AS login_active,
                    COALESCE(s.profile_photo, u.profile_photo) AS profile_photo,
                    COALESCE(s.profile_photo_mime, u.profile_photo_mime, 'image/png') AS profile_photo_mime
             FROM {table} s
@@ -1320,15 +1472,46 @@ def _staff_scope_filter(db: Session, current_user: User, table: str, staff_id: i
             WHERE s.id = :staff_id
         """), {"staff_id": staff_id}).mappings().first()
     else:
-        franchise_user_id = _require_franchise(db, current_user)
-        row = db.execute(text(f"""
-            SELECT s.*, u.email AS login_email, u.full_name AS login_full_name, u.is_active AS login_active,
-                   COALESCE(s.profile_photo, u.profile_photo) AS profile_photo,
-                   COALESCE(s.profile_photo_mime, u.profile_photo_mime, 'image/png') AS profile_photo_mime
-            FROM {table} s
-            JOIN users u ON u.id = s.user_id
-            WHERE s.id = :staff_id AND s.franchise_user_id = :franchise_user_id
-        """), {"staff_id": staff_id, "franchise_user_id": franchise_user_id}).mappings().first()
+        role_names = set(_roles(db, current_user))
+        if "ManagerUser" in role_names and "FranchiseUser" not in role_names:
+            manager = db.execute(text("""
+                SELECT id, franchise_user_id
+                FROM manager_users
+                WHERE user_id = :user_id AND COALESCE(is_active, TRUE) = TRUE
+            """), {"user_id": current_user.id}).mappings().first()
+            if not manager:
+                raise HTTPException(status_code=403, detail="No active manager profile found")
+            ownership = (
+                "s.manager_user_id = :manager_user_id"
+                if table == "employee_users"
+                else "s.id = :manager_user_id"
+            )
+            row = db.execute(text(f"""
+                SELECT s.*, u.email AS login_email, u.username AS username,
+                       u.full_name AS login_full_name, u.is_active AS login_active,
+                       COALESCE(s.profile_photo, u.profile_photo) AS profile_photo,
+                       COALESCE(s.profile_photo_mime, u.profile_photo_mime, 'image/png') AS profile_photo_mime
+                FROM {table} s
+                JOIN users u ON u.id = s.user_id
+                WHERE s.id = :staff_id
+                  AND s.franchise_user_id = :franchise_user_id
+                  AND {ownership}
+            """), {
+                "staff_id": staff_id,
+                "franchise_user_id": manager["franchise_user_id"],
+                "manager_user_id": manager["id"],
+            }).mappings().first()
+        else:
+            franchise_user_id = _require_franchise(db, current_user)
+            row = db.execute(text(f"""
+                SELECT s.*, u.email AS login_email, u.username AS username,
+                       u.full_name AS login_full_name, u.is_active AS login_active,
+                       COALESCE(s.profile_photo, u.profile_photo) AS profile_photo,
+                       COALESCE(s.profile_photo_mime, u.profile_photo_mime, 'image/png') AS profile_photo_mime
+                FROM {table} s
+                JOIN users u ON u.id = s.user_id
+                WHERE s.id = :staff_id AND s.franchise_user_id = :franchise_user_id
+            """), {"staff_id": staff_id, "franchise_user_id": franchise_user_id}).mappings().first()
     if not row:
         raise HTTPException(status_code=404, detail="Staff member not found in your scope")
     return row
@@ -1405,6 +1588,15 @@ def update_manager(manager_id: int, payload: UpdateManagerRequest, current_user:
     _ensure_office_hours_columns(db)
     row = _staff_scope_filter(db, current_user, "manager_users", manager_id)
     values = {k: v for k, v in payload.model_dump(exclude_unset=True).items() if v is not None}
+    _ensure_staff_identity_unique(
+        db,
+        row["franchise_user_id"],
+        employee_number=values.get("employee_number"),
+        id_number=values.get("id_number"),
+        exclude_user_id=row["user_id"],
+    )
+    if values.get("email"):
+        values["email"] = _ensure_email_available(db, str(values["email"]), row["user_id"])
     if 'work_start_time' in values:
         values['work_start_time'] = _valid_hhmm(values.get('work_start_time'), '08:00')
     if 'work_end_time' in values:
@@ -1426,10 +1618,10 @@ def update_manager(manager_id: int, payload: UpdateManagerRequest, current_user:
         user_params["full_name"] = full_name
         if values.get("email"):
             user_updates.append("email = :email")
-            user_params["email"] = str(values["email"])
+            user_params["email"] = values["email"]
         if values.get("username"):
             user_updates.append("username = :username")
-            user_params["username"] = _unique_username(db, str(values["username"]))
+            user_params["username"] = _unique_username(db, str(values["username"]), row["user_id"])
         if "is_active" in values:
             user_updates.append("is_active = :is_active")
             user_params["is_active"] = values["is_active"]
@@ -1438,7 +1630,7 @@ def update_manager(manager_id: int, payload: UpdateManagerRequest, current_user:
             user_params["password_hash"] = _hash_password(values["password"])
         db.execute(text(f"UPDATE users SET {', '.join(user_updates)} WHERE id = :user_id"), user_params)
     if "office_area_id" in values:
-        _assign_office_gps(db, row["user_id"], values.get("office_area_id"))
+        _assign_office_gps(db, row["user_id"], values.get("office_area_id"), row["franchise_user_id"])
     write_audit_log(db, actor_user_id=current_user.id, action="update", entity_type="manager", entity_id=manager_id, franchise_user_id=row["franchise_user_id"], old_values=dict(row), new_values=values, note="Manager edited")
     db.commit()
     return {"message": "Manager updated", "manager_id": manager_id}
@@ -1449,6 +1641,17 @@ def update_employee(employee_id: int, payload: UpdateEmployeeRequest, current_us
     _ensure_office_hours_columns(db)
     row = _staff_scope_filter(db, current_user, "employee_users", employee_id)
     values = {k: v for k, v in payload.model_dump(exclude_unset=True).items() if v is not None}
+    if "manager_user_id" in payload.model_fields_set and payload.manager_user_id is None:
+        values["manager_user_id"] = None
+    if values.get("email"):
+        values["email"] = _ensure_email_available(db, str(values["email"]), row["user_id"])
+    _ensure_staff_identity_unique(
+        db,
+        row["franchise_user_id"],
+        employee_number=values.get("employee_number"),
+        id_number=values.get("id_number"),
+        exclude_user_id=row["user_id"],
+    )
     if 'work_start_time' in values:
         values['work_start_time'] = _valid_hhmm(values.get('work_start_time'), '08:00')
     if 'work_end_time' in values:
@@ -1458,7 +1661,9 @@ def update_employee(employee_id: int, payload: UpdateEmployeeRequest, current_us
     if values.get("manager_user_id"):
         manager = db.execute(text("""
             SELECT id FROM manager_users
-            WHERE id = :manager_user_id AND franchise_user_id = :franchise_user_id
+            WHERE id = :manager_user_id
+              AND franchise_user_id = :franchise_user_id
+              AND COALESCE(is_active, TRUE) = TRUE
         """), {"manager_user_id": values["manager_user_id"], "franchise_user_id": row["franchise_user_id"]}).mappings().first()
         if not manager:
             raise HTTPException(status_code=400, detail="Selected manager is not under this franchise")
@@ -1479,10 +1684,10 @@ def update_employee(employee_id: int, payload: UpdateEmployeeRequest, current_us
         user_params["full_name"] = full_name
         if values.get("email"):
             user_updates.append("email = :email")
-            user_params["email"] = str(values["email"])
+            user_params["email"] = values["email"]
         if values.get("username"):
             user_updates.append("username = :username")
-            user_params["username"] = _unique_username(db, str(values["username"]))
+            user_params["username"] = _unique_username(db, str(values["username"]), row["user_id"])
         if "is_active" in values:
             user_updates.append("is_active = :is_active")
             user_params["is_active"] = values["is_active"]
@@ -1491,7 +1696,7 @@ def update_employee(employee_id: int, payload: UpdateEmployeeRequest, current_us
             user_params["password_hash"] = _hash_password(values["password"])
         db.execute(text(f"UPDATE users SET {', '.join(user_updates)} WHERE id = :user_id"), user_params)
     if "office_area_id" in values:
-        _assign_office_gps(db, row["user_id"], values.get("office_area_id"))
+        _assign_office_gps(db, row["user_id"], values.get("office_area_id"), row["franchise_user_id"])
     write_audit_log(db, actor_user_id=current_user.id, action="update", entity_type="employee", entity_id=employee_id, franchise_user_id=row["franchise_user_id"], old_values=dict(row), new_values=values, note="Employee edited")
     db.commit()
     return {"message": "Employee updated", "employee_id": employee_id}

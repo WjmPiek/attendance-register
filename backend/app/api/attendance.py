@@ -1505,7 +1505,11 @@ def create_office(payload: OfficeCreateRequest, current_user: User = Depends(get
     return {'message':'Office address added','office':_office_qr_row(db,int(row))}
 
 @router.get('/office-qr/offices')
-def list_office_qr_codes(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def list_office_qr_codes(
+    franchise_user_id: int | None = Query(default=None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     _ensure_office_qr_schema(db)
     roles = set(_get_role_names(db, current_user.id))
     if not roles.intersection({'SuperUser', 'FranchiseUser', 'ManagerUser'}):
@@ -1513,7 +1517,11 @@ def list_office_qr_codes(current_user: User = Depends(get_current_user), db: Ses
 
     params = {}
     where = 'COALESCE(a.is_archived, FALSE) = FALSE'
-    if 'SuperUser' not in roles:
+    if 'SuperUser' in roles and franchise_user_id is not None:
+        _sync_franchise_address_areas(db, franchise_user_id)
+        where = 'a.franchise_user_id = :fid AND COALESCE(a.is_archived, FALSE) = FALSE'
+        params['fid'] = franchise_user_id
+    elif 'SuperUser' not in roles:
         fid, _ = _franchise_scope_for_user(db, current_user.id)
         if not fid:
             raise HTTPException(status_code=403, detail='No franchise scope found')
@@ -1554,6 +1562,7 @@ def list_office_qr_codes(current_user: User = Depends(get_current_user), db: Ses
             'archived_at': row.get('archived_at').isoformat() if row.get('archived_at') else None,
             'qr_payload': _qr_payload(row['qr_token']),
             'scan_url': _qr_scan_url(row['qr_token']),
+            'franchise_user_id': row.get('franchise_user_id'),
             'assigned_user_count': int(raw.get('assigned_user_count') or 0),
         })
     return result
@@ -1911,4 +1920,3 @@ def sign_out(payload: AttendanceActionRequest, current_user: User = Depends(get_
     db.refresh(event)
     _notify_franchise_attendance_event(db, event, 'sign out')
     return AttendanceActionResponse(message='Signed out from mobile', action='sign_out', current_status='signed_out')
-

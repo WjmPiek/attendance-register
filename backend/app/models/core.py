@@ -97,18 +97,38 @@ class ManagerUser(Base, TimestampMixin):
     __tablename__ = "manager_users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), unique=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), unique=True)
+    franchise_user_id: Mapped[int] = mapped_column(ForeignKey("franchise_users.id"), nullable=False)
     manager_code: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     id_number: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
     employee_number: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    name: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    surname: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    contact_number: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    office_address_assigned: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    work_start_time: Mapped[Optional[str]] = mapped_column(String(5), default="08:00")
+    work_end_time: Mapped[Optional[str]] = mapped_column(String(5), default="17:00")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
 class EmployeeUser(Base, TimestampMixin):
     __tablename__ = "employee_users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), unique=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), unique=True)
+    franchise_user_id: Mapped[int] = mapped_column(ForeignKey("franchise_users.id"), nullable=False)
+    manager_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("manager_users.id"), nullable=True)
+    employee_role: Mapped[str] = mapped_column(String(80), default="Employee")
     id_number: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
     employee_number: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    name: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    surname: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    contact_number: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    office_address_assigned: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    work_start_time: Mapped[Optional[str]] = mapped_column(String(5), default="08:00")
+    work_end_time: Mapped[Optional[str]] = mapped_column(String(5), default="17:00")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
 class Area(Base, TimestampMixin):

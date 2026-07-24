@@ -34,7 +34,9 @@ const staffRoles = [
 
 const emptyStaff = {
   role: 'Manager',
+  franchise_user_id: '',
   manager_user_id: '',
+  office_area_id: '',
   username: '',
   employee_number: '',
   name: '',
@@ -150,11 +152,15 @@ function cleanPayload(payload) {
   })
   if (!next.password) delete next.password
   if (next.manager_user_id) next.manager_user_id = Number(next.manager_user_id)
-  else delete next.manager_user_id
+  else next.manager_user_id = null
+  if (next.office_area_id) next.office_area_id = Number(next.office_area_id)
+  else delete next.office_area_id
+  if (next.franchise_user_id) next.franchise_user_id = Number(next.franchise_user_id)
+  else delete next.franchise_user_id
   return next
 }
 
-function StaffDetail({ title, item, onClose, onEdit }) {
+function StaffDetail({ title, item, onClose, onEdit, allowEdit = true }) {
   if (!item) return null
 
   return (
@@ -162,7 +168,7 @@ function StaffDetail({ title, item, onClose, onEdit }) {
       <div className="detail-header">
         <h2>{title}</h2>
         <div className="action-links">
-          <button type="button" className="link-button" onClick={onEdit}>Edit</button>
+          {allowEdit ? <button type="button" className="link-button" onClick={onEdit}>Edit</button> : null}
           <button type="button" className="link-button" onClick={onClose}>Close</button>
         </div>
       </div>
@@ -214,10 +220,16 @@ function StaffDetail({ title, item, onClose, onEdit }) {
   )
 }
 
-export default function FranchiseStaffPage() {
+export default function FranchiseStaffPage({ me }) {
+  const isSuperUser = Boolean(me?.roles?.includes('SuperUser'))
+  const isManagerView = Boolean(
+    me?.roles?.includes('ManagerUser') && !me?.roles?.includes('FranchiseUser') && !isSuperUser
+  )
   const [activeSubTab, setActiveSubTab] = useState('view')
   const [managers, setManagers] = useState([])
   const [employees, setEmployees] = useState([])
+  const [franchiseUsers, setFranchiseUsers] = useState([])
+  const [selectedFranchiseId, setSelectedFranchiseId] = useState('')
   const [myPayslips, setMyPayslips] = useState([])
   const [msg, setMsg] = useState('')
   const [err, setErr] = useState('')
@@ -244,10 +256,23 @@ export default function FranchiseStaffPage() {
   const load = async () => {
     setErr('')
     try {
+      let scopeId = selectedFranchiseId
+      if (isSuperUser) {
+        const franchises = await apiFetch('/franchise/users')
+        const available = Array.isArray(franchises) ? franchises : []
+        setFranchiseUsers(available)
+        if (!scopeId && available.length) {
+          scopeId = String(available[0].id)
+          setSelectedFranchiseId(scopeId)
+        }
+      }
+      const scopeQuery = isSuperUser && scopeId
+        ? `?franchise_user_id=${encodeURIComponent(scopeId)}`
+        : ''
       const results = await Promise.allSettled([
-        apiFetch('/franchise-staff/managers'),
-        apiFetch('/franchise-staff/employees'),
-        getOfficeQrCodes(),
+        apiFetch(`/franchise-staff/managers${scopeQuery}`),
+        apiFetch(`/franchise-staff/employees${scopeQuery}`),
+        getOfficeQrCodes(isSuperUser ? scopeId : ''),
         apiFetch('/payroll/my-payslips'),
       ])
       const [m, e, qrs, payslips] = results
@@ -264,7 +289,7 @@ export default function FranchiseStaffPage() {
     }
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { load() }, [selectedFranchiseId])
 
   useEffect(() => {
     if (activeSubTab === 'add' && !editing && !staff.office_address_assigned && activeOfficeAddresses.length) {
@@ -364,6 +389,8 @@ export default function FranchiseStaffPage() {
         return
       }
       const payload = cleanPayload(staff)
+      if (isSuperUser && !editing) payload.franchise_user_id = Number(selectedFranchiseId)
+      if (editing) delete payload.franchise_user_id
       let savedType = isManagerRole ? 'managers' : 'employees'
       let savedId = editing?.id || null
       if (isManagerRole) {
@@ -376,7 +403,7 @@ export default function FranchiseStaffPage() {
         } else {
           const created = await apiFetch('/franchise-staff/managers', { method: 'POST', body: JSON.stringify(managerPayload) })
           savedId = created.manager_id
-          setMsg('Manager created and ID photo linked.')
+          setMsg('Manager created.')
         }
       } else {
         const employeePayload = { ...payload, employee_role: payload.role }
@@ -387,12 +414,17 @@ export default function FranchiseStaffPage() {
         } else {
           const created = await apiFetch('/franchise-staff/employees', { method: 'POST', body: JSON.stringify(employeePayload) })
           savedId = created.employee_id
-          setMsg('Employee created and ID photo linked.')
+          setMsg('Employee created.')
         }
       }
+      let photoUploadError = null
       if (idPhotoFile && savedId) {
-        const alignedPhoto = await cropPhotoToIdCardFile(idPhotoPreview, idPhotoOffset, idPhotoFile.name)
-        await uploadStaffIdPhoto(savedType, savedId, alignedPhoto || idPhotoFile)
+        try {
+          const alignedPhoto = await cropPhotoToIdCardFile(idPhotoPreview, idPhotoOffset, idPhotoFile.name)
+          await uploadStaffIdPhoto(savedType, savedId, alignedPhoto || idPhotoFile)
+        } catch (error) {
+          photoUploadError = error
+        }
       }
       await load()
       if (!editing && savedId) {
@@ -401,9 +433,15 @@ export default function FranchiseStaffPage() {
         setCreatedCardType(savedType)
         resetForm()
         setActiveSubTab('card')
+        if (photoUploadError) {
+          setErr(`Staff was created successfully, but the ID photo could not be uploaded: ${photoUploadError.message || 'upload failed'}. Use the staff Actions menu to upload it again; do not create a duplicate record.`)
+        }
       } else {
         resetForm()
         setActiveSubTab('view')
+        if (photoUploadError) {
+          setErr(`Staff details were saved, but the replacement photo could not be uploaded: ${photoUploadError.message || 'upload failed'}.`)
+        }
       }
     } catch (error) {
       setErr(error.message || 'Failed to save staff member')
@@ -427,7 +465,9 @@ export default function FranchiseStaffPage() {
     setEditing({ type, id: item.id })
     setStaff({
       role: type === 'managers' ? 'Manager' : (item.employee_role || 'Finance'),
+      franchise_user_id: item.franchise_user_id || selectedFranchiseId || '',
       manager_user_id: item.manager_user_id || '',
+      office_area_id: item.office_area_id || '',
       name: item.name || '',
       surname: item.surname || '',
       id_number: item.id_number || '',
@@ -652,12 +692,12 @@ export default function FranchiseStaffPage() {
         <select className="actions-dropdown" defaultValue="" onChange={handleActionChange} aria-label={`Actions for ${label}`}>
           <option value="" disabled>Actions</option>
           <option value="view">View</option>
-          <option value="edit">Edit</option>
-          <option value="reset-password">Reset Password</option>
-          <option value="download-id-card">Download ID Card</option>
-          <option value="upload-id-photo">Upload ID Photo</option>
-          <option value="upload-irp5">Upload IRP 5</option>
-          <option value="delete">Delete</option>
+          {!isManagerView ? <option value="edit">Edit</option> : null}
+          {!isManagerView ? <option value="reset-password">Reset Password</option> : null}
+          {!isManagerView ? <option value="download-id-card">Download ID Card</option> : null}
+          {!isManagerView ? <option value="upload-id-photo">Upload ID Photo</option> : null}
+          {!isManagerView ? <option value="upload-irp5">Upload IRP 5</option> : null}
+          {!isManagerView ? <option value="delete">Delete</option> : null}
         </select>
       </td>
     )
@@ -667,9 +707,30 @@ export default function FranchiseStaffPage() {
     <div className="staff-page">
       <div className="section-header">
         <p className="eyebrow">HR Management</p>
-        <h2>My Franchise Staff</h2>
+        <h2>{isSuperUser ? 'Franchise Staff' : (isManagerView ? 'My Assigned Staff' : 'My Franchise Staff')}</h2>
         <p className="muted">Add staff from one form, view details, edit records, reset passwords, or make staff inactive.</p>
       </div>
+
+      {isSuperUser ? (
+        <section className="form-card">
+          <label>Selected franchise
+            <select
+              value={selectedFranchiseId}
+              onChange={(event) => {
+                resetForm()
+                setSelectedFranchiseId(event.target.value)
+              }}
+            >
+              <option value="">Select a franchise</option>
+              {franchiseUsers.map((franchise) => (
+                <option key={franchise.id} value={franchise.id}>
+                  {franchise.franchise_name || franchise.business_name || franchise.full_name || `Franchise ${franchise.id}`}
+                </option>
+              ))}
+            </select>
+          </label>
+        </section>
+      ) : null}
 
       <div className="sub-tabs">
         <button
@@ -679,7 +740,7 @@ export default function FranchiseStaffPage() {
           View Staff
         </button>
 
-        <button
+        {!isManagerView ? <button
           className={activeSubTab === 'add' ? 'active' : ''}
           onClick={() => {
             resetForm()
@@ -687,7 +748,7 @@ export default function FranchiseStaffPage() {
           }}
         >
           Add New Employee
-        </button>
+        </button> : null}
 
         <button
           className={activeSubTab === 'payslips' ? 'active' : ''}
@@ -845,14 +906,22 @@ export default function FranchiseStaffPage() {
             <label>Email Address <span className="optional-note">optional</span><input type="email" value={staff.email || ''} onChange={(e) => setStaff({ ...staff, email: e.target.value })} /></label>
             <label>Contact Number<input value={staff.contact_number || ''} onChange={(e) => setStaff({ ...staff, contact_number: e.target.value })} /></label>
             <label>Office Address Assigned
-              {activeOfficeAddresses.length ? (
-                <select required value={staff.office_address_assigned || ''} onChange={(e) => setStaff({ ...staff, office_address_assigned: e.target.value })}>
-                  <option value="">Select franchise office address</option>
-                  {activeOfficeAddresses.map((office) => <option key={office.id} value={office.address}>{office.name} — {office.address}</option>)}
-                </select>
-              ) : (
-                <input ref={staffAddressInputRef} required value={staff.office_address_assigned || ''} onChange={(e) => setStaff({ ...staff, office_address_assigned: e.target.value })} placeholder="Save a franchise office address first" />
-              )}
+              <select
+                required
+                value={staff.office_area_id || ''}
+                onChange={(event) => {
+                  const office = activeOfficeAddresses.find((item) => String(item.id) === event.target.value)
+                  setStaff({
+                    ...staff,
+                    office_area_id: event.target.value,
+                    office_address_assigned: office?.address || '',
+                  })
+                }}
+              >
+                <option value="">Select franchise office address</option>
+                {activeOfficeAddresses.map((office) => <option key={office.id} value={office.id}>{office.name} — {office.address}</option>)}
+              </select>
+              {!activeOfficeAddresses.length ? <span className="optional-note">Save an active franchise office before adding staff.</span> : null}
             </label>
             <div className="hours-grid">
               <label>Office Start Time<input type="time" required value={staff.work_start_time || '08:00'} onChange={(e) => setStaff({ ...staff, work_start_time: e.target.value })} /></label>
@@ -988,12 +1057,12 @@ export default function FranchiseStaffPage() {
       
       {activeSubTab === 'view' ? (
         <>
-          <StaffDetail title={viewTitle} item={viewItem} onClose={() => setViewItem(null)} onEdit={() => {
+          <StaffDetail title={viewTitle} item={viewItem} allowEdit={!isManagerView} onClose={() => setViewItem(null)} onEdit={() => {
             if (viewTitle.includes('Employee')) editStaff('employees', viewItem)
             else editStaff('managers', viewItem)
           }} />
 
-          <section className="form-card staff-list-card">
+          {!isManagerView ? <section className="form-card staff-list-card">
             <h2>My Managers</h2>
             <div className="table-wrap">
               <table>
@@ -1007,10 +1076,10 @@ export default function FranchiseStaffPage() {
                 </tbody>
               </table>
             </div>
-          </section>
+          </section> : null}
 
           <section className="form-card staff-list-card">
-            <h2>My Employees</h2>
+            <h2>{isManagerView ? 'Assigned Employees' : 'My Employees'}</h2>
             <div className="table-wrap">
               <table>
                 <thead><tr><th>Role</th><th>EMPL. NO</th><th>Name</th><th>Username</th><th>Email</th><th>Contact</th><th>Office</th><th>Office Hours</th><th>Active</th><th>Actions</th></tr></thead>

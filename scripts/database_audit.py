@@ -40,14 +40,76 @@ def main() -> None:
         "employees_without_franchise": "SELECT COUNT(*) FROM employee_users WHERE franchise_user_id IS NULL",
         "managers_without_user": "SELECT COUNT(*) FROM manager_users m LEFT JOIN users u ON u.id=m.user_id WHERE u.id IS NULL",
         "managers_without_franchise": "SELECT COUNT(*) FROM manager_users WHERE franchise_user_id IS NULL",
-        "active_staff_on_archived_address": """
-            SELECT COUNT(*) FROM (
-                SELECT user_id, area_id FROM employee_users WHERE COALESCE(is_active, TRUE)=TRUE
-                UNION ALL
-                SELECT user_id, area_id FROM manager_users WHERE COALESCE(is_active, TRUE)=TRUE
-            ) s JOIN areas a ON a.id=s.area_id WHERE COALESCE(a.is_archived, FALSE)=TRUE
+        "employees_with_wrong_role": """
+            SELECT COUNT(*)
+            FROM employee_users eu
+            WHERE NOT EXISTS (
+                SELECT 1 FROM user_roles ur
+                JOIN roles r ON r.id = ur.role_id
+                WHERE ur.user_id = eu.user_id AND r.name = 'EmployeeUser'
+            )
         """,
-        "commission_entries_without_user": "SELECT COUNT(*) FROM commission_entries c LEFT JOIN users u ON u.id=c.employee_user_id WHERE u.id IS NULL",
+        "managers_with_wrong_role": """
+            SELECT COUNT(*)
+            FROM manager_users mu
+            WHERE NOT EXISTS (
+                SELECT 1 FROM user_roles ur
+                JOIN roles r ON r.id = ur.role_id
+                WHERE ur.user_id = mu.user_id AND r.name = 'ManagerUser'
+            )
+        """,
+        "cross_franchise_manager_assignments": """
+            SELECT COUNT(*)
+            FROM employee_users eu
+            JOIN manager_users mu ON mu.id = eu.manager_user_id
+            WHERE eu.franchise_user_id <> mu.franchise_user_id
+        """,
+        "active_staff_without_one_valid_office": """
+            SELECT COUNT(*)
+            FROM (
+                SELECT s.user_id
+                FROM (
+                    SELECT user_id, franchise_user_id
+                    FROM employee_users
+                    WHERE COALESCE(is_active, TRUE) = TRUE
+                    UNION ALL
+                    SELECT user_id, franchise_user_id
+                    FROM manager_users
+                    WHERE COALESCE(is_active, TRUE) = TRUE
+                ) s
+                LEFT JOIN gps_allocations_per_user g
+                    ON g.user_id = s.user_id AND COALESCE(g.is_active, TRUE) = TRUE
+                LEFT JOIN areas a
+                    ON a.id = g.area_id
+                   AND a.franchise_user_id = s.franchise_user_id
+                   AND COALESCE(a.is_archived, FALSE) = FALSE
+                GROUP BY s.user_id
+                HAVING COUNT(a.id) <> 1
+            ) invalid_office
+        """,
+        "users_with_multiple_staff_profiles": """
+            SELECT COUNT(*)
+            FROM manager_users mu
+            JOIN employee_users eu ON eu.user_id = mu.user_id
+        """,
+        "staff_with_wrong_role_count": """
+            SELECT COUNT(*)
+            FROM (
+                SELECT u.id
+                FROM users u
+                JOIN user_roles ur ON ur.user_id = u.id
+                WHERE EXISTS (SELECT 1 FROM manager_users mu WHERE mu.user_id = u.id)
+                   OR EXISTS (SELECT 1 FROM employee_users eu WHERE eu.user_id = u.id)
+                GROUP BY u.id
+                HAVING COUNT(*) <> 1
+            ) invalid_roles
+        """,
+        "commission_entries_without_employee": """
+            SELECT COUNT(*)
+            FROM commission_entries c
+            LEFT JOIN employee_users eu ON eu.id = c.employee_user_id
+            WHERE c.employee_user_id IS NOT NULL AND eu.id IS NULL
+        """,
     }
 
     if not failures:
@@ -65,7 +127,7 @@ def main() -> None:
             print(" -", failure)
         raise SystemExit(1)
 
-    print("\nPASS: schema and core relationships are valid.")
+    print("\nPASS: schema and Phase 1 staff relationships are valid.")
 
 
 if __name__ == "__main__":

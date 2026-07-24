@@ -129,8 +129,9 @@ export async function validateOfficeQr(qrValue) {
   return apiRequest('/attendance/office-qr/validate', { method: 'POST', body: JSON.stringify({ qr_value: qrValue }) })
 }
 
-export async function getOfficeQrCodes() {
-  return apiRequest('/attendance/office-qr/offices')
+export async function getOfficeQrCodes(franchiseUserId = '') {
+  const query = franchiseUserId ? `?franchise_user_id=${encodeURIComponent(franchiseUserId)}` : ''
+  return apiRequest(`/attendance/office-qr/offices${query}`)
 }
 
 export async function downloadOfficeQrPdf(areaId) {
