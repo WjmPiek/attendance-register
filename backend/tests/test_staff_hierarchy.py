@@ -6,6 +6,8 @@ from sqlalchemy.orm import Session
 from app.api.franchise_staff import (
     UpdateEmployeeRequest,
     _create_user,
+    _ensure_email_available,
+    _ensure_staff_identity_unique,
     _unique_username,
 )
 from app.db.base import Base
@@ -87,3 +89,52 @@ def test_explicit_null_manager_assignment_is_distinguishable_from_omission():
 
     assert "manager_user_id" not in omitted.model_fields_set
     assert "manager_user_id" in cleared.model_fields_set
+
+
+class EmptyResult:
+    def first(self):
+        return None
+
+    def mappings(self):
+        return self
+
+
+class RecordingSession:
+    def __init__(self):
+        self.calls = []
+
+    def execute(self, statement, params):
+        self.calls.append((str(statement), params))
+        return EmptyResult()
+
+
+def test_create_checks_do_not_bind_untyped_null_parameters():
+    session = RecordingSession()
+
+    assert _unique_username(session, "manager_one") == "manager_one"
+    assert _ensure_email_available(session, "manager@example.com") == "manager@example.com"
+    _ensure_staff_identity_unique(
+        session,
+        franchise_user_id=2,
+        employee_number="MAG001",
+        id_number="940806 0236 086",
+    )
+
+    assert all("IS NULL" not in sql for sql, _ in session.calls)
+    assert all("exclude_user_id" not in params for _, params in session.calls)
+
+
+def test_edit_checks_include_typed_exclusion_predicates():
+    session = RecordingSession()
+
+    _unique_username(session, "manager_one", exclude_user_id=42)
+    _ensure_email_available(session, "manager@example.com", exclude_user_id=42)
+    _ensure_staff_identity_unique(
+        session,
+        franchise_user_id=2,
+        employee_number="MAG001",
+        exclude_user_id=42,
+    )
+
+    assert all(params.get("exclude_user_id") == 42 for _, params in session.calls)
+    assert all("<> :exclude_user_id" in sql for sql, _ in session.calls)

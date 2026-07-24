@@ -123,14 +123,14 @@ def _role_id(db: Session, name: str) -> int:
 
 
 
-def _area_row(db: Session, area_id: int | None, franchise_user_id: int | None = None):
+def _area_row(db: Session, area_id: int | None, franchise_user_id: int):
     if not area_id:
         return None
     row = db.execute(text("""
         SELECT id, name, latitude, longitude, allowed_radius_m
         FROM areas
         WHERE id = :area_id
-          AND (:franchise_user_id IS NULL OR franchise_user_id = :franchise_user_id)
+          AND franchise_user_id = :franchise_user_id
           AND COALESCE(is_archived, FALSE) = FALSE
     """), {"area_id": area_id, "franchise_user_id": franchise_user_id}).mappings().first()
     if not row:
@@ -142,7 +142,7 @@ def _assign_office_gps(
     db: Session,
     user_id: int,
     area_id: int | None,
-    franchise_user_id: int | None = None,
+    franchise_user_id: int,
 ):
     area = _area_row(db, area_id, franchise_user_id)
     if not area:
@@ -427,12 +427,17 @@ def _unique_username(db: Session, base: str, exclude_user_id: int | None = None)
     base = (base or "staff_user").strip().lower().strip("_")[:70] or "staff_user"
     candidate = base
     counter = 1
-    while db.execute(text("""
+    exclude_sql = ""
+    params = {}
+    if exclude_user_id is not None:
+        exclude_sql = "AND id <> :exclude_user_id"
+        params["exclude_user_id"] = exclude_user_id
+    while db.execute(text(f"""
         SELECT 1
         FROM users
         WHERE LOWER(username) = LOWER(:username)
-          AND (:exclude_user_id IS NULL OR id <> :exclude_user_id)
-    """), {"username": candidate, "exclude_user_id": exclude_user_id}).first():
+          {exclude_sql}
+    """), {"username": candidate, **params}).first():
         counter += 1
         candidate = f"{base}_{counter}"
     return candidate
@@ -440,14 +445,19 @@ def _unique_username(db: Session, base: str, exclude_user_id: int | None = None)
 
 def _ensure_email_available(db: Session, email: str, exclude_user_id: int | None = None) -> str:
     normalised = email.strip().lower()
-    existing = db.execute(text("""
+    exclude_sql = ""
+    params = {"email": normalised}
+    if exclude_user_id is not None:
+        exclude_sql = "AND id <> :exclude_user_id"
+        params["exclude_user_id"] = exclude_user_id
+    existing = db.execute(text(f"""
         SELECT id
         FROM users
         WHERE LOWER(email) = LOWER(:email)
-          AND (:exclude_user_id IS NULL OR id <> :exclude_user_id)
+          {exclude_sql}
           AND COALESCE(is_active, TRUE) = TRUE
         LIMIT 1
-    """), {"email": normalised, "exclude_user_id": exclude_user_id}).first()
+    """), params).first()
     if existing:
         raise HTTPException(status_code=400, detail="Email already belongs to an active user")
     return normalised
@@ -464,7 +474,19 @@ def _ensure_staff_identity_unique(
     id_number = (id_number or "").strip() or None
     if not employee_number and not id_number:
         return
-    duplicate = db.execute(text("""
+    identity_conditions = []
+    params = {"franchise_user_id": franchise_user_id}
+    if employee_number is not None:
+        identity_conditions.append("employee_number = :employee_number")
+        params["employee_number"] = employee_number
+    if id_number is not None:
+        identity_conditions.append("id_number = :id_number")
+        params["id_number"] = id_number
+    exclude_sql = ""
+    if exclude_user_id is not None:
+        exclude_sql = "AND user_id <> :exclude_user_id"
+        params["exclude_user_id"] = exclude_user_id
+    duplicate = db.execute(text(f"""
         SELECT user_id, employee_number, id_number
         FROM (
             SELECT user_id, employee_number, id_number
@@ -477,18 +499,10 @@ def _ensure_staff_identity_unique(
             WHERE franchise_user_id = :franchise_user_id
               AND COALESCE(is_active, TRUE) = TRUE
         ) staff
-        WHERE (:exclude_user_id IS NULL OR user_id <> :exclude_user_id)
-          AND (
-              (:employee_number IS NOT NULL AND employee_number = :employee_number)
-              OR (:id_number IS NOT NULL AND id_number = :id_number)
-          )
+        WHERE ({' OR '.join(identity_conditions)})
+          {exclude_sql}
         LIMIT 1
-    """), {
-        "franchise_user_id": franchise_user_id,
-        "employee_number": employee_number,
-        "id_number": id_number,
-        "exclude_user_id": exclude_user_id,
-    }).mappings().first()
+    """), params).mappings().first()
     if duplicate:
         if id_number and duplicate.get("id_number") == id_number:
             raise HTTPException(status_code=400, detail="ID number already belongs to active staff")
