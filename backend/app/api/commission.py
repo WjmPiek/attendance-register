@@ -169,19 +169,24 @@ def _assert_review_allowed(db: Session, current_user: User, entry, participant):
 
 
 def _assert_not_duplicate(db: Session, franchise_user_id: int, participant_user_id: int, payload: EntryIn, exclude_entry_id: int | None = None):
-    duplicate = db.execute(text("""
+    params = {
+        "fid": franchise_user_id, "employee": participant_user_id,
+        "type": payload.commission_type, "date": payload.service_date,
+        "reference": payload.reference,
+    }
+    exclude_clause = ""
+    if exclude_entry_id is not None:
+        exclude_clause = "AND id<>:exclude_id"
+        params["exclude_id"] = exclude_entry_id
+    duplicate = db.execute(text(f"""
         SELECT id FROM commission_entries
         WHERE franchise_user_id=:fid AND employee_user_id=:employee
           AND commission_type=:type AND service_date=:date
           AND LOWER(TRIM(COALESCE(reference,'')))=LOWER(TRIM(:reference))
           AND COALESCE(is_cancelled,FALSE)=FALSE
-          AND (:exclude_id IS NULL OR id<>CAST(:exclude_id AS INTEGER))
+          {exclude_clause}
         LIMIT 1
-    """), {
-        "fid": franchise_user_id, "employee": participant_user_id,
-        "type": payload.commission_type, "date": payload.service_date,
-        "reference": payload.reference, "exclude_id": exclude_entry_id,
-    }).scalar()
+    """), params).scalar()
     if duplicate:
         raise HTTPException(409, "This staff member already has a commission entry with the same type, date and reference")
 

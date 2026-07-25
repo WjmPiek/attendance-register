@@ -89,3 +89,33 @@ def test_reviewed_submission_cannot_be_reviewed_again(monkeypatch):
             entry,
             {"staff_type": "employee", "manager_user_id": 5},
         )
+
+
+class _NoDuplicateResult:
+    def scalar(self):
+        return None
+
+
+class _CaptureDb:
+    def __init__(self):
+        self.statement = ""
+        self.params = {}
+
+    def execute(self, statement, params):
+        self.statement = str(statement)
+        self.params = params
+        return _NoDuplicateResult()
+
+
+def test_new_submission_duplicate_check_omits_nullable_exclusion_parameter():
+    db = _CaptureDb()
+    commission._assert_not_duplicate(db, 2, 20, payload(), exclude_entry_id=None)
+    assert "exclude_id" not in db.params
+    assert "id<>:exclude_id" not in db.statement
+
+
+def test_review_duplicate_check_excludes_current_entry():
+    db = _CaptureDb()
+    commission._assert_not_duplicate(db, 2, 20, payload(), exclude_entry_id=55)
+    assert db.params["exclude_id"] == 55
+    assert "id<>:exclude_id" in db.statement
