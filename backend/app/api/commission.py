@@ -291,9 +291,11 @@ def create_entry(payload: EntryIn, current_user: User = Depends(get_current_user
         raise HTTPException(400, "This commission type is not active. Ask the franchise user to configure it.")
     _assert_not_duplicate(db, int(participant["franchise_user_id"]), int(participant_user_id), payload)
     rate, amount = _calculate(structure, payload)
+    reviewed_at = datetime.now() if status == "approved" else None
+    reviewed_by_user_id = current_user.id if status == "approved" else None
     row = db.execute(text("""INSERT INTO commission_entries(franchise_user_id,employee_user_id,commission_type,service_date,reference,quantity,invoice_value_before_tax,hours,hourly_rate,applied_rate,calculated_amount,notes,created_by_user_id,status,submitted_at,reviewed_at,reviewed_by_user_id,last_edited_by_user_id)
-      VALUES(:fid,:employee,:type,:date,:ref,:qty,:invoice,:hours,:hourly,:rate,:amount,:notes,:uid,:status,NOW(),CASE WHEN :status='approved' THEN NOW() ELSE NULL END,CASE WHEN :status='approved' THEN :uid ELSE NULL END,:uid) RETURNING *"""),
-      {"fid":participant["franchise_user_id"],"employee":participant_user_id,"type":payload.commission_type,"date":payload.service_date,"ref":payload.reference.strip(),"qty":payload.quantity,"invoice":payload.invoice_value_before_tax,"hours":payload.hours,"hourly":payload.hourly_rate,"rate":rate,"amount":amount,"notes":payload.notes,"uid":current_user.id,"status":status}).mappings().first()
+      VALUES(:fid,:employee,:type,:date,:ref,:qty,:invoice,:hours,:hourly,:rate,:amount,:notes,:uid,:status,NOW(),:reviewed_at,:reviewed_by,:uid) RETURNING *"""),
+      {"fid":participant["franchise_user_id"],"employee":participant_user_id,"type":payload.commission_type,"date":payload.service_date,"ref":payload.reference.strip(),"qty":payload.quantity,"invoice":payload.invoice_value_before_tax,"hours":payload.hours,"hourly":payload.hourly_rate,"rate":rate,"amount":amount,"notes":payload.notes,"uid":current_user.id,"status":status,"reviewed_at":reviewed_at,"reviewed_by":reviewed_by_user_id}).mappings().first()
     _audit(db, row["id"], "submitted" if status == "pending" else "created_approved", current_user.id, new=dict(row))
     if status == "pending":
         for uid in _reviewer_ids(db, participant):

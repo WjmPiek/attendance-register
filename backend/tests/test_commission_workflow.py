@@ -1,4 +1,5 @@
 from decimal import Decimal
+import inspect
 from types import SimpleNamespace
 
 import pytest
@@ -119,3 +120,9 @@ def test_review_duplicate_check_excludes_current_entry():
     commission._assert_not_duplicate(db, 2, 20, payload(), exclude_entry_id=55)
     assert db.params["exclude_id"] == 55
     assert "id<>:exclude_id" in db.statement
+
+
+def test_submission_insert_does_not_reuse_status_in_sql_case_expression():
+    source = inspect.getsource(commission.create_entry)
+    assert "CASE WHEN :status" not in source
+    assert ":reviewed_at,:reviewed_by" in source

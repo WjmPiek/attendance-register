@@ -51,6 +51,7 @@ check('commission workflow migration head', '009_commission_workflow' in commiss
 check('commission joinings', '"joinings"' in commission)
 check('commission duplicate protection', '_assert_not_duplicate' in commission)
 check('commission duplicate query avoids ambiguous nullable parameter', 'exclude_clause = ""' in commission and ':exclude_id IS NULL' not in commission)
+check('commission insert avoids mixed status parameter types', 'CASE WHEN :status' not in commission and ':reviewed_at,:reviewed_by' in commission)
 check('commission self-review protection', 'You cannot approve or reject your own submission' in commission)
 check('commission pending-only review', 'Only a pending submission can be reviewed' in commission)
 check('commission cancellation retains history', "status='cancelled'" in commission and 'DELETE FROM commission_entries' not in commission)
