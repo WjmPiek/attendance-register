@@ -1517,12 +1517,15 @@ h3 { font-size: 1.25rem; }
 }
 
 .danger-button {
-  border-color: rgba(220, 38, 38, 0.35) !important;
-  color: #b91c1c !important;
+  border-color: #991b1b !important;
+  background: #b91c1c !important;
+  color: #fff !important;
 }
 
 .danger-button:hover {
-  background: rgba(220, 38, 38, 0.08) !important;
+  border-color: #7f1d1d !important;
+  background: #991b1b !important;
+  color: #fff !important;
 }
 
 /* Mobile sign-in fit and QR camera fixes */
@@ -1965,6 +1968,14 @@ input[type="date"]::-webkit-date-and-time-value,
 .linked-staff-row { display:flex; justify-content:space-between; gap:16px; padding:12px 14px; border:1px solid rgba(108,76,166,.14); border-radius:14px; background:rgba(255,255,255,.62); }
 .danger-button { background:#b91c1c; color:#fff; }
 @media (max-width:760px){ .overview-action-row.enterprise-action-stack{grid-template-columns:1fr;} .linked-staff-row{flex-direction:column;} }
+
+.commission-review-workspace { border:1px solid rgba(108,76,166,.16); border-radius:24px; padding:24px; background:rgba(255,255,255,.88); box-shadow:var(--shadow-soft); }
+.commission-review-pdf { padding:0; overflow:hidden; background:#fff; }
+.commission-review-pdf iframe { height:72vh; min-height:620px; border-radius:0; }
+.commission-review-decision { display:grid; gap:16px; margin-top:20px; padding:20px; border-radius:18px; background:rgba(246,242,252,.92); }
+.commission-review-decision label { display:grid; gap:8px; font-weight:750; }
+.commission-review-decision textarea { min-height:90px; }
+@media (max-width:760px){ .commission-review-workspace{padding:14px;} .commission-review-pdf iframe{height:62vh;min-height:480px;} }
 
 /* Staff ID creation confirmation and employee mobile card */
 .newly-created-id-page,

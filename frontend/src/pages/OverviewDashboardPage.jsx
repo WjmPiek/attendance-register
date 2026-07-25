@@ -363,6 +363,20 @@ export default function OverviewDashboardPage({ onNavigate }) {
     }
   }
 
+  const openNotification = async (notification) => {
+    if (notification.related_table === 'commission_entries' && notification.related_id) {
+      sessionStorage.setItem('commissionFocusId', String(notification.related_id))
+    }
+    if (!notification.is_read) {
+      try {
+        await markNotificationRead(notification.id)
+      } catch (err) {
+        setError(err.message || 'Failed to update notification')
+      }
+    }
+    if (notification.target_tab) onNavigate?.(notification.target_tab)
+  }
+
   if (loading && !data) return <div className="form-card"><p>Loading dashboard...</p></div>
   if (error && !data) return <div className="form-card"><p className="error">{error}</p></div>
 
@@ -411,7 +425,7 @@ export default function OverviewDashboardPage({ onNavigate }) {
           <div className="notification-stack">
             {(showNotificationHistory ? readNotifications : unreadNotifications).length ? (showNotificationHistory ? readNotifications : unreadNotifications).slice(0, 20).map((n) => (
               <div className={`notification-row ${n.is_read ? 'read' : ''} ${n.severity || ''}`} key={n.id}>
-                <button type="button" className="notification-main-button" onClick={() => { if (n.related_table === 'commission_entries' && n.related_id) sessionStorage.setItem('commissionFocusId', String(n.related_id)); if (n.target_tab) onNavigate?.(n.target_tab) }}>
+                <button type="button" className="notification-main-button" onClick={() => openNotification(n)}>
                   <strong>{n.subject}</strong>
                   <p>{n.message}</p>
                   <small>{n.created_at ? new Date(n.created_at).toLocaleString('en-ZA', { timeZone: 'Africa/Johannesburg', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''} · {n.status || 'pending'}</small>
