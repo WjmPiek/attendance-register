@@ -28,7 +28,7 @@ commission = (ROOT/'backend/app/api/commission.py').read_text()
 auth = (ROOT/'backend/app/api/auth.py').read_text()
 login = (ROOT/'frontend/src/pages/LoginPage.jsx').read_text()
 business = (ROOT/'frontend/src/pages/BusinessInformationPage.jsx').read_text()
-mobile = (ROOT/'frontend/src/pages/MobileAttendancePage.jsx').read_text()
+mobile = (ROOT/'frontend/src/pages/MobileAttendancePage.jsx').read_text(encoding='utf-8')
 attendance = (ROOT/'backend/app/api/attendance.py').read_text()
 attendance_approvals = (ROOT/'frontend/src/pages/AttendanceApprovalPage.jsx').read_text(encoding='utf-8')
 attendance_history_page = (ROOT/'frontend/src/pages/AttendanceHistoryPage.jsx').read_text(encoding='utf-8')
@@ -54,6 +54,36 @@ check('superuser explicit franchise selection', 'Managers and employees remain h
 check('franchise user response normalized', "return normalizeListResponse(await apiRequest('/franchise/users'))" in frontend_client)
 check('HR staff uses normalized franchise users', 'getFranchiseUsers()' in franchise_staff_page)
 check('manager staff visibility scope', 's.manager_user_id = :manager_user_id' in staff)
+check('manager staff reads use active hierarchy profile', all(term in staff for term in (
+    'def _active_manager_profile',
+    '_active_manager_profile(db, current_user.id)',
+    'WHERE eu.manager_user_id=:mid AND eu.franchise_user_id=:fid',
+)))
+check('superuser exclusively manages and links staff', all(term in staff for term in (
+    'def _require_superuser',
+    'Only SuperUser can manage staff',
+    '_require_superuser(db, current_user)',
+)))
+check('manager reads only assigned employees', all(term in staff for term in (
+    'Managers can only view assigned employees',
+    's.manager_user_id = :manager_user_id',
+    'WHERE eu.manager_user_id=:mid AND eu.franchise_user_id=:fid',
+)))
+check('employee reads only own staff profile', all(term in staff for term in (
+    'def _active_employee_profile',
+    'WHERE eu.id = :employee_id',
+    'AND eu.user_id = :user_id',
+)))
+check('staff menu follows strict hierarchy', all(term in dashboard for term in (
+    "visible: isSuperUser || isManagerUser || isEmployee",
+    "isSuperUser ? 'HR Staff' : (isManagerUser ? 'My Staff' : 'My Profile')",
+)) and "visible: isSuperUser || isFranchiseUser || isManagerUser" not in dashboard)
+check('staff actions are superuser only', all(term in franchise_staff_page for term in (
+    'type === \'employees\' && !isEmployeeView',
+    'isSuperUser ? <button type="button" className="glass-button"',
+    '{isSuperUser ? <option value="reset-password">',
+    'allowEdit={isSuperUser}',
+)))
 check('generic creation rejects profile roles', 'Organisational users must be created' in (ROOT/'backend/app/api/users.py').read_text())
 check('manager commission participant', 'manager_users' in commission and "kind == \"manager\"" in commission)
 check('database audit accepts manager commission participants', 'commission_entries_without_staff_profile' in (ROOT/'scripts/database_audit.py').read_text(encoding='utf-8') and 'mu.user_id = c.employee_user_id' in (ROOT/'scripts/database_audit.py').read_text(encoding='utf-8'))
@@ -87,14 +117,14 @@ check('attendance phase 3 evidence migration', '010_attendance_mobile_integrity'
 check('attendance office code migration', '011_attendance_office_code' in attendance_code_migration)
 check('attendance weekly code migration head', '012_weekly_office_codes' in weekly_code_migration and 'qr_valid_week' in weekly_code_migration)
 check('attendance single use code migration head', '013_single_use_office_codes' in single_use_code_migration and 'qr_expires_at' in single_use_code_migration)
-check('attendance four digit office code required', '_generate_office_code' in attendance and 'Four-digit office code' in mobile and "and payload.qr_value" not in attendance)
+check('attendance four digit office code required', '_generate_office_code' in attendance and 'Four-digit QR value' in mobile and "and payload.qr_value" not in attendance)
 check('attendance code expires after 20 minutes', '_office_code_expiry' in attendance and 'timedelta(minutes=20)' in attendance)
 check('attendance code consumed after every use', attendance.count('_consume_office_code(db') >= 2 and 'qr_last_used_at' in attendance)
 check('attendance code issuer roles', "roles.intersection({'FranchiseUser', 'ManagerUser'})" in attendance and 'Only managers and franchise users can view or issue these codes' in franchise_staff_page)
 check('attendance GPS always required', 'A missing rules' in attendance and 'GPS accuracy is required' in attendance)
 check('attendance signature always required', "not str(payload.signature_value).startswith('data:image/')" in attendance)
 check('attendance automatic photo required', '_photo_data_url_to_image' in attendance and 'photo_value' in mobile)
-check('attendance permission diagnostics', 'Test GPS & camera permissions' in mobile and 'Camera permission was denied' in mobile and 'Location permission was denied' in mobile)
+check('attendance permission diagnostics', 'Camera permission was denied' in mobile and 'Location permission was denied' in mobile)
 check('attendance outside office radius recorded', "gps_status = 'outside_area'" in attendance and 'Range and accuracy exceptions are evidence' in attendance and 'outside the allowed range of your assigned office' not in attendance)
 check('attendance exception report wording', 'Not in office GPS range' in attendance_history_page and '_gps_report_label' in attendance)
 check('attendance GPS bound to code office', 'office_area_id' in attendance and 'GPSAllocationPerUser.area_id == office_area_id' in attendance)
@@ -107,13 +137,37 @@ check('office attendance codes HR tab', "setActiveSubTab('qr')" in franchise_sta
 check('office code portrait A4 constrained', 'size = 86 * mm' in attendance and 'rowHeights=[104*mm]' in attendance)
 check('mobile login case insensitive', 'func.lower(User.username) == login_value' in auth and 'autoCapitalize="none"' in login)
 check('attendance manager and franchise notifications', 'recipients.append' in attendance and 'manager_login.id AS recipient_user_id' in attendance)
+check('outside office popup notifications', all(term in attendance for term in (
+    "notification_type='attendance_outside_area' if outside_office",
+    "severity='danger' if outside_office",
+    "f\"GPS coordinates: {coordinates}",
+)) and all(term in dashboard for term in (
+    'function AttendanceExceptionPopup',
+    "item.notification_type === 'attendance_outside_area'",
+    'window.setInterval(poll, 10000)',
+)))
 check('attendance decision notifications', "notification_type=f'attendance_{decision}'" in attendance)
 check('attendance scoped photo endpoint', "@router.get('/events/{event_id}/photo')" in attendance)
 check('attendance approval photo viewer', 'View automatic photo' in attendance_approvals)
 check('attendance history evidence viewer', 'Signature:' in attendance_history_page and 'View photo' in attendance_history_page)
 check('saved office GPS editor collapses', 'editingGps' in business and 'Edit GPS and radius' in business)
-check('attendance code entry advances to photo', 'await prepareEvidence()' in mobile and 'Step 3' in mobile and 'SignaturePad' in mobile)
-check('employee code is hidden until received', 'I have a code' in mobile and 'Only they can view and issue the current code' in mobile and 'Scan office QR' not in mobile)
+check('attendance live QR advances automatically', all(term in mobile for term in (
+    "new window.BarcodeDetector({ formats: ['qr_code'] })",
+    'await acceptQr(value)',
+    'setStep(3)',
+    'The next step opens automatically',
+)))
+check('attendance three step sequence', all(term in mobile for term in (
+    'Step 1 — Choose sign in or sign out',
+    'Step 2 — Scan the office QR code',
+    'Step 3 — Sign the',
+)))
+check('attendance background GPS evidence', all(term in mobile for term in (
+    'navigator.geolocation.watchPosition',
+    'const location = await getFreshLocation()',
+    'GPS coordinates are captured in the background',
+)))
+check('employee QR value is not disclosed', 'qrOffice?.qr_payload' not in mobile and 'active office code' not in mobile.lower())
 check('manager approvals moved to my staff', "{ id: 'staff', label: 'My Staff', visible: isManagerUser }" in dashboard and "visible: isSuperUser || isFranchiseUser" in dashboard)
 check('employee work hub combines activity', all(term in staff_work_hub for term in ('getAttendanceHistory', 'getLeaveApplications', 'getCommissionEntries', 'getNotifications')))
 check('employee work hub approval controls', all(term in staff_work_hub for term in ('approveAttendanceEvent', 'rejectAttendanceEvent', 'approveLeaveApplication', 'declineLeaveApplication')))

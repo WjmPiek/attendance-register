@@ -581,21 +581,38 @@ def _notify_franchise_attendance_event(db: Session, event: AttendanceEvent, acti
     signature_text = event.signature_status or ('captured' if getattr(event, 'signature_image', None) else 'missing')
     photo_text = getattr(event, 'photo_status', None) or ('captured' if getattr(event, 'attendance_photo', None) else 'missing')
     when = format_sa_datetime(event.created_at) if event.created_at else format_sa_datetime(now_sa_naive())
-    subject = f"Attendance {action_label}: {ctx.get('staff_name')}"
+    outside_office = event.gps_status == 'outside_area'
+    subject = (
+        f"OUTSIDE OFFICE: {ctx.get('staff_name')} {action_label}"
+        if outside_office
+        else f"Attendance {action_label}: {ctx.get('staff_name')}"
+    )
+    coordinates = (
+        f"{event.latitude}, {event.longitude}"
+        if event.latitude is not None and event.longitude is not None
+        else "Not captured"
+    )
+    distance_text = (
+        f"{round(float(event.distance_from_site_m))} m"
+        if event.distance_from_site_m is not None
+        else "Not available"
+    )
     message = (
         f"{ctx.get('staff_name')} recorded {action_label} on {when}.\n\n"
         f"Franchise: {ctx.get('franchise_name')}\n"
         f"Status: {status_text}\n"
+        f"GPS coordinates: {coordinates}\n"
+        f"Distance from office: {distance_text}\n"
         f"Approval: {approval_text}\n"
         f"Signature: {signature_text}\n"
         f"Automatic photo: {photo_text}\n"
         f"Work type: {event.work_location_type or 'office'}\n\n"
         "Open the Attendance Register Platform to review the event and export the signed PDF if required."
     )
-    target_tab = 'approvals' if approval_text == 'pending' else 'history'
     recipients = [{
         'user_id': ctx.get('recipient_user_id'),
         'email': ctx.get('recipient_email'),
+        'target_tab': 'approvals' if approval_text == 'pending' else 'history',
     }]
     manager = db.execute(text("""
         SELECT manager_login.id AS recipient_user_id, manager_login.email AS recipient_email
@@ -609,11 +626,15 @@ def _notify_franchise_attendance_event(db: Session, event: AttendanceEvent, acti
         LIMIT 1
     """), {'staff_user_id':int(event.user_id)}).mappings().first()
     if manager and int(manager['recipient_user_id']) != int(ctx.get('recipient_user_id') or 0):
-        recipients.append({'user_id':manager['recipient_user_id'],'email':manager['recipient_email']})
+        recipients.append({
+            'user_id': manager['recipient_user_id'],
+            'email': manager['recipient_email'],
+            'target_tab': 'staff',
+        })
     for recipient in recipients:
         create_notification(
             db,
-            notification_type=f'attendance_{event.action}',
+            notification_type='attendance_outside_area' if outside_office else f'attendance_{event.action}',
             subject=subject,
             message=message,
             recipient_email=recipient.get('email'),
@@ -622,8 +643,8 @@ def _notify_franchise_attendance_event(db: Session, event: AttendanceEvent, acti
             user_id=int(event.user_id),
             recipient_user_id=recipient.get('user_id'),
             franchise_user_id=ctx.get('franchise_user_id'),
-            severity='warning' if approval_text == 'pending' else 'info',
-            target_tab=target_tab,
+            severity='danger' if outside_office else ('warning' if approval_text == 'pending' else 'info'),
+            target_tab=recipient.get('target_tab'),
             send_email=True,
         )
 

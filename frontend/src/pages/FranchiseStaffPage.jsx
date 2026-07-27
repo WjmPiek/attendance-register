@@ -227,6 +227,9 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
   const isManagerView = Boolean(
     me?.roles?.includes('ManagerUser') && !me?.roles?.includes('FranchiseUser') && !isSuperUser
   )
+  const isEmployeeView = Boolean(
+    me?.roles?.includes('EmployeeUser') && !isManagerView && !isSuperUser
+  )
   const [activeSubTab, setActiveSubTab] = useState('view')
   const [managers, setManagers] = useState([])
   const [employees, setEmployees] = useState([])
@@ -719,19 +722,19 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
 
     return (
       <td className="actions-cell">
-        {type === 'employees' ? <div className="employee-row-actions">
+        {type === 'employees' && !isEmployeeView ? <div className="employee-row-actions">
           <button type="button" onClick={() => setWorkHubEmployee(item)}>Work hub</button>
-          <button type="button" className="glass-button" onClick={() => editStaff(type, item)}>Edit</button>
+          {isSuperUser ? <button type="button" className="glass-button" onClick={() => editStaff(type, item)}>Edit</button> : null}
         </div> : null}
         <select className="actions-dropdown" defaultValue="" onChange={handleActionChange} aria-label={`More actions for ${label}`}>
           <option value="" disabled>Actions</option>
           <option value="view">View</option>
-          {type !== 'employees' && !isManagerView ? <option value="edit">Edit</option> : null}
-          {!isManagerView ? <option value="reset-password">Reset Password</option> : null}
-          {!isManagerView ? <option value="download-id-card">Download ID Card</option> : null}
-          {!isManagerView ? <option value="upload-id-photo">Upload ID Photo</option> : null}
-          {!isManagerView ? <option value="upload-irp5">Upload IRP 5</option> : null}
-          {!isManagerView ? <option value="delete">Delete</option> : null}
+          {type !== 'employees' && isSuperUser ? <option value="edit">Edit</option> : null}
+          {isSuperUser ? <option value="reset-password">Reset Password</option> : null}
+          {isSuperUser ? <option value="download-id-card">Download ID Card</option> : null}
+          {isSuperUser ? <option value="upload-id-photo">Upload ID Photo</option> : null}
+          {isSuperUser ? <option value="upload-irp5">Upload IRP 5</option> : null}
+          {isSuperUser ? <option value="delete">Delete</option> : null}
         </select>
       </td>
     )
@@ -780,8 +783,10 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
     <div className="staff-page">
       <div className="section-header">
         <p className="eyebrow">HR Management</p>
-        <h2>{isSuperUser ? 'Franchise Staff' : (isManagerView ? 'My Assigned Staff' : 'My Franchise Staff')}</h2>
-        <p className="muted">Add staff from one form, view details, edit records, reset passwords, or make staff inactive.</p>
+        <h2>{isSuperUser ? 'Franchise Staff' : (isManagerView ? 'My Assigned Staff' : 'My Staff Profile')}</h2>
+        <p className="muted">{isSuperUser
+          ? 'Create and manage staff, assign employees to managers, and maintain staff records.'
+          : (isManagerView ? 'Read and work only with employees assigned to you.' : 'View only your own staff information.')}</p>
       </div>
 
       {isSuperUser ? (
@@ -826,7 +831,7 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
           View Staff
         </button>
 
-        {!isManagerView ? <button
+        {isSuperUser ? <button
           className={activeSubTab === 'add' ? 'active' : ''}
           onClick={() => {
             resetForm()
@@ -836,12 +841,12 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
           Add New Employee
         </button> : null}
 
-        <button
+        {!isEmployeeView ? <button
           className={activeSubTab === 'qr' ? 'active' : ''}
           onClick={() => setActiveSubTab('qr')}
         >
           Office Attendance Codes
-        </button>
+        </button> : null}
 
         <button
           className={activeSubTab === 'payslips' ? 'active' : ''}
@@ -1174,15 +1179,15 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
         workHubEmployee ? <StaffWorkHub
           employee={workHubEmployee}
           onClose={() => setWorkHubEmployee(null)}
-          onEdit={() => editStaff('employees', workHubEmployee)}
+          onEdit={isSuperUser ? () => editStaff('employees', workHubEmployee) : null}
           onNavigate={onNavigate}
         /> : <>
-          <StaffDetail title={viewTitle} item={viewItem} allowEdit={!isManagerView || viewTitle.includes('Employee')} onClose={() => setViewItem(null)} onEdit={() => {
+          <StaffDetail title={viewTitle} item={viewItem} allowEdit={isSuperUser} onClose={() => setViewItem(null)} onEdit={() => {
             if (viewTitle.includes('Employee')) editStaff('employees', viewItem)
             else editStaff('managers', viewItem)
           }} />
 
-          {!isManagerView ? <section className="form-card staff-list-card">
+          {isSuperUser ? <section className="form-card staff-list-card">
             <h2>My Managers</h2>
             <div className="table-wrap">
               <table>
@@ -1199,7 +1204,7 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
           </section> : null}
 
           <section className="form-card staff-list-card">
-            <h2>{isManagerView ? 'Assigned Employees' : 'My Employees'}</h2>
+            <h2>{isManagerView ? 'Assigned Employees' : (isEmployeeView ? 'My Profile' : 'Employees')}</h2>
             <div className="table-wrap">
               <table>
                 <thead><tr><th>Role</th><th>EMPL. NO</th><th>Name</th><th>Username</th><th>Email</th><th>Contact</th><th>Office</th><th>Office Hours</th><th>Active</th><th>Actions</th></tr></thead>

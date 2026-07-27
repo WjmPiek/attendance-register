@@ -5,6 +5,8 @@ from sqlalchemy.orm import Session
 
 from app.api.franchise_staff import (
     UpdateEmployeeRequest,
+    _active_manager_profile,
+    _require_superuser,
     _create_user,
     _ensure_email_available,
     _ensure_staff_identity_unique,
@@ -138,3 +140,43 @@ def test_edit_checks_include_typed_exclusion_predicates():
 
     assert all(params.get("exclude_user_id") == 42 for _, params in session.calls)
     assert all("<> :exclude_user_id" in sql for sql, _ in session.calls)
+
+
+class ManagerProfileResult:
+    def __init__(self, row):
+        self.row = row
+
+    def mappings(self):
+        return self
+
+    def first(self):
+        return self.row
+
+
+class ManagerProfileSession:
+    def execute(self, statement, params):
+        assert "FROM manager_users" in str(statement)
+        assert params == {"user_id": 71}
+        return ManagerProfileResult({"id": 9, "franchise_user_id": 3})
+
+
+def test_active_manager_profile_is_authoritative_for_staff_read_scope():
+    assert _active_manager_profile(ManagerProfileSession(), 71) == {
+        "id": 9,
+        "franchise_user_id": 3,
+    }
+
+
+def test_staff_mutations_require_superuser(monkeypatch):
+    from app.api import franchise_staff
+
+    monkeypatch.setattr(franchise_staff, "_is_superuser", lambda db, user: False)
+    with pytest.raises(HTTPException, match="Only SuperUser can manage staff"):
+        _require_superuser(object(), object())
+
+
+def test_superuser_passes_staff_mutation_guard(monkeypatch):
+    from app.api import franchise_staff
+
+    monkeypatch.setattr(franchise_staff, "_is_superuser", lambda db, user: True)
+    assert _require_superuser(object(), object()) is None

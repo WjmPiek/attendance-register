@@ -163,3 +163,70 @@ def test_gps_distance_is_bound_to_entered_code_office():
 def test_haversine_reports_real_world_kilometres():
     distance_m = attendance.haversine(-26.2041, 28.0473, -26.4290, 28.0473)
     assert 24_000 < distance_m < 26_000
+
+
+class _MappingResult:
+    def __init__(self, row):
+        self.row = row
+
+    def mappings(self):
+        return self
+
+    def first(self):
+        return self.row
+
+
+class _NotificationDb:
+    def execute(self, statement, params):
+        return _MappingResult({
+            "recipient_user_id": 22,
+            "recipient_email": "manager@example.com",
+        })
+
+
+def test_outside_office_notifies_franchise_and_linked_manager(monkeypatch):
+    created = []
+    monkeypatch.setattr(attendance, "_attendance_franchise_recipient", lambda db, user_id: {
+        "franchise_user_id": 4,
+        "recipient_user_id": 11,
+        "recipient_email": "franchise@example.com",
+        "staff_name": "Remote Employee",
+        "staff_type": "employee",
+        "franchise_name": "Test Franchise",
+    })
+    monkeypatch.setattr(attendance, "create_notification", lambda db, **values: created.append(values))
+    event = SimpleNamespace(
+        id=91,
+        user_id=7,
+        action="sign_in",
+        created_at=attendance.now_sa_naive(),
+        attendance_status="outside_area",
+        gps_status="outside_area",
+        approval_status="pending",
+        signature_status="captured",
+        signature_image=b"signature",
+        photo_status="captured",
+        attendance_photo=b"photo",
+        work_location_type="outside_area",
+        latitude="-26.106851",
+        longitude="27.811233",
+        distance_from_site_m=25000,
+    )
+
+    attendance._notify_franchise_attendance_event(_NotificationDb(), event, "sign in")
+
+    assert [item["recipient_user_id"] for item in created] == [11, 22]
+    assert all(item["notification_type"] == "attendance_outside_area" for item in created)
+    assert all(item["severity"] == "danger" for item in created)
+    assert created[0]["target_tab"] == "approvals"
+    assert created[1]["target_tab"] == "staff"
+    assert "GPS coordinates: -26.106851, 27.811233" in created[0]["message"]
+
+
+def test_attendance_events_persist_gps_coordinates():
+    sign_in_source = inspect.getsource(attendance.sign_in)
+    sign_out_source = inspect.getsource(attendance.sign_out)
+    for source in (sign_in_source, sign_out_source):
+        assert "latitude=str(payload.latitude)" in source
+        assert "longitude=str(payload.longitude)" in source
+        assert "accuracy_meters=str(accuracy)" in source
