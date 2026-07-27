@@ -10,10 +10,9 @@ import {
   getNotifications,
   rejectAttendanceEvent,
 } from '../api/client'
+import { formatJohannesburgDateTime } from '../utils/dateTime'
 
-const formatDateTime = (value) => value
-  ? new Date(value).toLocaleString('en-ZA', { dateStyle: 'medium', timeStyle: 'short' })
-  : '—'
+const formatDateTime = (value) => formatJohannesburgDateTime(value, '—')
 
 const statusClass = (value) => `status-pill ${String(value || 'pending').toLowerCase()}`
 const listItems = (value) => Array.isArray(value) ? value : (Array.isArray(value?.items) ? value.items : [])
@@ -142,7 +141,7 @@ export default function StaffWorkHub({ employee, onClose, onEdit, onNavigate }) 
                 <div className="button-row"><button type="button" disabled={busy === `attendance-${item.id}`} onClick={() => decideAttendance(item, true)}>Approve</button><button type="button" className="danger-button" disabled={busy === `attendance-${item.id}`} onClick={() => decideAttendance(item, false)}>Reject</button></div>
               </div>
             ))}</div> : <p className="muted">No pending attendance approvals.</p>}
-            <div className="table-wrap"><table><thead><tr><th>Action</th><th>Date and time</th><th>GPS</th><th>Approval</th></tr></thead><tbody>
+            <div className="table-wrap"><table className="staff-attendance-table"><colgroup><col /><col /><col /><col /></colgroup><thead><tr><th>Action</th><th>Date and time</th><th>GPS</th><th>Approval</th></tr></thead><tbody>
               {attendance.slice(0, 10).map((item) => <tr key={`event-${item.id}`}><td>{String(item.action || '').replace('_', ' ')}</td><td>{formatDateTime(item.created_at)}</td><td>{gpsLabel(item.gps_status)}{item.distance_from_site_m != null ? ` · ${Math.round(item.distance_from_site_m)} m from office` : ''}</td><td><span className={statusClass(item.approval_status)}>{item.approval_status || 'pending'}</span></td></tr>)}
               {!attendance.length ? <tr><td colSpan="4" className="muted">No attendance events yet.</td></tr> : null}
             </tbody></table></div>
@@ -160,7 +159,7 @@ export default function StaffWorkHub({ employee, onClose, onEdit, onNavigate }) 
 
           <section className="staff-work-section">
             <div className="section-heading"><div><h3>Commission and overtime</h3><p className="muted small">This employee’s claims remain separate from the manager’s own commission.</p></div><button type="button" onClick={openCommissions}>Review commissions</button></div>
-            <div className="table-wrap"><table><thead><tr><th>Date</th><th>Reference</th><th>Type</th><th>Amount</th><th>Status</th></tr></thead><tbody>
+            <div className="table-wrap"><table className="staff-commission-table"><thead><tr><th>Date</th><th>Reference</th><th>Type</th><th>Amount</th><th>Status</th></tr></thead><tbody>
               {(commission?.items || []).slice(0, 10).map((item) => <tr key={`commission-${item.id}`}><td>{item.service_date}</td><td>{item.reference}</td><td>{String(item.commission_type || '').replaceAll('_', ' ')}</td><td>R {Number(item.calculated_amount || 0).toFixed(2)}</td><td><span className={statusClass(item.status)}>{item.status}</span></td></tr>)}
               {!commission?.items?.length ? <tr><td colSpan="5" className="muted">No commission or overtime records.</td></tr> : null}
             </tbody></table></div>

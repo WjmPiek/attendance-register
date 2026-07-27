@@ -8,10 +8,10 @@ import {
   getAttendanceVisibleUsers,
   rejectAttendanceEvent,
 } from '../api/client'
+import { formatJohannesburgDateTime } from '../utils/dateTime'
 
 function formatTime(value) {
-  if (!value) return 'n/a'
-  return new Date(value).toLocaleString('en-ZA', { timeZone: 'Africa/Johannesburg', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+  return formatJohannesburgDateTime(value)
 }
 
 function statusClass(value) {

@@ -82,6 +82,8 @@ def _ensure_office_qr_schema(db: Session):
         db.execute(text("ALTER TABLE areas ADD COLUMN IF NOT EXISTS qr_enabled BOOLEAN NOT NULL DEFAULT TRUE"))
         db.execute(text("ALTER TABLE areas ADD COLUMN IF NOT EXISTS qr_updated_at TIMESTAMP NULL"))
         db.execute(text("ALTER TABLE areas ADD COLUMN IF NOT EXISTS qr_valid_week VARCHAR(10) NULL"))
+        db.execute(text("ALTER TABLE areas ADD COLUMN IF NOT EXISTS qr_expires_at TIMESTAMP NULL"))
+        db.execute(text("ALTER TABLE areas ADD COLUMN IF NOT EXISTS qr_last_used_at TIMESTAMP NULL"))
         db.execute(text("ALTER TABLE areas ADD COLUMN IF NOT EXISTS franchise_user_id INTEGER NULL"))
         db.execute(text("ALTER TABLE areas ADD COLUMN IF NOT EXISTS office_address TEXT NULL"))
         db.execute(text("ALTER TABLE areas ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT FALSE"))
@@ -130,10 +132,12 @@ def _token_hash(token: str | None) -> str | None:
     return hashlib.sha256(str(token).encode('utf-8')).hexdigest()
 
 
-def _generate_office_code(db: Session, exclude_area_id: int | None = None) -> str:
-    """Return an unused reusable four-digit attendance code."""
+def _generate_office_code(db: Session, exclude_area_id: int | None = None, avoid_token: str | None = None) -> str:
+    """Return an unused four-digit attendance code."""
     for _ in range(9000):
         candidate = str(1000 + secrets.randbelow(9000))
+        if avoid_token and candidate == str(avoid_token):
+            continue
         params = {'candidate': candidate}
         exclude_sql = ''
         if exclude_area_id is not None:
@@ -153,11 +157,8 @@ def _generate_office_code(db: Session, exclude_area_id: int | None = None) -> st
     raise HTTPException(status_code=503, detail='No office attendance code is currently available')
 
 
-def _office_code_week(now: datetime | None = None) -> tuple[str, datetime]:
-    now = now or now_sa_naive()
-    iso_year, iso_week, _ = now.isocalendar()
-    next_monday = (now + timedelta(days=7 - now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
-    return f'{iso_year}-W{iso_week:02d}', next_monday
+def _office_code_expiry(now: datetime | None = None) -> datetime:
+    return (now or now_sa_naive()) + timedelta(minutes=20)
 
 
 def _office_address(row: dict) -> str:
@@ -301,7 +302,7 @@ def _office_qr_row(db: Session, area_id: int):
     _ensure_office_qr_schema(db)
     row = db.execute(text("""
         SELECT id, name, code, description, office_address, latitude, longitude, allowed_radius_m,
-               qr_token, qr_updated_at, qr_valid_week,
+               qr_token, qr_updated_at, qr_valid_week, qr_expires_at, qr_last_used_at,
                COALESCE(qr_enabled, TRUE) AS qr_enabled,
                COALESCE(is_archived, FALSE) AS is_archived, archived_at, franchise_user_id
         FROM areas
@@ -311,32 +312,67 @@ def _office_qr_row(db: Session, area_id: int):
         raise HTTPException(status_code=404, detail='Office / area not found')
     row = dict(row)
     token_value = str(row.get('qr_token') or '').strip()
-    current_week, valid_until = _office_code_week()
+    now = now_sa_naive()
+    expires_at = row.get('qr_expires_at')
     needs_rotation = (
         len(token_value) != 4
         or not token_value.isdigit()
-        or row.get('qr_valid_week') != current_week
+        or expires_at is None
+        or expires_at <= now
     )
     if needs_rotation and not row.get('is_archived'):
-        token = _generate_office_code(db, exclude_area_id=area_id)
+        token = _generate_office_code(db, exclude_area_id=area_id, avoid_token=token_value)
+        expires_at = _office_code_expiry(now)
         db.execute(text("""
             UPDATE areas
             SET qr_token = :token, qr_enabled = TRUE, qr_updated_at = :now,
-                qr_valid_week = :valid_week, updated_at = :now
+                qr_expires_at = :expires_at, updated_at = :now
             WHERE id = :area_id
         """), {
             'token': token,
-            'now': now_sa_naive(),
-            'valid_week': current_week,
+            'now': now,
+            'expires_at': expires_at,
             'area_id': area_id,
         })
         db.commit()
         row['qr_token'] = token
         row['qr_enabled'] = True
-        row['qr_valid_week'] = current_week
-        row['qr_updated_at'] = now_sa_naive()
-    row['qr_valid_until'] = valid_until
+        row['qr_updated_at'] = now
+        row['qr_expires_at'] = expires_at
+    row['qr_valid_until'] = expires_at
     return row
+
+
+def _consume_office_code(db: Session, area_id: int, used_token: str) -> datetime:
+    """Atomically replace a successfully used code and return its new expiry."""
+    now = now_sa_naive()
+    expires_at = _office_code_expiry(now)
+    replacement = _generate_office_code(db, exclude_area_id=area_id, avoid_token=used_token)
+    result = db.execute(text("""
+        UPDATE areas
+        SET qr_token = :replacement,
+            qr_updated_at = :now,
+            qr_expires_at = :expires_at,
+            qr_last_used_at = :now,
+            updated_at = :now
+        WHERE id = :area_id
+          AND qr_token = :used_token
+          AND COALESCE(qr_enabled, TRUE) = TRUE
+          AND qr_expires_at > :now
+    """), {
+        'replacement': replacement,
+        'now': now,
+        'expires_at': expires_at,
+        'area_id': area_id,
+        'used_token': used_token,
+    })
+    if result.rowcount != 1:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail='This office code was already used or expired. Call your manager or franchise user for a new code.',
+        )
+    return expires_at
 
 
 def _validate_office_qr_for_user(db: Session, user_id: int, qr_value: str | None):
@@ -361,7 +397,7 @@ def _validate_office_qr_for_user(db: Session, user_id: int, qr_value: str | None
     if area.get('qr_enabled') is False:
         raise HTTPException(status_code=400, detail='This office attendance code is disabled')
     if token != str(area.get('qr_token') or ''):
-        raise HTTPException(status_code=400, detail='Invalid or expired four-digit code for your assigned office')
+        raise HTTPException(status_code=400, detail='This office code is invalid, expired or already used. Call your manager or franchise user for a new code.')
     return area, token
 
 
@@ -718,7 +754,7 @@ def _validate_rules(db: Session, user: User, payload: AttendanceActionRequest, i
     if payload.work_location_type == 'on_road' and not payload.employee_note:
         raise HTTPException(status_code=400, detail='Employee note is required when signing on the road')
     if (payload.work_location_type or 'office') == 'office' and not payload.qr_value:
-        raise HTTPException(status_code=400, detail='The four-digit office code is required for office attendance')
+        raise HTTPException(status_code=400, detail='Call your manager or franchise user for a single-use office code before recording office attendance')
 
 
 def _payload_accuracy(payload: AttendanceActionRequest):
@@ -1751,10 +1787,13 @@ def list_office_qr_codes(
             'qr_enabled': row.get('qr_enabled') is not False,
             'is_archived': bool(row.get('is_archived')),
             'archived_at': row.get('archived_at').isoformat() if row.get('archived_at') else None,
-            'qr_payload': _qr_payload(row['qr_token']),
-            'scan_url': _qr_scan_url(row['qr_token']),
-            'qr_valid_week': row.get('qr_valid_week'),
+            'qr_payload': _qr_payload(row['qr_token']) if roles.intersection({'FranchiseUser', 'ManagerUser'}) else None,
+            'scan_url': _qr_scan_url(row['qr_token']) if roles.intersection({'FranchiseUser', 'ManagerUser'}) else None,
+            'qr_valid_week': None,
             'qr_valid_until': row.get('qr_valid_until').isoformat() if row.get('qr_valid_until') else None,
+            'code_single_use': True,
+            'code_valid_minutes': 20,
+            'can_issue_code': bool(roles.intersection({'FranchiseUser', 'ManagerUser'})),
             'franchise_user_id': row.get('franchise_user_id'),
             'assigned_user_count': int(raw.get('assigned_user_count') or 0),
         })
@@ -1782,8 +1821,8 @@ def validate_office_qr(payload: OfficeQrValidateRequest, current_user: User = De
 @router.get('/office-qr/{area_id}/pdf')
 def print_office_qr_pdf(area_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     roles = set(_get_role_names(db, current_user.id))
-    if not roles.intersection({'SuperUser', 'FranchiseUser', 'ManagerUser'}):
-        raise HTTPException(status_code=403, detail='Only SuperUser, Franchise or Manager users can print office QR codes')
+    if not roles.intersection({'FranchiseUser', 'ManagerUser'}):
+        raise HTTPException(status_code=403, detail='Only a franchise user or manager can access an office attendance code')
     area = _office_qr_row(db, area_id)
     _assert_office_area_access(db, current_user, area)
     try:
@@ -1834,11 +1873,11 @@ def print_office_qr_pdf(area_id: int, current_user: User = Depends(get_current_u
     qr_panel = Table([[drawing]], colWidths=[104*mm], rowHeights=[104*mm])
     qr_panel.setStyle(TableStyle([('ALIGN',(0,0),(-1,-1),'CENTER'),('VALIGN',(0,0),(-1,-1),'MIDDLE'),('BOX',(0,0),(-1,-1),2,brand),('BACKGROUND',(0,0),(-1,-1),colors.white),('LEFTPADDING',(0,0),(-1,-1),5*mm),('RIGHTPADDING',(0,0),(-1,-1),5*mm),('TOPPADDING',(0,0),(-1,-1),5*mm),('BOTTOMPADDING',(0,0),(-1,-1),5*mm)]))
     validity = area.get('qr_valid_until')
-    validity_text = format_sa_datetime(validity) if validity else 'the next weekly rotation'
+    validity_text = format_sa_datetime(validity) if validity else '20 minutes after issue'
     footer = Table([
         [Paragraph(f'<b>ENTER CODE {office_code} OR SCAN TO SIGN IN OR SIGN OUT</b>', instruction_style)],
         [Paragraph('Use your registered staff login. The code works only for staff assigned to this office and physically inside its configured GPS radius.', center_style)],
-        [Paragraph(f'This code is valid until {validity_text}. A new code is generated automatically each week.', center_style)],
+        [Paragraph(f'This single-use code is valid until {validity_text}. It is replaced immediately after use or after 20 minutes.', center_style)],
         [Paragraph('GPS location, signature and automatic photo evidence are required to complete attendance.', center_style)],
     ], colWidths=[180*mm])
     footer.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2ecff')),('BOX',(0,0),(-1,-1),1,colors.HexColor('#ded2f8')),('ALIGN',(0,0),(-1,-1),'CENTER'),('VALIGN',(0,0),(-1,-1),'MIDDLE'),('TOPPADDING',(0,0),(-1,-1),2.5*mm),('BOTTOMPADDING',(0,0),(-1,-1),2.5*mm),('LEFTPADDING',(0,0),(-1,-1),5*mm),('RIGHTPADDING',(0,0),(-1,-1),5*mm)]))
@@ -1851,20 +1890,23 @@ def print_office_qr_pdf(area_id: int, current_user: User = Depends(get_current_u
 @router.post('/office-qr/offices/{area_id}/regenerate')
 def regenerate_office_qr(area_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     area = _office_qr_row(db, area_id)
-    _assert_office_area_access(db, current_user, area, write=True)
-    new_token = _generate_office_code(db, exclude_area_id=area_id)
+    roles = set(_get_role_names(db, current_user.id))
+    if not roles.intersection({'FranchiseUser', 'ManagerUser'}):
+        raise HTTPException(status_code=403, detail='Only a franchise user or manager can issue an office attendance code')
+    _assert_office_area_access(db, current_user, area, write=False)
+    new_token = _generate_office_code(db, exclude_area_id=area_id, avoid_token=str(area.get('qr_token') or ''))
     now = now_sa_naive()
-    valid_week, valid_until = _office_code_week(now)
+    valid_until = _office_code_expiry(now)
     db.execute(text("""
         UPDATE areas
         SET qr_token = :token, qr_enabled = TRUE, qr_updated_at = :now,
-            qr_valid_week = :valid_week, updated_at = :now
+            qr_expires_at = :expires_at, updated_at = :now
         WHERE id = :area_id
-    """), {'token': new_token, 'now': now, 'valid_week': valid_week, 'area_id': area_id})
+    """), {'token': new_token, 'now': now, 'expires_at': valid_until, 'area_id': area_id})
     db.commit()
     updated = _office_qr_row(db, area_id)
     return {
-        'message': 'A new four-digit office code was generated. The previous code is now invalid.',
+        'message': 'A new single-use office code was generated. The previous code is now invalid.',
         'office': updated,
         'valid_until': valid_until.isoformat(),
     }
@@ -2091,6 +2133,8 @@ def sign_in(payload: AttendanceActionRequest, current_user: User = Depends(get_c
     photo, photo_mime, photo_filename = _photo_data_url_to_image(payload.photo_value, 'sign_in', current_user.id)
     event = AttendanceEvent(user_id=current_user.id, action='sign_in', latitude=str(payload.latitude) if payload.latitude is not None else None, longitude=str(payload.longitude) if payload.longitude is not None else None, accuracy_meters=str(accuracy) if accuracy is not None else None, device_info=payload.device_info, signature_value=payload.signature_value, signature_image=signature_image, signature_image_mime=signature_mime, signature_image_filename=signature_filename, attendance_photo=photo, attendance_photo_mime=photo_mime, attendance_photo_filename=photo_filename, photo_status='captured', source='mobile_qr' if qr_area else 'mobile_gps', qr_area_id=(int(qr_area['id']) if qr_area else None), qr_office_name=(qr_area.get('name') if qr_area else None), qr_token_hash=_token_hash(qr_token), distance_from_site_m=distance, gps_status=gps_status, is_late=is_late, late_minutes=late_minutes, missing_sign_out=False, attendance_status=attendance_status, approval_status=approval_status, work_location_type=work_location_type, employee_note=payload.employee_note, signature_required=True, signature_status=signature_status)
     db.add(event)
+    if qr_area and qr_token:
+        _consume_office_code(db, int(qr_area['id']), qr_token)
     db.commit()
     db.refresh(event)
     _notify_franchise_attendance_event(db, event, 'sign in')
@@ -2133,6 +2177,8 @@ def sign_out(payload: AttendanceActionRequest, current_user: User = Depends(get_
     photo, photo_mime, photo_filename = _photo_data_url_to_image(payload.photo_value, 'sign_out', current_user.id)
     event = AttendanceEvent(user_id=current_user.id, action='sign_out', latitude=str(payload.latitude) if payload.latitude is not None else None, longitude=str(payload.longitude) if payload.longitude is not None else None, accuracy_meters=str(accuracy) if accuracy is not None else None, device_info=payload.device_info, signature_value=payload.signature_value, signature_image=signature_image, signature_image_mime=signature_mime, signature_image_filename=signature_filename, attendance_photo=photo, attendance_photo_mime=photo_mime, attendance_photo_filename=photo_filename, photo_status='captured', source='mobile_qr' if qr_area else 'mobile_gps', qr_area_id=(int(qr_area['id']) if qr_area else None), qr_office_name=(qr_area.get('name') if qr_area else None), qr_token_hash=_token_hash(qr_token), distance_from_site_m=distance, gps_status=gps_status, left_early=left_early, early_leave_minutes=early_minutes, missing_sign_out=False, attendance_status=attendance_status, approval_status=approval_status, work_location_type=work_location_type, employee_note=payload.employee_note, signature_required=True, signature_status=signature_status)
     db.add(event)
+    if qr_area and qr_token:
+        _consume_office_code(db, int(qr_area['id']), qr_token)
     db.commit()
     db.refresh(event)
     _notify_franchise_attendance_event(db, event, 'sign out')

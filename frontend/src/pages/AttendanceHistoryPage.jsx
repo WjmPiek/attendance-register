@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import Card from '../components/Card'
 import { exportAttendancePdf, exportAttendancePdfBatch, getAttendanceEventPhoto, getAttendanceFranchises, getAttendanceHistory, getAttendanceSessions, getAttendanceVisibleUsers } from '../api/client'
+import { formatJohannesburgDateTime } from '../utils/dateTime'
 
 function statusClass(value) {
   if (value === 'no_attendance') return 'badge neutral'
@@ -32,8 +33,7 @@ function attendanceStatusLabel(value) {
 }
 
 function formatTime(value) {
-  if (!value) return 'n/a'
-  return new Date(value).toLocaleString('en-ZA', { timeZone: 'Africa/Johannesburg', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+  return formatJohannesburgDateTime(value)
 }
 
 function formatDuration(minutes) {

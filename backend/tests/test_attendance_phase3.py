@@ -138,13 +138,19 @@ def test_open_session_is_returned_before_sign_out(monkeypatch):
     assert sessions[0]["sign_out_event_id"] is None
 
 
-def test_office_code_week_rotates_on_monday():
-    sunday_key, sunday_expiry = attendance._office_code_week(datetime(2026, 7, 26, 12, 0))
-    monday_key, monday_expiry = attendance._office_code_week(datetime(2026, 7, 27, 12, 0))
-    assert sunday_key == "2026-W30"
-    assert sunday_expiry == datetime(2026, 7, 27, 0, 0)
-    assert monday_key == "2026-W31"
-    assert monday_expiry == datetime(2026, 8, 3, 0, 0)
+def test_office_code_expires_after_twenty_minutes():
+    issued_at = datetime(2026, 7, 27, 12, 0)
+    assert attendance._office_code_expiry(issued_at) == datetime(2026, 7, 27, 12, 20)
+
+
+def test_successful_attendance_consumes_office_code():
+    sign_in_source = inspect.getsource(attendance.sign_in)
+    sign_out_source = inspect.getsource(attendance.sign_out)
+    consume_source = inspect.getsource(attendance._consume_office_code)
+    assert "_consume_office_code" in sign_in_source
+    assert "_consume_office_code" in sign_out_source
+    assert "qr_last_used_at" in consume_source
+    assert "qr_expires_at > :now" in consume_source
 
 
 def test_gps_distance_is_bound_to_entered_code_office():

@@ -1,6 +1,8 @@
 # Phase 3 — Attendance
 
-- [x] Every office has a four-digit attendance code that rotates automatically each ISO week
+- [x] Every office has a controlled four-digit attendance code visible only to managers and franchise users
+- [x] Each code is single-use and replaced immediately after successful sign-in or sign-out
+- [x] Every unused code expires and rotates after 20 minutes
 - [x] Office code is required for office sign-in and sign-out
 - [x] Printed office PDF shows both the four-digit code and QR
 - [x] GPS coordinates and accuracy are required for every action
@@ -27,8 +29,9 @@
 - [x] Admin, manager and employee mobile login trims accidental spaces and supports password autofill
 - [x] Saved Head Office GPS collapses until Edit GPS and radius is selected
 - [x] Phone GPS accuracy is labelled separately from office distance
-- [x] QR scan captures the front-camera photo before advancing to signature
-- [x] Four-digit code entry is hidden unless manual fallback is required
+- [x] Employees see no active office code and must request it from a manager or franchise user
+- [x] Code entry stays hidden until the employee selects “I have a code”
+- [x] A verified single-use code advances to front-camera photo and signature
 - [x] Manager attendance approvals are available from the linked employee's My Staff work hub
 - [x] Work hub and Edit controls are displayed beside each linked employee
 - [x] Linked employee attendance, leave, commission and notifications are combined in My Staff
@@ -36,4 +39,4 @@
 - [x] Office attendance PDF uses a larger logo and remains one portrait A4 page
 - [x] Office Attendance Codes is directly accessible from the HR Staff sub-tabs
 - [x] Office code PDF is constrained to one portrait A4 page
-- [ ] Run migration 012 and complete production mobile/Render verification
+- [ ] Run migration 013 and complete production mobile/Render verification

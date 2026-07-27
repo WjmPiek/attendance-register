@@ -10,10 +10,13 @@
 - Session date filters retain open sessions that started before the selected
   date window.
 - Attendance exports default to users who have records in the current filters.
-- Franchise office management displays the code and prints it on the office PDF.
+- Only a manager or franchise user can view and issue an office code.
+- The employee attendance page never displays the active code.
+- A code works once, is replaced after successful attendance, and expires
+  automatically after 20 minutes if unused.
 - A saved GPS marker stays collapsed until **Edit GPS and radius** is selected.
-- QR scanning advances directly to the front-camera photo and then signature.
-- Manual four-digit code entry appears only when the user cannot scan.
+- Employees select **I have a code** only after receiving it from their manager
+  or franchise user; successful validation advances to photo and signature.
 - Manager attendance and leave approvals now live beside each linked employee
   in **My Staff**, together with commission history and notifications.
 
@@ -31,7 +34,7 @@ npm run build
 cd ..
 
 git add .
-git commit -m "phase3 staff hub and scan first attendance"
+git commit -m "phase3 single use 20 minute office codes"
 git push origin main
 ```
 
@@ -43,21 +46,20 @@ python -m alembic upgrade head
 python -m alembic current
 ```
 
-Expected migration head after the weekly-code/GPS correction:
+Expected migration head:
 
 ```text
-012_weekly_office_codes (head)
+013_single_use_office_codes (head)
 ```
 
 ## Important production note
 
-Migration 012 forces a new weekly code and records its ISO week. Previously
-printed sheets must be replaced. In HR Staff, open **Office Attendance Codes**,
-confirm the physical office marker, saved coordinates, preview distance and
-radius, then download/print the new one-page portrait A4 code sheet.
-
-Codes rotate on the first list, print, validation or attendance request in each
-new ISO week. The old code stops working.
+Migration 013 expires every previous reusable/weekly code. Do not leave a
+printed attendance code at the office. In **Office Attendance Codes**, the
+manager or franchise user selects **Issue new code** when an employee calls.
+The issued code is valid for one successful action and no longer than 20
+minutes. After use, the manager refreshes the screen or selects **Issue new
+code** for the next employee/action.
 
 Mobile login now compares usernames and email addresses case-insensitively and
 disables phone keyboard auto-capitalization. A `401 Invalid credentials` still
@@ -70,21 +72,24 @@ menu and test the exact username shown in HR Staff.
 2. Confirm that office has latitude, longitude, and a radius.
 3. Confirm that the GPS map collapses after save and reopens only with
    **Edit GPS and radius**.
-4. Print the new office sheet and confirm the larger logo fits on one A4 page.
-5. Inside the radius, scan the QR and confirm the system captures the front
-   camera photo before showing signature and sign-in/out.
-6. Confirm the manual four-digit field is hidden until **Cannot scan? Enter
-   office code** is selected.
-7. Before signing out, verify that Sessions shows an `open` row and Events
+4. As an employee, confirm the active office code is not displayed.
+5. As the linked manager or franchise user, open **Office Attendance Codes**
+   and select **Issue new code**.
+6. Give the code to the employee and confirm code entry stays hidden until
+   **I have a code** is selected.
+7. Complete attendance and confirm the same code cannot be used a second time.
+8. Issue another code, leave it unused for more than 20 minutes, and confirm it
+   is rejected and replaced.
+9. Before signing out, verify that Sessions shows an `open` row and Events
    shows the `sign_in` event.
-8. Export Sessions and Events and confirm the sign-in appears.
-9. Outside the radius, verify that sign-in/out succeeds, preserves the
+10. Export Sessions and Events and confirm the sign-in appears.
+11. Outside the radius, verify that sign-in/out succeeds, preserves the
    signature and coordinates, and Events/Sessions shows **Not in office GPS
    range** with a pending approval.
-10. Return inside the radius and sign out; verify the session becomes complete
+12. Return inside the radius and sign out; verify the session becomes complete
     while retaining the outside-range exception on the session.
-11. As a manager, open **My Staff**, select a linked employee, then verify
+13. As a manager, open **My Staff**, select a linked employee, then verify
     attendance approval/rejection, leave approval/decline, commissions and
     employee notifications are visible in that employee's work hub.
-12. Log in to the same deployment from a phone using an admin, manager and
+14. Log in to the same deployment from a phone using an admin, manager and
     employee account.

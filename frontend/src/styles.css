@@ -2067,9 +2067,22 @@ input[type="date"]::-webkit-date-and-time-value,
 /* Unified manager/franchise employee work hub */
 .employee-row-actions { display:flex; flex-wrap:wrap; gap:7px; margin-bottom:7px; }
 .employee-row-actions button { white-space:nowrap; }
-.staff-work-hub { display:grid; gap:20px; }
-.staff-work-summary { margin:0; }
+.staff-work-hub { display:grid; gap:20px; width:100%; max-width:none; min-width:0; }
+.staff-work-hub > .detail-header { margin-bottom:0; }
+.staff-work-hub > .detail-header > div:first-child { min-width:0; }
+.staff-work-hub > .detail-header .button-row { justify-content:flex-end; margin:0; }
+.staff-work-summary { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:14px; margin:0; }
+.staff-work-summary .stat-card { min-width:0; }
 .staff-work-section { display:grid; gap:12px; padding:18px; border:1px solid rgba(108,76,166,.14); border-radius:18px; background:rgba(255,255,255,.62); }
+.staff-work-section .table-wrap { min-width:0; }
+.staff-attendance-table { width:100%; min-width:760px; table-layout:fixed; }
+.staff-attendance-table col:nth-child(1) { width:16%; }
+.staff-attendance-table col:nth-child(2) { width:25%; }
+.staff-attendance-table col:nth-child(3) { width:41%; }
+.staff-attendance-table col:nth-child(4) { width:18%; }
+.staff-attendance-table th,
+.staff-attendance-table td { overflow-wrap:anywhere; }
+.staff-commission-table { width:100%; }
 .employee-approval-list { display:grid; gap:10px; }
 .employee-approval-row { display:flex; align-items:center; justify-content:space-between; gap:18px; padding:14px; border:1px solid rgba(108,76,166,.14); border-radius:14px; background:#fff; }
 .employee-approval-row > div:first-child { display:grid; gap:4px; }
@@ -2078,8 +2091,14 @@ input[type="date"]::-webkit-date-and-time-value,
 .employee-notification-row span,.employee-notification-row small { color:var(--muted, #66736f); }
 .attendance-step { display:grid; gap:10px; margin-top:16px; }
 @media (max-width:760px) {
+  .staff-work-hub > .detail-header { align-items:stretch; flex-direction:column; }
+  .staff-work-hub > .detail-header .button-row { justify-content:flex-start; }
+  .staff-work-summary { grid-template-columns:repeat(2, minmax(0, 1fr)); }
   .employee-approval-row { align-items:flex-start; flex-direction:column; }
   .employee-approval-row .button-row { width:100%; }
   .employee-approval-row .button-row button { flex:1; }
   .staff-work-section { padding:13px; }
+}
+@media (max-width:440px) {
+  .staff-work-summary { grid-template-columns:1fr; }
 }

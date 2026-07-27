@@ -4,11 +4,11 @@ import {
   resetStaffPassword,
   uploadIrp5Document,
   getOfficeQrCodes,
-  downloadOfficeQrPdf,
   uploadStaffIdPhoto,
   downloadStaffIdCards,
   updateOfficeLocation,
   updateOfficeDetails,
+  regenerateOfficeQr,
   deleteOffice,
   getFranchiseUsers
 } from '../api/client'
@@ -301,6 +301,21 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
   useEffect(() => { load() }, [selectedFranchiseId])
 
   useEffect(() => {
+    if (activeSubTab !== 'qr') return undefined
+    const refreshCodes = async () => {
+      try {
+        const codes = await getOfficeQrCodes(isSuperUser ? selectedFranchiseId : '')
+        setOfficeQrs(Array.isArray(codes) ? codes : [])
+      } catch {
+        // The normal page error handling remains available through load().
+      }
+    }
+    refreshCodes()
+    const timer = window.setInterval(refreshCodes, 30000)
+    return () => window.clearInterval(timer)
+  }, [activeSubTab, isSuperUser, selectedFranchiseId])
+
+  useEffect(() => {
     if (activeSubTab === 'add' && !editing && !staff.office_address_assigned && activeOfficeAddresses.length) {
       setStaff((current) => ({ ...current, office_address_assigned: activeOfficeAddresses[0].address }))
     }
@@ -585,22 +600,16 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
     }
   }
  
-  const printOfficeQr = async (office) => {
+  const issueOfficeCode = async (office) => {
     setMsg('')
     setErr('')
     try {
-      const blob = await downloadOfficeQrPdf(office.id)
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `office_qr_${office.name || office.id}.pdf`
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-      window.URL.revokeObjectURL(url)
-      setMsg('Office QR PDF downloaded. Print and place it at the office attendance point.')
+      const result = await regenerateOfficeQr(office.id)
+      const codes = await getOfficeQrCodes(isSuperUser ? selectedFranchiseId : '')
+      setOfficeQrs(Array.isArray(codes) ? codes : [])
+      setMsg(result.message || 'A new single-use office code was issued.')
     } catch (error) {
-      setErr(error.message || 'Failed to download office QR PDF')
+      setErr(error.message || 'Failed to issue a new office code')
     }
   }
 
@@ -623,7 +632,7 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
       })
       setEditingOffice(null)
       setMsg('Office information updated.')
-      await loadOfficeQrs()
+      await load()
     } catch (err) {
       setError(err.message)
     }
@@ -635,7 +644,7 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
       setError('')
       await deleteOffice(office.id)
       setMsg('Office deleted.')
-      await loadOfficeQrs()
+      await load()
     } catch (err) {
       setError(err.message)
     }
@@ -1052,7 +1061,7 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
       {activeSubTab === 'qr' ? (
         <section className="form-card staff-list-card">
           <h2>Office Attendance Codes</h2>
-          <p className="muted">Each office has a reusable four-digit code and printable QR. The code works only for staff assigned to that address while their GPS is inside the configured radius.</p>
+          <p className="muted">Only managers and franchise users can view or issue these codes. Give the code directly to the employee who calls you. It works once and is replaced immediately after use; unused codes expire after 20 minutes.</p>
           <div className="table-wrap">
             <table>
               <thead><tr><th>Office</th><th>Four-digit code</th><th>Linked business / assigned address</th><th>Assigned staff</th><th>Radius</th><th>Action</th></tr></thead>
@@ -1060,18 +1069,16 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
                 {officeQrs.map((office) => <tr key={office.id}>
                   <td>{(office.name || `Office #${office.id}`).split(' [', 1)[0]}</td>
                   <td>
-                    <strong>{office.qr_payload || '—'}</strong>
+                    <strong>{office.can_issue_code ? (office.qr_payload || 'Generating…') : 'Hidden'}</strong>
                     <div className="muted small">
-                      Changes weekly · valid until {office.qr_valid_until ? new Date(office.qr_valid_until).toLocaleDateString('en-ZA') : 'next rotation'}
+                      Single use · expires {office.qr_valid_until ? new Date(office.qr_valid_until).toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' }) : 'within 20 minutes'}
                     </div>
                   </td>
                   <td>{office.address || '—'}</td>
                   <td>{office.assigned_user_count || 0}</td>
                   <td>{office.allowed_radius_m || 100} m</td>
                   <td>
-                    <button type="button" onClick={() => printOfficeQr(office)}>
-                      Download / Print Code
-                    </button>
+                    {office.can_issue_code ? <button type="button" onClick={() => issueOfficeCode(office)}>Issue new code</button> : null}
 
                     <button type="button" onClick={() => {
                       setSelectedOffice(office)

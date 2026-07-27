@@ -1,21 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import Card from '../components/Card'
 import { getAttendanceStatus, submitAttendance, validateOfficeQr } from '../api/client'
 import SignaturePad from '../components/SignaturePad'
 import { getDistance } from '../utils/distance'
-
-function officeCodeFromScan(rawValue) {
-  const raw = String(rawValue || '').trim()
-  if (/^\d{4}$/.test(raw)) return raw
-  try {
-    const url = new URL(raw)
-    const linkedCode = url.searchParams.get('office_qr')
-    return /^\d{4}$/.test(linkedCode || '') ? linkedCode : ''
-  } catch {
-    const match = raw.match(/(?:office_qr=)?(\d{4})(?:\D|$)/)
-    return match?.[1] || ''
-  }
-}
 
 export default function MobileAttendancePage({ me, onDone }) {
   const [status, setStatus] = useState(null)
@@ -25,15 +12,11 @@ export default function MobileAttendancePage({ me, onDone }) {
   const [workLocationType, setWorkLocationType] = useState('office')
   const [employeeNote, setEmployeeNote] = useState('')
   const [signatureValue, setSignatureValue] = useState('')
-  const [qrValue, setQrValue] = useState(() => new URLSearchParams(window.location.search).get('office_qr') || '')
+  const [qrValue, setQrValue] = useState('')
   const [qrOffice, setQrOffice] = useState(null)
   const [manualCodeEntry, setManualCodeEntry] = useState(false)
   const [evidenceReady, setEvidenceReady] = useState(false)
-  const [scanning, setScanning] = useState(false)
-  const [cameraOpen, setCameraOpen] = useState(false)
-  const [cameraStream, setCameraStream] = useState(null)
   const [photoPreview, setPhotoPreview] = useState('')
-  const videoRef = useRef(null)
 
   const loadStatus = async () => {
     try {
@@ -47,16 +30,6 @@ export default function MobileAttendancePage({ me, onDone }) {
 
   useEffect(() => {
     loadStatus()
-    const linkedQr = new URLSearchParams(window.location.search).get('office_qr')
-    if (linkedQr) {
-      validateOfficeQr(linkedQr)
-        .then((office) => {
-          setQrOffice(office)
-          setQrValue(office.qr_payload || linkedQr)
-          setMessage('Office QR verified. Take your attendance photo to continue.')
-        })
-        .catch((err) => setError(err.message))
-    }
   }, [])
 
   const getLocation = () => new Promise((resolve, reject) => {
@@ -89,7 +62,6 @@ export default function MobileAttendancePage({ me, onDone }) {
     if (!navigator.mediaDevices?.getUserMedia) {
       throw new Error('Camera access is required to capture your attendance photo.')
     }
-    stopCamera()
     let stream
     try {
       stream = await navigator.mediaDevices.getUserMedia({
@@ -132,19 +104,6 @@ export default function MobileAttendancePage({ me, onDone }) {
     }
   }
 
-
-  const stopCamera = () => {
-    setScanning(false)
-    setCameraOpen(false)
-    setCameraStream((current) => {
-      if (current) current.getTracks().forEach((track) => track.stop())
-      return null
-    })
-    if (videoRef.current) videoRef.current.srcObject = null
-  }
-
-  useEffect(() => () => stopCamera(), [])
-
   const validateQr = async (value) => {
     if (!/^\d{4}$/.test(value?.trim() || '')) throw new Error('Enter the four-digit office code.')
     const office = await validateOfficeQr(value.trim())
@@ -179,61 +138,10 @@ export default function MobileAttendancePage({ me, onDone }) {
       await prepareEvidence()
     } catch (err) {
       setError(err.message)
-      setLoading(false)
-    }
-  }
-
-  const startQrScan = async () => {
-    setError('')
-    setMessage('')
-    if (workLocationType !== 'office') return
-    if (!navigator.mediaDevices?.getUserMedia) {
+      setQrValue('')
+      setQrOffice(null)
       setManualCodeEntry(true)
-      setError('Camera scanning is not available in this browser. Enter the office code to continue.')
-      return
-    }
-    try {
-      setCameraOpen(true)
-      setScanning(true)
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
-        audio: false,
-      })
-      setCameraStream(stream)
-      const video = videoRef.current
-      if (!video) throw new Error('Camera preview is not ready. Please try again.')
-      video.srcObject = stream
-      video.setAttribute('playsinline', 'true')
-      video.muted = true
-      await video.play()
-
-      if (!('BarcodeDetector' in window)) {
-        setScanning(false)
-        setMessage('Camera is open. This browser cannot auto-read QR codes, so scan with a supported mobile browser or type the QR code below.')
-        return
-      }
-
-      const detector = new window.BarcodeDetector({ formats: ['qr_code'] })
-      const deadline = Date.now() + 30000
-      while (Date.now() < deadline) {
-        const codes = await detector.detect(video).catch(() => [])
-        if (codes.length) {
-          const raw = codes[0].rawValue || ''
-          const scannedCode = officeCodeFromScan(raw)
-          if (!scannedCode) throw new Error('This QR code is not a valid office attendance code.')
-          await validateQr(scannedCode)
-          stopCamera()
-          await new Promise((resolve) => window.setTimeout(resolve, 150))
-          await prepareEvidence()
-          return
-        }
-        await new Promise((resolve) => setTimeout(resolve, 250))
-      }
-      setScanning(false)
-      setError('Camera opened but no QR code was detected. Hold the phone closer to the office QR code or enter it manually.')
-    } catch (err) {
-      stopCamera()
-      setError(err.message || 'Camera permission is required to scan the office QR code.')
+      setLoading(false)
     }
   }
 
@@ -283,6 +191,11 @@ export default function MobileAttendancePage({ me, onDone }) {
     } catch (err) {
       setMessage('')
       setError(err.message)
+      if (workLocationType === 'office' && /code|expired|already used/i.test(err.message || '')) {
+        setQrValue('')
+        setQrOffice(null)
+        setManualCodeEntry(true)
+      }
     } finally {
       setLoading(false)
     }
@@ -308,7 +221,7 @@ export default function MobileAttendancePage({ me, onDone }) {
 
   return (
     <Card title="Mobile Employee Attendance">
-      <p className="muted">Follow the steps below. Your office QR identifies the location; the code is shown only when manual entry is needed.</p>
+      <p className="muted">The active office code is never displayed here. Ask your manager or franchise user for a single-use code when you are ready to sign in or out.</p>
       <div className="status-panel">
         <div><strong>User:</strong> {me.full_name}</div>
         <div><strong>Status:</strong> {status?.current_status || 'loading'}</div>
@@ -340,19 +253,12 @@ export default function MobileAttendancePage({ me, onDone }) {
       <div className="qr-scan-card">
         <div className="detail-header mobile-qr-header">
           <div>
-            <h3>Step 1 — Confirm work location</h3>
-            <p className="muted small">{workLocationType === 'office' ? 'Scan the office QR. GPS still checks that you are inside the office radius.' : 'For road work, continue to the attendance photo.'}</p>
+            <h3>Step 1 — Get an attendance code</h3>
+            <p className="muted small">{workLocationType === 'office' ? 'Call your manager or franchise user. Only they can view and issue the current code. It works once and expires after 20 minutes.' : 'For road work, continue to the attendance photo.'}</p>
           </div>
-          {workLocationType === 'office' ? <button type="button" onClick={startQrScan} disabled={scanning || loading}>
-            {scanning ? 'Scanning...' : 'Scan office QR'}
-          </button> : <button type="button" onClick={prepareEvidence} disabled={loading}>{loading ? 'Opening camera...' : 'Take attendance photo'}</button>}
+          {workLocationType === 'office' && !manualCodeEntry && !qrOffice ? <button type="button" onClick={() => setManualCodeEntry(true)} disabled={loading}>I have a code</button> : null}
+          {workLocationType === 'on_road' ? <button type="button" onClick={prepareEvidence} disabled={loading}>{loading ? 'Opening camera...' : 'Take attendance photo'}</button> : null}
         </div>
-        <div className={`qr-camera-panel ${cameraOpen ? 'open' : ''}`}>
-          <video ref={videoRef} className="qr-camera-preview" playsInline muted />
-          <div className="qr-camera-frame" aria-hidden="true" />
-          {cameraOpen ? <button type="button" className="secondary-action" onClick={stopCamera}>Close camera</button> : null}
-        </div>
-        {workLocationType === 'office' && !manualCodeEntry && !qrOffice ? <button type="button" className="link-button" onClick={() => setManualCodeEntry(true)}>Cannot scan? Enter office code</button> : null}
         {workLocationType === 'office' && manualCodeEntry && !qrOffice ? (
           <div className="form-grid one-column">
             <label>
@@ -364,7 +270,7 @@ export default function MobileAttendancePage({ me, onDone }) {
                 pattern="[0-9]{4}"
                 maxLength="4"
                 autoComplete="one-time-code"
-                placeholder="Enter the code displayed at this office"
+                placeholder="Enter the code given by your manager"
               />
             </label>
             <button type="button" className="secondary-action" onClick={verifyManualCode} disabled={loading || qrValue.length !== 4}>{loading ? 'Checking...' : 'Verify and take photo'}</button>
@@ -377,14 +283,14 @@ export default function MobileAttendancePage({ me, onDone }) {
             {!evidenceReady ? <button type="button" onClick={prepareEvidence} disabled={loading}>{loading ? 'Opening camera...' : 'Take attendance photo'}</button> : null}
           </div>
         ) : null}
-        {workLocationType === 'on_road' ? <p className="muted small">QR scan is not required for on-road work, but the note is required and goes for approval.</p> : null}
+        {workLocationType === 'on_road' ? <p className="muted small">An office code is not required for on-road work, but the note is required and goes for approval.</p> : null}
       </div>
 
       {evidenceReady ? <div className="attendance-step"><h3>Step 3 — Sign</h3><SignaturePad onChange={setSignatureValue} /></div> : null}
 
       <div className="attendance-evidence-note">
         <strong>Step 2 — Attendance photo</strong>
-        <p className="muted small">After the QR is accepted, the front camera captures the attendance photo and moves you to the signature step.</p>
+        <p className="muted small">After the single-use code is accepted, the front camera captures the attendance photo and moves you to the signature step.</p>
         <button type="button" className="glass-button" onClick={checkDevicePermissions} disabled={loading}>Test GPS & camera permissions</button>
         <p className="muted small">If permission was previously denied, use the lock/settings icon beside the website address to allow Location and Camera. Also enable Location Services and camera access in the device’s privacy settings, then reload this page.</p>
         {photoPreview ? <img src={photoPreview} alt="Latest automatic attendance capture" className="attendance-photo-preview" /> : null}
