@@ -37,18 +37,26 @@ python -m alembic upgrade head
 python -m alembic current
 ```
 
-Expected migration head:
+Expected migration head after the weekly-code/GPS correction:
 
 ```text
-011_attendance_office_code (head)
+012_weekly_office_codes (head)
 ```
 
 ## Important production note
 
-Migration 011 converts existing office tokens to four-digit codes. Previously
-printed QR sheets must be replaced. In HR Staff, open **Office Attendance
-Codes**, confirm the office GPS point and radius, and download/print the new
-office code sheet.
+Migration 012 forces a new weekly code and records its ISO week. Previously
+printed sheets must be replaced. In HR Staff, open **Office Attendance Codes**,
+confirm the physical office marker, saved coordinates, preview distance and
+radius, then download/print the new one-page portrait A4 code sheet.
+
+Codes rotate on the first list, print, validation or attendance request in each
+new ISO week. The old code stops working.
+
+Mobile login now compares usernames and email addresses case-insensitively and
+disables phone keyboard auto-capitalization. A `401 Invalid credentials` still
+means the password does not match; reset it from the staff member's HR action
+menu and test the exact username shown in HR Staff.
 
 ## Production verification
 

@@ -47,6 +47,7 @@ export default function OfficeLocationMap({ office, onPick }) {
   const googleRef = useRef(null);
   const [address, setAddress] = useState(office?.address || '');
   const [mapMessage, setMapMessage] = useState('');
+  const [selectedPoint, setSelectedPoint] = useState(null);
   const hasApiKey = Boolean(import.meta.env.VITE_GOOGLE_MAPS_API_KEY);
   const fallbackMapUrl = address ? `https://www.google.com/maps?q=${encodeURIComponent(address)}&output=embed` : '';
   const openMapUrl = address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}` : ''; 
@@ -57,6 +58,7 @@ export default function OfficeLocationMap({ office, onPick }) {
     circleRef.current.setCenter(latLng);
     mapObjectRef.current.setCenter(latLng);
     mapObjectRef.current.setZoom(17);
+    setSelectedPoint({ latitude: latLng.lat(), longitude: latLng.lng() });
     onPick({
       latitude: latLng.lat(),
       longitude: latLng.lng(),
@@ -109,6 +111,7 @@ export default function OfficeLocationMap({ office, onPick }) {
       mapObjectRef.current = map;
       markerRef.current = marker;
       circleRef.current = circle;
+      setSelectedPoint({ latitude: center.lat, longitude: center.lng });
 
       const setLocation = (latLng) => placePoint(latLng);
       map.addListener('click', (e) => setLocation(e.latLng));
@@ -130,6 +133,7 @@ export default function OfficeLocationMap({ office, onPick }) {
         {hasApiKey ? <button type="button" onClick={findAddress}>Find on Google Maps</button> : <a className="glass-button" href={openMapUrl} target="_blank" rel="noreferrer">Open in Google Maps</a>}
       </div>
       {mapMessage ? <p className="muted small">{mapMessage}</p> : null}
+      {selectedPoint ? <p className="muted small">Proposed office GPS: {selectedPoint.latitude.toFixed(6)}, {selectedPoint.longitude.toFixed(6)}</p> : null}
       {hasApiKey ? <div style={{ height: 360, width: '100%', borderRadius: 16, overflow: 'hidden' }} ref={mapRef} /> : (fallbackMapUrl ? <iframe title="Business address map" src={fallbackMapUrl} loading="lazy" referrerPolicy="no-referrer-when-downgrade" style={{ height: 360, width: '100%', border: 0, borderRadius: 16 }} /> : null)}
     </div>
   );

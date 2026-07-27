@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import Card from '../components/Card'
 import { getAttendanceStatus, submitAttendance, validateOfficeQr } from '../api/client'
 import SignaturePad from '../components/SignaturePad'
+import { getDistance } from '../utils/distance'
 
 export default function MobileAttendancePage({ me, onDone }) {
   const [status, setStatus] = useState(null)
@@ -205,7 +206,13 @@ export default function MobileAttendancePage({ me, onDone }) {
         throw new Error('Please enter a road-work reason/note.')
       }
       const location = await getLocation()
-      setMessage('GPS captured. Taking attendance photo...')
+      const officeDistance = qrOffice?.latitude != null && qrOffice?.longitude != null
+        ? getDistance(location.latitude, location.longitude, Number(qrOffice.latitude), Number(qrOffice.longitude))
+        : null
+      const distanceMessage = officeDistance == null
+        ? 'GPS captured.'
+        : `GPS captured: ${officeDistance >= 1000 ? `${(officeDistance / 1000).toFixed(2)} km` : `${Math.round(officeDistance)} m`} from the assigned office point.`
+      setMessage(`${distanceMessage} Taking attendance photo...`)
       const photoValue = await captureAttendancePhoto()
       const payload = {
         ...location,
@@ -305,7 +312,13 @@ export default function MobileAttendancePage({ me, onDone }) {
           />
         </label>
         <button type="button" className="secondary-action" onClick={() => validateQr(qrValue).then(() => setMessage('Office code verified. GPS range will be checked when you sign in or out.')).catch((err) => setError(err.message))} disabled={workLocationType !== 'office'}>Verify office code</button>
-        {qrOffice ? <p className="success">Linked to {qrOffice.office_name || 'office'} · {qrOffice.address || 'No address captured'}</p> : null}
+        {qrOffice ? (
+          <div className="status-panel">
+            <p className="success">Linked to {qrOffice.office_name || 'office'} · {qrOffice.address || 'No address captured'}</p>
+            <p className="muted small">Office GPS: {qrOffice.latitude || 'not configured'}, {qrOffice.longitude || 'not configured'} · Radius: {qrOffice.allowed_radius_m || 100} m</p>
+            <p className="muted small">This code changes weekly{qrOffice.qr_valid_until ? ` and is valid until ${new Date(qrOffice.qr_valid_until).toLocaleDateString('en-ZA')}` : ''}.</p>
+          </div>
+        ) : null}
         {workLocationType === 'on_road' ? <p className="muted small">QR scan is not required for on-road work, but the note is required and goes for approval.</p> : null}
       </div>
 

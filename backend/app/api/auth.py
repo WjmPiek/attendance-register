@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from datetime import datetime, timedelta
 import hashlib, os, secrets
 from pydantic import BaseModel, EmailStr, Field
-from sqlalchemy import or_, text
+from sqlalchemy import func, or_, text
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
@@ -17,8 +17,14 @@ router = APIRouter()
 
 @router.post("/login", response_model=TokenResponse)
 def login(payload: LoginRequest, db: Session = Depends(get_db)):
-    login_value = (payload.email or "").strip()
-    user = db.query(User).filter(or_(User.email == login_value, User.username == login_value)).first()
+    login_value = (payload.email or "").strip().lower()
+    user = db.query(User).filter(
+        User.is_active == True,
+        or_(
+            func.lower(User.email) == login_value,
+            func.lower(User.username) == login_value,
+        ),
+    ).first()
     if not user or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
     token = create_access_token(str(user.id))

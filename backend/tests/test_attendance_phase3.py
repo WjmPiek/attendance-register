@@ -1,5 +1,6 @@
 import base64
 import inspect
+from datetime import datetime
 from types import SimpleNamespace
 
 import pytest
@@ -112,3 +113,24 @@ def test_open_session_is_returned_before_sign_out(monkeypatch):
     assert sessions[0]["status"] == "open"
     assert sessions[0]["sign_in_event_id"] == 17
     assert sessions[0]["sign_out_event_id"] is None
+
+
+def test_office_code_week_rotates_on_monday():
+    sunday_key, sunday_expiry = attendance._office_code_week(datetime(2026, 7, 26, 12, 0))
+    monday_key, monday_expiry = attendance._office_code_week(datetime(2026, 7, 27, 12, 0))
+    assert sunday_key == "2026-W30"
+    assert sunday_expiry == datetime(2026, 7, 27, 0, 0)
+    assert monday_key == "2026-W31"
+    assert monday_expiry == datetime(2026, 8, 3, 0, 0)
+
+
+def test_gps_distance_is_bound_to_entered_code_office():
+    source = inspect.getsource(attendance._validate_gps)
+    assert "office_area_id" in source
+    assert "GPSAllocationPerUser.area_id == office_area_id" in source
+    assert ".order_by(GPSAllocationPerUser.id.desc())" in source
+
+
+def test_haversine_reports_real_world_kilometres():
+    distance_m = attendance.haversine(-26.2041, 28.0473, -26.4290, 28.0473)
+    assert 24_000 < distance_m < 26_000

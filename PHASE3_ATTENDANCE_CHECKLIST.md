@@ -1,6 +1,6 @@
 # Phase 3 — Attendance
 
-- [x] Every office has a reusable four-digit attendance code
+- [x] Every office has a four-digit attendance code that rotates automatically each ISO week
 - [x] Office code is required for office sign-in and sign-out
 - [x] Printed office PDF shows both the four-digit code and QR
 - [x] GPS coordinates and accuracy are required for every action
@@ -8,6 +8,8 @@
 - [x] Front-camera attendance photo is captured automatically
 - [x] GPS allocation and office coordinates are required for office attendance
 - [x] Office radius distance is calculated on the backend
+- [x] Distance is calculated against the exact office represented by the entered code
+- [x] Office GPS setup shows saved coordinates, proposed coordinates, device accuracy, and preview distance
 - [x] Office attendance is rejected outside the assigned office radius
 - [x] Low-accuracy office attendance is rejected until precise GPS is available
 - [x] On-road attendance requires a note and remains available for approval
@@ -20,4 +22,7 @@
 - [x] Date-filtered sessions retain an open sign-in from before the date range
 - [x] Default exports include users with attendance records instead of a blank supervisor account
 - [x] Backend tests, verification audit, migration-head check, and frontend bundle validation
-- [ ] Run migration 011 and complete production mobile/Render verification
+- [x] Manager and employee login accepts username/email case-insensitively on mobile
+- [x] Office Attendance Codes is directly accessible from the HR Staff sub-tabs
+- [x] Office code PDF is constrained to one portrait A4 page
+- [ ] Run migration 012 and complete production mobile/Render verification

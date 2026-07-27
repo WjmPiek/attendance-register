@@ -247,6 +247,8 @@ export default function FranchiseStaffPage({ me }) {
   const [selectedOffice, setSelectedOffice] = useState(null)
   const [editingOffice, setEditingOffice] = useState(null);
   const [pickedLocation, setPickedLocation] = useState(null);
+  const [officeLocationConfirmed, setOfficeLocationConfirmed] = useState(false);
+  const [myLocation, setMyLocation] = useState(null);
   const staffAddressInputRef = React.useRef(null);
   const staffAutocompleteRef = React.useRef(null);
 
@@ -640,6 +642,10 @@ export default function FranchiseStaffPage({ me }) {
 
   const saveOfficeLocation = async () => {
     if (!selectedOffice || !pickedLocation) return;
+    if (!officeLocationConfirmed) {
+      setErr('Confirm the proposed office coordinates before saving.')
+      return
+    }
 
     await updateOfficeLocation(selectedOffice.id, pickedLocation);
     setMsg('Office GPS location saved.');
@@ -647,15 +653,23 @@ export default function FranchiseStaffPage({ me }) {
     setOfficeQrs(qrs);
     setSelectedOffice(null);
     setPickedLocation(null);
+    setOfficeLocationConfirmed(false);
   };
-
-  const [myLocation, setMyLocation] = useState(null);
 
   useEffect(() => {
     if (selectedOffice) {
       getCurrentLocation().then(setMyLocation).catch(() => {});
     }
   }, [selectedOffice]);
+
+  const handleOfficePick = React.useCallback((location) => {
+    setPickedLocation(location)
+    setOfficeLocationConfirmed(false)
+  }, [])
+
+  const previewDistance = myLocation && pickedLocation
+    ? getDistance(myLocation.latitude, myLocation.longitude, pickedLocation.latitude, pickedLocation.longitude)
+    : null
 
 
   const deleteStaff = async (type, id) => {
@@ -806,6 +820,13 @@ export default function FranchiseStaffPage({ me }) {
         >
           Add New Employee
         </button> : null}
+
+        <button
+          className={activeSubTab === 'qr' ? 'active' : ''}
+          onClick={() => setActiveSubTab('qr')}
+        >
+          Office Attendance Codes
+        </button>
 
         <button
           className={activeSubTab === 'payslips' ? 'active' : ''}
@@ -1032,7 +1053,12 @@ export default function FranchiseStaffPage({ me }) {
               <tbody>
                 {officeQrs.map((office) => <tr key={office.id}>
                   <td>{(office.name || `Office #${office.id}`).split(' [', 1)[0]}</td>
-                  <td><strong>{office.qr_payload || '—'}</strong></td>
+                  <td>
+                    <strong>{office.qr_payload || '—'}</strong>
+                    <div className="muted small">
+                      Changes weekly · valid until {office.qr_valid_until ? new Date(office.qr_valid_until).toLocaleDateString('en-ZA') : 'next rotation'}
+                    </div>
+                  </td>
                   <td>{office.address || '—'}</td>
                   <td>{office.assigned_user_count || 0}</td>
                   <td>{office.allowed_radius_m || 100} m</td>
@@ -1041,7 +1067,11 @@ export default function FranchiseStaffPage({ me }) {
                       Download / Print Code
                     </button>
 
-                    <button type="button" onClick={() => setSelectedOffice(office)}>Set GPS</button>
+                    <button type="button" onClick={() => {
+                      setSelectedOffice(office)
+                      setPickedLocation(null)
+                      setOfficeLocationConfirmed(false)
+                    }}>Set GPS</button>
                     <button type="button" className="secondary-action" onClick={() => startEditOffice(office)}>Edit</button>
                     <button type="button" className="danger" onClick={() => removeOffice(office)}>Delete</button>
                   </td>
@@ -1076,15 +1106,18 @@ export default function FranchiseStaffPage({ me }) {
             Click the map or drag the marker to set the office GPS point.
           </p>
 
-          {myLocation && (
-            <p>
-              Your Location: {myLocation.latitude.toFixed(6)} / {myLocation.longitude.toFixed(6)}
-            </p>
-          )}
+          {myLocation ? (
+            <div className="status-panel">
+              <p>Your device GPS: {myLocation.latitude.toFixed(6)} / {myLocation.longitude.toFixed(6)}</p>
+              <p>Reported accuracy: {Math.round(myLocation.accuracy || 0)} m</p>
+              {previewDistance !== null ? <p><strong>Preview distance to proposed office point: {previewDistance >= 1000 ? `${(previewDistance / 1000).toFixed(2)} km` : `${Math.round(previewDistance)} m`}</strong></p> : null}
+              {(myLocation.accuracy || 999) > 100 ? <p className="error">This device location is too inaccurate for office attendance. Use a GPS-capable phone with precise location enabled.</p> : null}
+            </div>
+          ) : null}
 
           <OfficeLocationMap
             office={selectedOffice}
-            onPick={setPickedLocation}
+            onPick={handleOfficePick}
           />
 
           {pickedLocation ? (
@@ -1093,8 +1126,19 @@ export default function FranchiseStaffPage({ me }) {
             </p>
           ) : null}
 
+          {selectedOffice.latitude != null && selectedOffice.longitude != null ? (
+            <p className="muted small">
+              Previously saved office GPS: {Number(selectedOffice.latitude).toFixed(6)} / {Number(selectedOffice.longitude).toFixed(6)}
+            </p>
+          ) : null}
+
+          <label className="user-check">
+            <input type="checkbox" checked={officeLocationConfirmed} onChange={(event) => setOfficeLocationConfirmed(event.target.checked)} />
+            <span>I confirmed this marker is the physical office entrance, not my current remote location.</span>
+          </label>
+
           <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-            <button type="button" onClick={saveOfficeLocation}>
+            <button type="button" onClick={saveOfficeLocation} disabled={!pickedLocation || !officeLocationConfirmed}>
               Save Office Location
             </button>
 
@@ -1103,6 +1147,7 @@ export default function FranchiseStaffPage({ me }) {
               onClick={() => {
                 setSelectedOffice(null);
                 setPickedLocation(null);
+                setOfficeLocationConfirmed(false);
               }}
               className="secondary-action"
             >

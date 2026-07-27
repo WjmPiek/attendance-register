@@ -149,7 +149,7 @@ export default function LoginPage({ onLogin, loading, error }) {
           <>
             <form className="login-form" onSubmit={submitLogin}>
               <label>Email or username
-                <input value={email} onChange={(event) => setEmail(event.target.value)} type="text" autoComplete="username" required />
+                <input value={email} onChange={(event) => setEmail(event.target.value)} type="text" autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} required />
               </label>
               <label>Password
                 <div className="password-input-row"><input value={password} onChange={(event) => setPassword(event.target.value)} type={showPassword ? 'text' : 'password'} required /><button type="button" className="glass-button password-toggle" onClick={() => setShowPassword((v) => !v)}>{showPassword ? 'Hide' : 'Show'}</button></div>
