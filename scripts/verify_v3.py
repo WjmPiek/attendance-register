@@ -82,6 +82,7 @@ check('attendance QR optional', "and payload.qr_value" in attendance and '(optio
 check('attendance GPS always required', 'A missing rules' in attendance and 'GPS accuracy is required' in attendance)
 check('attendance signature always required', "not str(payload.signature_value).startswith('data:image/')" in attendance)
 check('attendance automatic photo required', '_photo_data_url_to_image' in attendance and 'photo_value' in mobile)
+check('attendance permission diagnostics', 'Test GPS & camera permissions' in mobile and 'Camera permission was denied' in mobile and 'Location permission was denied' in mobile)
 check('attendance outside radius retained', "gps_status = 'outside_area'" in attendance and 'outside the allowed office location' not in attendance)
 check('attendance manager and franchise notifications', 'recipients.append' in attendance and 'manager_login.id AS recipient_user_id' in attendance)
 check('attendance decision notifications', "notification_type=f'attendance_{decision}'" in attendance)

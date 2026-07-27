@@ -55,7 +55,17 @@ export default function MobileAttendancePage({ me, onDone }) {
         longitude: pos.coords.longitude,
         accuracy: pos.coords.accuracy,
       }),
-      () => reject(new Error('GPS permission is required. Please allow location access.')),
+      (locationError) => {
+        if (locationError?.code === 1) {
+          reject(new Error('Location permission was denied. Open this site’s permissions, set Location to Allow, enable device Location Services, then reload the page.'))
+        } else if (locationError?.code === 2) {
+          reject(new Error('Your device could not determine its GPS location. Turn on precise/high-accuracy location and try again outdoors or near a window.'))
+        } else if (locationError?.code === 3) {
+          reject(new Error('GPS location timed out. Confirm Location Services are on and try again.'))
+        } else {
+          reject(new Error('GPS permission is required. Please allow location access.'))
+        }
+      },
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
     )
   })
@@ -92,6 +102,15 @@ export default function MobileAttendancePage({ me, onDone }) {
       setPhotoPreview(value)
       return value
     } catch (err) {
+      if (err?.name === 'NotAllowedError' || err?.name === 'SecurityError' || /permission denied/i.test(err?.message || '')) {
+        throw new Error('Camera permission was denied. Open this site’s permissions, set Camera to Allow, enable camera access in your device privacy settings, then reload the page.')
+      }
+      if (err?.name === 'NotFoundError' || err?.name === 'DevicesNotFoundError') {
+        throw new Error('No working camera was found. A front-camera photo is required for attendance.')
+      }
+      if (err?.name === 'NotReadableError' || err?.name === 'TrackStartError') {
+        throw new Error('The camera is busy or blocked by the system. Close other camera apps, check device privacy settings, and try again.')
+      }
       throw new Error(err.message || 'Camera permission is required for the automatic attendance photo.')
     } finally {
       if (stream) stream.getTracks().forEach((track) => track.stop())
@@ -209,6 +228,23 @@ export default function MobileAttendancePage({ me, onDone }) {
     }
   }
 
+  const checkDevicePermissions = async () => {
+    setLoading(true)
+    setError('')
+    setMessage('')
+    try {
+      await getLocation()
+      setMessage('GPS is ready. Checking the front camera...')
+      await captureAttendancePhoto()
+      setMessage('GPS and camera permissions are ready. Draw your signature, then sign in or out.')
+    } catch (err) {
+      setMessage('')
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
     <Card title="Mobile Employee Attendance">
       <p className="muted">GPS, signature and an automatic camera photo are required. The office QR code is optional.</p>
@@ -263,6 +299,8 @@ export default function MobileAttendancePage({ me, onDone }) {
       <div className="attendance-evidence-note">
         <strong>Automatic attendance photo</strong>
         <p className="muted small">Your front camera opens only after you press Sign in or Sign out. The photo is captured automatically and stored with the GPS and signature evidence.</p>
+        <button type="button" className="glass-button" onClick={checkDevicePermissions} disabled={loading}>Test GPS & camera permissions</button>
+        <p className="muted small">If permission was previously denied, use the lock/settings icon beside the website address to allow Location and Camera. Also enable Location Services and camera access in the device’s privacy settings, then reload this page.</p>
         {photoPreview ? <img src={photoPreview} alt="Latest automatic attendance capture" className="attendance-photo-preview" /> : null}
       </div>
 
