@@ -117,11 +117,14 @@ def main() -> None:
                 HAVING COUNT(*) <> 1
             ) invalid_roles
         """,
-        "commission_entries_without_employee": """
+        "commission_entries_without_staff_profile": """
             SELECT COUNT(*)
             FROM commission_entries c
-            LEFT JOIN employee_users eu ON eu.id = c.employee_user_id
-            WHERE c.employee_user_id IS NOT NULL AND eu.id IS NULL
+            LEFT JOIN employee_users eu ON eu.user_id = c.employee_user_id
+            LEFT JOIN manager_users mu ON mu.user_id = c.employee_user_id
+            WHERE c.employee_user_id IS NOT NULL
+              AND eu.id IS NULL
+              AND mu.id IS NULL
         """,
     }
 

@@ -50,6 +50,7 @@ check('HR staff uses normalized franchise users', 'getFranchiseUsers()' in franc
 check('manager staff visibility scope', 's.manager_user_id = :manager_user_id' in staff)
 check('generic creation rejects profile roles', 'Organisational users must be created' in (ROOT/'backend/app/api/users.py').read_text())
 check('manager commission participant', 'manager_users' in commission and "kind == \"manager\"" in commission)
+check('database audit accepts manager commission participants', 'commission_entries_without_staff_profile' in (ROOT/'scripts/database_audit.py').read_text(encoding='utf-8') and 'mu.user_id = c.employee_user_id' in (ROOT/'scripts/database_audit.py').read_text(encoding='utf-8'))
 check('manager commission totals exclude employee totals', "Keep the manager's own totals separate" in commission and '(c.employee_user_id=:uid OR ep.manager_user_id=:mid)' not in commission)
 check('commission staff exposes manager hierarchy id', 'NULL::integer AS manager_profile_id' in commission and 'm.user_id, m.franchise_user_id, NULL, m.id' in commission)
 check('commission notifications', '_notify(' in commission)
