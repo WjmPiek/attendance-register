@@ -16,6 +16,7 @@ import {
 import OfficeLocationMap from '../components/OfficeLocationMap'
 import DragDropFileInput from '../components/DragDropFileInput.jsx'
 import StaffIdCard from '../components/StaffIdCard.jsx'
+import StaffWorkHub from '../components/StaffWorkHub.jsx'
 import { getCurrentLocation } from "../utils/location";
 import { getDistance } from "../utils/distance";
 
@@ -221,7 +222,7 @@ function StaffDetail({ title, item, onClose, onEdit, allowEdit = true }) {
   )
 }
 
-export default function FranchiseStaffPage({ me }) {
+export default function FranchiseStaffPage({ me, onNavigate }) {
   const isSuperUser = Boolean(me?.roles?.includes('SuperUser'))
   const isManagerView = Boolean(
     me?.roles?.includes('ManagerUser') && !me?.roles?.includes('FranchiseUser') && !isSuperUser
@@ -238,6 +239,7 @@ export default function FranchiseStaffPage({ me }) {
   const [editing, setEditing] = useState(null)
   const [viewItem, setViewItem] = useState(null)
   const [viewTitle, setViewTitle] = useState('')
+  const [workHubEmployee, setWorkHubEmployee] = useState(null)
   const [createdCard, setCreatedCard] = useState(null)
   const [createdCardType, setCreatedCardType] = useState('employees')
   const [officeQrs, setOfficeQrs] = useState([])
@@ -708,10 +710,14 @@ export default function FranchiseStaffPage({ me }) {
 
     return (
       <td className="actions-cell">
-        <select className="actions-dropdown" defaultValue="" onChange={handleActionChange} aria-label={`Actions for ${label}`}>
+        {type === 'employees' ? <div className="employee-row-actions">
+          <button type="button" onClick={() => setWorkHubEmployee(item)}>Work hub</button>
+          <button type="button" className="glass-button" onClick={() => editStaff(type, item)}>Edit</button>
+        </div> : null}
+        <select className="actions-dropdown" defaultValue="" onChange={handleActionChange} aria-label={`More actions for ${label}`}>
           <option value="" disabled>Actions</option>
           <option value="view">View</option>
-          {!isManagerView ? <option value="edit">Edit</option> : null}
+          {type !== 'employees' && !isManagerView ? <option value="edit">Edit</option> : null}
           {!isManagerView ? <option value="reset-password">Reset Password</option> : null}
           {!isManagerView ? <option value="download-id-card">Download ID Card</option> : null}
           {!isManagerView ? <option value="upload-id-photo">Upload ID Photo</option> : null}
@@ -960,8 +966,8 @@ export default function FranchiseStaffPage({ me }) {
             {editing ? <button type="button" className="link-button" onClick={resetForm}>Cancel edit</button> : null}
           </div>
           <form onSubmit={saveStaff} className="staff-form-single">
-            <label>Assign to / Role<select value={staff.role} onChange={(e) => setStaff({ ...staff, role: e.target.value, manager_user_id: e.target.value === 'Manager' ? '' : staff.manager_user_id })}>{staffRoles.map((role) => <option key={role}>{role}</option>)}</select></label>
-            {!isManagerRole ? <label>Manager optional<select value={staff.manager_user_id || ''} onChange={(e) => setStaff({ ...staff, manager_user_id: e.target.value })}><option value="">No manager selected</option>{activeManagers.map((m) => <option key={m.id} value={m.id}>{m.name} {m.surname}</option>)}</select></label> : null}
+            <label>Assign to / Role<select value={staff.role} onChange={(e) => setStaff({ ...staff, role: e.target.value, manager_user_id: e.target.value === 'Manager' ? '' : staff.manager_user_id })}>{staffRoles.filter((role) => !isManagerView || role !== 'Manager').map((role) => <option key={role}>{role}</option>)}</select></label>
+            {!isManagerRole && !isManagerView ? <label>Manager optional<select value={staff.manager_user_id || ''} onChange={(e) => setStaff({ ...staff, manager_user_id: e.target.value })}><option value="">No manager selected</option>{activeManagers.map((m) => <option key={m.id} value={m.id}>{m.name} {m.surname}</option>)}</select></label> : null}
             <label>Username <span className="optional-note">login name if no email</span><input value={staff.username || ''} onChange={(e) => setStaff({ ...staff, username: e.target.value })} placeholder="e.g. manager_northcliff" /></label>
             <label>EMPL. NO
               <span className="optional-note">used for payroll import matching</span>
@@ -1071,7 +1077,7 @@ export default function FranchiseStaffPage({ me }) {
                       setSelectedOffice(office)
                       setPickedLocation(null)
                       setOfficeLocationConfirmed(false)
-                    }}>Set GPS</button>
+                    }}>{office.latitude != null && office.longitude != null ? 'Edit GPS' : 'Set GPS'}</button>
                     <button type="button" className="secondary-action" onClick={() => startEditOffice(office)}>Edit</button>
                     <button type="button" className="danger" onClick={() => removeOffice(office)}>Delete</button>
                   </td>
@@ -1109,7 +1115,7 @@ export default function FranchiseStaffPage({ me }) {
           {myLocation ? (
             <div className="status-panel">
               <p>Your device GPS: {myLocation.latitude.toFixed(6)} / {myLocation.longitude.toFixed(6)}</p>
-              <p>Reported accuracy: {Math.round(myLocation.accuracy || 0)} m</p>
+              <p>Phone GPS accuracy (not office distance): {Math.round(myLocation.accuracy || 0)} m</p>
               {previewDistance !== null ? <p><strong>Preview distance to proposed office point: {previewDistance >= 1000 ? `${(previewDistance / 1000).toFixed(2)} km` : `${Math.round(previewDistance)} m`}</strong></p> : null}
               {(myLocation.accuracy || 999) > 100 ? <p className="error">This device location is too inaccurate for office attendance. Use a GPS-capable phone with precise location enabled.</p> : null}
             </div>
@@ -1158,8 +1164,13 @@ export default function FranchiseStaffPage({ me }) {
       ) : null}
       
       {activeSubTab === 'view' ? (
-        <>
-          <StaffDetail title={viewTitle} item={viewItem} allowEdit={!isManagerView} onClose={() => setViewItem(null)} onEdit={() => {
+        workHubEmployee ? <StaffWorkHub
+          employee={workHubEmployee}
+          onClose={() => setWorkHubEmployee(null)}
+          onEdit={() => editStaff('employees', workHubEmployee)}
+          onNavigate={onNavigate}
+        /> : <>
+          <StaffDetail title={viewTitle} item={viewItem} allowEdit={!isManagerView || viewTitle.includes('Employee')} onClose={() => setViewItem(null)} onEdit={() => {
             if (viewTitle.includes('Employee')) editStaff('employees', viewItem)
             else editStaff('managers', viewItem)
           }} />

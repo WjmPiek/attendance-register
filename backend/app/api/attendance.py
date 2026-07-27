@@ -539,7 +539,8 @@ def _notify_franchise_attendance_event(db: Session, event: AttendanceEvent, acti
     ctx = _attendance_franchise_recipient(db, int(event.user_id))
     if not ctx:
         return
-    status_text = event.attendance_status or event.gps_status or 'recorded'
+    status_value = event.attendance_status or event.gps_status or 'recorded'
+    status_text = _gps_report_label(status_value) if status_value in {'inside_area', 'outside_area', 'accuracy_too_low', 'no_allocation', 'on_road'} else str(status_value).replace('_', ' ').title()
     approval_text = event.approval_status or 'approved'
     signature_text = event.signature_status or ('captured' if getattr(event, 'signature_image', None) else 'missing')
     photo_text = getattr(event, 'photo_status', None) or ('captured' if getattr(event, 'attendance_photo', None) else 'missing')
@@ -785,10 +786,10 @@ def _validate_gps(db: Session, user_id: int, payload: AttendanceActionRequest, o
 
     if (payload.work_location_type or 'office') == 'office' and gps_status == 'no_allocation':
         raise HTTPException(status_code=400, detail='A configured office GPS allocation is required before signing in or out')
-    if (payload.work_location_type or 'office') == 'office' and gps_status == 'accuracy_too_low':
-        raise HTTPException(status_code=400, detail='GPS accuracy is too low to verify the office. Enable precise location and try again')
-    if (payload.work_location_type or 'office') == 'office' and gps_status == 'outside_area':
-        raise HTTPException(status_code=400, detail='You are outside the allowed range of your assigned office')
+    # Range and accuracy exceptions are evidence, not a reason to discard an
+    # attendance action. They remain pending for manager/franchise review and
+    # are shown in Events/Sessions with the captured coordinates, distance,
+    # signature and photo.
     if (payload.work_location_type or 'office') == 'on_road' and gps_status == 'no_allocation':
         gps_status = 'on_road'
 
@@ -808,6 +809,25 @@ def _approval_defaults(payload: AttendanceActionRequest, gps_status: str):
         work_location_type = 'outside_area'
     signature_status = 'captured' if payload.signature_value else 'missing'
     return approval_status, work_location_type, signature_status
+
+
+def _gps_report_label(value: str | None) -> str:
+    return {
+        'inside_area': 'Inside office GPS range',
+        'outside_area': 'Not in office GPS range',
+        'accuracy_too_low': 'GPS accuracy too low',
+        'no_allocation': 'Office GPS allocation missing',
+        'on_road': 'On-road attendance',
+    }.get(str(value or ''), str(value or 'Not available').replace('_', ' ').title())
+
+
+def _attendance_action_message(action: str, gps_status: str) -> str:
+    label = 'Signed in' if action == 'sign_in' else 'Signed out'
+    if gps_status == 'outside_area':
+        return f'{label}. Attendance was recorded outside the office GPS range and is pending review.'
+    if gps_status == 'accuracy_too_low':
+        return f'{label}. Attendance was recorded with low GPS accuracy and is pending review.'
+    return f'{label} from mobile'
 
 
 def _map_url(event: AttendanceEvent):
@@ -1551,8 +1571,8 @@ def _build_attendance_pdf(db: Session, view: str, selected_user_id: int, from_da
             data.append([
                 _format_pdf_time(event.created_at),
                 _safe_text(event.action),
-                _safe_text(status_value),
-                _safe_text(event.gps_status),
+                _safe_text(_gps_report_label(status_value) if status_value in {'inside_area', 'outside_area', 'accuracy_too_low', 'no_allocation', 'on_road'} else status_value),
+                _safe_text(_gps_report_label(event.gps_status)),
                 _qr_pdf_status(event),
                 _safe_text(event.work_location_type),
                 _safe_text(event.approval_status),
@@ -1574,8 +1594,8 @@ def _build_attendance_pdf(db: Session, view: str, selected_user_id: int, from_da
                 _format_pdf_time(session.get('sign_in_at')),
                 _format_pdf_time(session.get('sign_out_at')),
                 _safe_text(session.get('duration_minutes')),
-                _safe_text(session.get('status')),
-                _safe_text(session.get('gps_status')),
+                _safe_text(_gps_report_label(session.get('status')) if session.get('status') in {'inside_area', 'outside_area', 'accuracy_too_low', 'no_allocation', 'on_road'} else session.get('status')),
+                _safe_text(_gps_report_label(session.get('gps_status'))),
                 _qr_pdf_status(session.get('_sign_in_event')),
                 _qr_pdf_status(session.get('_sign_out_event')),
                 _safe_text(session.get('approval_status')), 
@@ -1801,7 +1821,7 @@ def print_office_qr_pdf(area_id: int, current_user: User = Depends(get_current_u
     logo_path = Path(__file__).resolve().parents[1] / 'static' / 'logo.png'
     header_items = []
     if logo_path.exists():
-        header_items.append(Image(str(logo_path), width=52*mm, height=22*mm, kind='proportional'))
+        header_items.append(Image(str(logo_path), width=76*mm, height=30*mm, kind='proportional'))
     code_style = ParagraphStyle('OfficeCode', parent=styles['Title'], fontSize=34, leading=37, textColor=brand, alignment=TA_CENTER, spaceBefore=1*mm, spaceAfter=1*mm)
     header_items.extend([
         Paragraph('OFFICE ATTENDANCE', title_style),
@@ -2074,7 +2094,7 @@ def sign_in(payload: AttendanceActionRequest, current_user: User = Depends(get_c
     db.commit()
     db.refresh(event)
     _notify_franchise_attendance_event(db, event, 'sign in')
-    return AttendanceActionResponse(message='Signed in from mobile', action='sign_in', current_status='signed_in')
+    return AttendanceActionResponse(message=_attendance_action_message('sign_in', gps_status), action='sign_in', current_status='signed_in')
 
 
 @router.post('/sign-out', response_model=AttendanceActionResponse)
@@ -2116,4 +2136,4 @@ def sign_out(payload: AttendanceActionRequest, current_user: User = Depends(get_
     db.commit()
     db.refresh(event)
     _notify_franchise_attendance_event(db, event, 'sign out')
-    return AttendanceActionResponse(message='Signed out from mobile', action='sign_out', current_status='signed_out')
+    return AttendanceActionResponse(message=_attendance_action_message('sign_out', gps_status), action='sign_out', current_status='signed_out')

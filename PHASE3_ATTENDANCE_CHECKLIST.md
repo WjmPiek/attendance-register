@@ -10,8 +10,9 @@
 - [x] Office radius distance is calculated on the backend
 - [x] Distance is calculated against the exact office represented by the entered code
 - [x] Office GPS setup shows saved coordinates, proposed coordinates, device accuracy, and preview distance
-- [x] Office attendance is rejected outside the assigned office radius
-- [x] Low-accuracy office attendance is rejected until precise GPS is available
+- [x] Office attendance outside the assigned radius is recorded with evidence and marked pending for review
+- [x] Low-accuracy office attendance is recorded with evidence and marked pending for review
+- [x] Events and Sessions explicitly show “Not in office GPS range” for outside-radius attendance
 - [x] On-road attendance requires a note and remains available for approval
 - [x] Franchise users and linked managers receive event notifications
 - [x] Employees receive approval and rejection notifications
@@ -23,6 +24,16 @@
 - [x] Default exports include users with attendance records instead of a blank supervisor account
 - [x] Backend tests, verification audit, migration-head check, and frontend bundle validation
 - [x] Manager and employee login accepts username/email case-insensitively on mobile
+- [x] Admin, manager and employee mobile login trims accidental spaces and supports password autofill
+- [x] Saved Head Office GPS collapses until Edit GPS and radius is selected
+- [x] Phone GPS accuracy is labelled separately from office distance
+- [x] QR scan captures the front-camera photo before advancing to signature
+- [x] Four-digit code entry is hidden unless manual fallback is required
+- [x] Manager attendance approvals are available from the linked employee's My Staff work hub
+- [x] Work hub and Edit controls are displayed beside each linked employee
+- [x] Linked employee attendance, leave, commission and notifications are combined in My Staff
+- [x] Linked managers can approve or decline their employees' leave without self-approval
+- [x] Office attendance PDF uses a larger logo and remains one portrait A4 page
 - [x] Office Attendance Codes is directly accessible from the HR Staff sub-tabs
 - [x] Office code PDF is constrained to one portrait A4 page
 - [ ] Run migration 012 and complete production mobile/Render verification

@@ -238,20 +238,26 @@ def list_leave_applications(status: str = '', current_user: User = Depends(get_c
 
 
 def _can_decide(db: Session, current_user: User, app: dict) -> bool:
-    # Leave decisions are deliberately restricted to the owning franchise user.
-    # Employees and managers can never approve or decline their own or another
-    # staff member's leave application.
     roles = _roles(db, current_user)
-    if 'FranchiseUser' not in roles:
-        return False
     if int(app.get('applicant_user_id') or 0) == int(current_user.id):
         return False
-    franchise = _franchise_profile(db, current_user.id)
-    return bool(
-        franchise
-        and app.get('franchise_user_id') is not None
-        and int(franchise['franchise_user_id']) == int(app['franchise_user_id'])
-    )
+    if 'FranchiseUser' in roles:
+        franchise = _franchise_profile(db, current_user.id)
+        return bool(
+            franchise
+            and app.get('franchise_user_id') is not None
+            and int(franchise['franchise_user_id']) == int(app['franchise_user_id'])
+        )
+    if 'ManagerUser' in roles:
+        manager = _manager_profile(db, current_user.id)
+        return bool(
+            manager
+            and app.get('manager_user_id') is not None
+            and int(manager['manager_user_id']) == int(app['manager_user_id'])
+            and app.get('franchise_user_id') is not None
+            and int(manager['franchise_user_id']) == int(app['franchise_user_id'])
+        )
+    return False
 
 
 def _decision(application_id: int, decision: str, payload: LeaveDecisionRequest, current_user: User, db: Session):

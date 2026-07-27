@@ -4,6 +4,19 @@ import { getAttendanceStatus, submitAttendance, validateOfficeQr } from '../api/
 import SignaturePad from '../components/SignaturePad'
 import { getDistance } from '../utils/distance'
 
+function officeCodeFromScan(rawValue) {
+  const raw = String(rawValue || '').trim()
+  if (/^\d{4}$/.test(raw)) return raw
+  try {
+    const url = new URL(raw)
+    const linkedCode = url.searchParams.get('office_qr')
+    return /^\d{4}$/.test(linkedCode || '') ? linkedCode : ''
+  } catch {
+    const match = raw.match(/(?:office_qr=)?(\d{4})(?:\D|$)/)
+    return match?.[1] || ''
+  }
+}
+
 export default function MobileAttendancePage({ me, onDone }) {
   const [status, setStatus] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -14,12 +27,13 @@ export default function MobileAttendancePage({ me, onDone }) {
   const [signatureValue, setSignatureValue] = useState('')
   const [qrValue, setQrValue] = useState(() => new URLSearchParams(window.location.search).get('office_qr') || '')
   const [qrOffice, setQrOffice] = useState(null)
+  const [manualCodeEntry, setManualCodeEntry] = useState(false)
+  const [evidenceReady, setEvidenceReady] = useState(false)
   const [scanning, setScanning] = useState(false)
   const [cameraOpen, setCameraOpen] = useState(false)
   const [cameraStream, setCameraStream] = useState(null)
   const [photoPreview, setPhotoPreview] = useState('')
   const videoRef = useRef(null)
-  const fileCaptureRef = useRef(null)
 
   const loadStatus = async () => {
     try {
@@ -39,7 +53,7 @@ export default function MobileAttendancePage({ me, onDone }) {
         .then((office) => {
           setQrOffice(office)
           setQrValue(office.qr_payload || linkedQr)
-          setMessage('Office QR verified. Complete your signature and sign in or out.')
+          setMessage('Office QR verified. Take your attendance photo to continue.')
         })
         .catch((err) => setError(err.message))
     }
@@ -139,13 +153,43 @@ export default function MobileAttendancePage({ me, onDone }) {
     return office
   }
 
+  const prepareEvidence = async () => {
+    setLoading(true)
+    setError('')
+    setMessage('Taking your attendance photo...')
+    try {
+      const photo = await captureAttendancePhoto()
+      setPhotoPreview(photo)
+      setEvidenceReady(true)
+      setMessage('Photo captured. Draw your signature, then sign in or out.')
+    } catch (err) {
+      setMessage('')
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const verifyManualCode = async () => {
+    setLoading(true)
+    setError('')
+    setMessage('')
+    try {
+      await validateQr(qrValue)
+      await prepareEvidence()
+    } catch (err) {
+      setError(err.message)
+      setLoading(false)
+    }
+  }
+
   const startQrScan = async () => {
     setError('')
     setMessage('')
     if (workLocationType !== 'office') return
     if (!navigator.mediaDevices?.getUserMedia) {
-      setError('Camera access is not available in this browser. Use the manual QR code field below.')
-      if (fileCaptureRef.current) fileCaptureRef.current.click()
+      setManualCodeEntry(true)
+      setError('Camera scanning is not available in this browser. Enter the office code to continue.')
       return
     }
     try {
@@ -175,9 +219,12 @@ export default function MobileAttendancePage({ me, onDone }) {
         const codes = await detector.detect(video).catch(() => [])
         if (codes.length) {
           const raw = codes[0].rawValue || ''
-          await validateQr(raw)
-          setMessage('Office QR scanned and linked.')
+          const scannedCode = officeCodeFromScan(raw)
+          if (!scannedCode) throw new Error('This QR code is not a valid office attendance code.')
+          await validateQr(scannedCode)
           stopCamera()
+          await new Promise((resolve) => window.setTimeout(resolve, 150))
+          await prepareEvidence()
           return
         }
         await new Promise((resolve) => setTimeout(resolve, 250))
@@ -195,6 +242,7 @@ export default function MobileAttendancePage({ me, onDone }) {
     setError('')
     setMessage('')
     try {
+      if (!evidenceReady || !photoPreview) throw new Error('Capture your attendance photo before signing in or out.')
       if (!signatureValue) throw new Error('Signature is required before sign in/out.')
       if (workLocationType === 'office' && !/^\d{4}$/.test(qrValue.trim())) {
         throw new Error('Enter the four-digit office code before signing in or out.')
@@ -212,13 +260,12 @@ export default function MobileAttendancePage({ me, onDone }) {
       const distanceMessage = officeDistance == null
         ? 'GPS captured.'
         : `GPS captured: ${officeDistance >= 1000 ? `${(officeDistance / 1000).toFixed(2)} km` : `${Math.round(officeDistance)} m`} from the assigned office point.`
-      setMessage(`${distanceMessage} Taking attendance photo...`)
-      const photoValue = await captureAttendancePhoto()
+      setMessage(`${distanceMessage} Saving attendance...`)
       const payload = {
         ...location,
         device_info: navigator.userAgent,
         signature_value: signatureValue,
-        photo_value: photoValue,
+        photo_value: photoPreview,
         work_location_type: workLocationType,
         employee_note: employeeNote.trim() || null,
         qr_value: workLocationType === 'office' && qrValue.trim() ? qrValue : null,
@@ -229,6 +276,9 @@ export default function MobileAttendancePage({ me, onDone }) {
       setEmployeeNote('')
       setQrValue('')
       setQrOffice(null)
+      setManualCodeEntry(false)
+      setEvidenceReady(false)
+      setPhotoPreview('')
       await loadStatus()
     } catch (err) {
       setMessage('')
@@ -246,7 +296,8 @@ export default function MobileAttendancePage({ me, onDone }) {
       await getLocation()
       setMessage('GPS is ready. Checking the front camera...')
       await captureAttendancePhoto()
-      setMessage('GPS and camera permissions are ready. Draw your signature, then sign in or out.')
+      setPhotoPreview('')
+      setMessage('GPS and camera permissions are ready.')
     } catch (err) {
       setMessage('')
       setError(err.message)
@@ -257,7 +308,7 @@ export default function MobileAttendancePage({ me, onDone }) {
 
   return (
     <Card title="Mobile Employee Attendance">
-      <p className="muted">GPS, signature, an automatic camera photo and the four-digit office code are required for office attendance.</p>
+      <p className="muted">Follow the steps below. Your office QR identifies the location; the code is shown only when manual entry is needed.</p>
       <div className="status-panel">
         <div><strong>User:</strong> {me.full_name}</div>
         <div><strong>Status:</strong> {status?.current_status || 'loading'}</div>
@@ -268,7 +319,14 @@ export default function MobileAttendancePage({ me, onDone }) {
       <div className="history-toolbar one-column">
         <label>
           Work location
-          <select value={workLocationType} onChange={(event) => setWorkLocationType(event.target.value)}>
+          <select value={workLocationType} onChange={(event) => {
+            setWorkLocationType(event.target.value)
+            setQrOffice(null)
+            setQrValue('')
+            setManualCodeEntry(false)
+            setEvidenceReady(false)
+            setPhotoPreview('')
+          }}>
             <option value="office">Assigned office / area</option>
             <option value="on_road">On the road / field work</option>
           </select>
@@ -282,64 +340,64 @@ export default function MobileAttendancePage({ me, onDone }) {
       <div className="qr-scan-card">
         <div className="detail-header mobile-qr-header">
           <div>
-            <h3>Four-digit office code <span className="muted">(required)</span></h3>
-            <p className="muted small">Enter the code displayed at your assigned office. The backend accepts it only while your GPS position is inside that office’s configured radius.</p>
+            <h3>Step 1 — Confirm work location</h3>
+            <p className="muted small">{workLocationType === 'office' ? 'Scan the office QR. GPS still checks that you are inside the office radius.' : 'For road work, continue to the attendance photo.'}</p>
           </div>
-          <button type="button" onClick={startQrScan} disabled={scanning || workLocationType !== 'office'}>
-            {scanning ? 'Scanning...' : 'Scan QR'}
-          </button>
+          {workLocationType === 'office' ? <button type="button" onClick={startQrScan} disabled={scanning || loading}>
+            {scanning ? 'Scanning...' : 'Scan office QR'}
+          </button> : <button type="button" onClick={prepareEvidence} disabled={loading}>{loading ? 'Opening camera...' : 'Take attendance photo'}</button>}
         </div>
-        <input ref={fileCaptureRef} type="file" accept="image/*" capture="environment" hidden />
         <div className={`qr-camera-panel ${cameraOpen ? 'open' : ''}`}>
           <video ref={videoRef} className="qr-camera-preview" playsInline muted />
           <div className="qr-camera-frame" aria-hidden="true" />
           {cameraOpen ? <button type="button" className="secondary-action" onClick={stopCamera}>Close camera</button> : null}
         </div>
-        <label>
-          Four-digit office code
-          <input
-            value={qrValue}
-            onChange={(event) => {
-              setQrValue(event.target.value.replace(/\D/g, '').slice(0, 4))
-              setQrOffice(null)
-            }}
-            inputMode="numeric"
-            pattern="[0-9]{4}"
-            maxLength="4"
-            autoComplete="one-time-code"
-            placeholder="1234"
-            disabled={workLocationType !== 'office'}
-          />
-        </label>
-        <button type="button" className="secondary-action" onClick={() => validateQr(qrValue).then(() => setMessage('Office code verified. GPS range will be checked when you sign in or out.')).catch((err) => setError(err.message))} disabled={workLocationType !== 'office'}>Verify office code</button>
+        {workLocationType === 'office' && !manualCodeEntry && !qrOffice ? <button type="button" className="link-button" onClick={() => setManualCodeEntry(true)}>Cannot scan? Enter office code</button> : null}
+        {workLocationType === 'office' && manualCodeEntry && !qrOffice ? (
+          <div className="form-grid one-column">
+            <label>
+              Four-digit office code (required)
+              <input
+                value={qrValue}
+                onChange={(event) => setQrValue(event.target.value.replace(/\D/g, '').slice(0, 4))}
+                inputMode="numeric"
+                pattern="[0-9]{4}"
+                maxLength="4"
+                autoComplete="one-time-code"
+                placeholder="Enter the code displayed at this office"
+              />
+            </label>
+            <button type="button" className="secondary-action" onClick={verifyManualCode} disabled={loading || qrValue.length !== 4}>{loading ? 'Checking...' : 'Verify and take photo'}</button>
+          </div>
+        ) : null}
         {qrOffice ? (
           <div className="status-panel">
-            <p className="success">Linked to {qrOffice.office_name || 'office'} · {qrOffice.address || 'No address captured'}</p>
-            <p className="muted small">Office GPS: {qrOffice.latitude || 'not configured'}, {qrOffice.longitude || 'not configured'} · Radius: {qrOffice.allowed_radius_m || 100} m</p>
-            <p className="muted small">This code changes weekly{qrOffice.qr_valid_until ? ` and is valid until ${new Date(qrOffice.qr_valid_until).toLocaleDateString('en-ZA')}` : ''}.</p>
+            <p className="success">Office confirmed: {qrOffice.office_name || 'assigned office'}</p>
+            <p className="muted small">{qrOffice.address || 'No address captured'} · Allowed radius: {qrOffice.allowed_radius_m || 100} m</p>
+            {!evidenceReady ? <button type="button" onClick={prepareEvidence} disabled={loading}>{loading ? 'Opening camera...' : 'Take attendance photo'}</button> : null}
           </div>
         ) : null}
         {workLocationType === 'on_road' ? <p className="muted small">QR scan is not required for on-road work, but the note is required and goes for approval.</p> : null}
       </div>
 
-      <SignaturePad onChange={setSignatureValue} />
+      {evidenceReady ? <div className="attendance-step"><h3>Step 3 — Sign</h3><SignaturePad onChange={setSignatureValue} /></div> : null}
 
       <div className="attendance-evidence-note">
-        <strong>Automatic attendance photo</strong>
-        <p className="muted small">Your front camera opens only after you press Sign in or Sign out. The photo is captured automatically and stored with the GPS and signature evidence.</p>
+        <strong>Step 2 — Attendance photo</strong>
+        <p className="muted small">After the QR is accepted, the front camera captures the attendance photo and moves you to the signature step.</p>
         <button type="button" className="glass-button" onClick={checkDevicePermissions} disabled={loading}>Test GPS & camera permissions</button>
         <p className="muted small">If permission was previously denied, use the lock/settings icon beside the website address to allow Location and Camera. Also enable Location Services and camera access in the device’s privacy settings, then reload this page.</p>
         {photoPreview ? <img src={photoPreview} alt="Latest automatic attendance capture" className="attendance-photo-preview" /> : null}
       </div>
 
-      <div className="mobile-actions">
+      {evidenceReady ? <div className="mobile-actions">
         <button disabled={loading || status?.current_status === 'signed_in'} onClick={() => handleAction('sign-in')}>
           {loading ? 'Working...' : 'Sign in'}
         </button>
         <button className="danger" disabled={loading || status?.current_status !== 'signed_in'} onClick={() => handleAction('sign-out')}>
           {loading ? 'Working...' : 'Sign out'}
         </button>
-      </div>
+      </div> : null}
       <p className="muted small">GPS, signature and camera evidence are recorded for office and on-road events. Outside-radius, low-accuracy and on-road events remain visible for approval review.</p>
       {message ? <div className="status-panel"><p className="success">{message}</p><button type="button" onClick={() => onDone?.()}>Done</button></div> : null}
       {error ? <p className="error">{error}</p> : null}

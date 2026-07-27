@@ -14,6 +14,23 @@ function eventStatus(row) {
   return row.attendance_status || row.gps_status || 'recorded'
 }
 
+function gpsStatusLabel(value) {
+  const labels = {
+    inside_area: 'Inside office GPS range',
+    outside_area: 'Not in office GPS range',
+    accuracy_too_low: 'GPS accuracy too low',
+    no_allocation: 'Office GPS allocation missing',
+    on_road: 'On-road attendance',
+  }
+  return labels[value] || String(value || 'Not available').replaceAll('_', ' ')
+}
+
+function attendanceStatusLabel(value) {
+  if (value === 'outside_area') return 'Not in office GPS range'
+  if (value === 'accuracy_too_low') return 'GPS accuracy too low'
+  return String(value || 'recorded').replaceAll('_', ' ')
+}
+
 function formatTime(value) {
   if (!value) return 'n/a'
   return new Date(value).toLocaleString('en-ZA', { timeZone: 'Africa/Johannesburg', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
@@ -303,7 +320,7 @@ export default function AttendanceHistoryPage({ me }) {
         <div><strong>{formatDuration(sessionSummary?.total_minutes || 0)}</strong><span>Total duration</span></div>
         <div><strong>{sessionSummary?.late_sessions || 0}</strong><span>Late</span></div>
         <div><strong>{sessionSummary?.early_leave_sessions || 0}</strong><span>Early leave</span></div>
-        <div><strong>{sessionSummary?.outside_area || 0}</strong><span>Outside area</span></div>
+        <div><strong>{sessionSummary?.outside_area || 0}</strong><span>Not in office GPS range</span></div>
         <div><strong>{sessionSummary?.low_accuracy || 0}</strong><span>Low accuracy</span></div>
         <div><strong>{sessionSummary?.missing_sign_out || 0}</strong><span>Missing sign-out</span></div>
       </div>
@@ -331,12 +348,14 @@ export default function AttendanceHistoryPage({ me }) {
                   <td>{formatTime(row.sign_out_at)}</td>
                   <td><UserCell row={row} /></td>
                   <td>{formatDuration(row.duration_minutes)}</td>
-                  <td><span className={statusClass(row.status)}>{row.status}</span></td>
+                  <td><span className={statusClass(row.status)}>{attendanceStatusLabel(row.status)}</span></td>
                   <td>
                     {row.is_late ? <div>Late: {row.late_minutes} min</div> : null}
                     {row.left_early ? <div>Early: {row.early_leave_minutes} min</div> : null}
                     {row.missing_sign_out ? <div>Missing sign-out</div> : null}
-                    {row.status === 'no_attendance' ? <span className="muted">No attendance recorded</span> : (!row.is_late && !row.left_early && !row.missing_sign_out ? <span className="muted">OK</span> : null)}
+                    {row.status === 'outside_area' || row.gps_status === 'outside_area' ? <div className="error"><strong>Not in office GPS range</strong></div> : null}
+                    {row.status === 'accuracy_too_low' || row.gps_status === 'accuracy_too_low' ? <div className="error"><strong>GPS accuracy too low</strong></div> : null}
+                    {row.status === 'no_attendance' ? <span className="muted">No attendance recorded</span> : (!row.is_late && !row.left_early && !row.missing_sign_out && !['outside_area', 'accuracy_too_low'].includes(row.status) ? <span className="muted">OK</span> : null)}
                   </td>
                   <td>
                     {row.status === 'no_attendance' ? <span className="muted">n/a</span> : (row.sign_in_map_url ? <a href={row.sign_in_map_url} target="_blank" rel="noreferrer">In</a> : <span className="muted">In n/a</span>)}
@@ -373,10 +392,10 @@ export default function AttendanceHistoryPage({ me }) {
                     <td>{formatTime(row.created_at)}</td>
                     <td><UserCell row={row} /></td>
                     <td>{row.action}</td>
-                    <td><span className={statusClass(status)}>{status}</span></td>
+                    <td><span className={statusClass(status)}>{attendanceStatusLabel(status)}</span></td>
                     <td>
-                      <div>{row.gps_status || 'n/a'}</div>
-                      <div className="muted small">{row.distance_from_site_m == null ? 'No distance' : `${Math.round(row.distance_from_site_m)} m`}</div>
+                      <div className={row.gps_status === 'outside_area' ? 'error' : ''}><strong>{gpsStatusLabel(row.gps_status)}</strong></div>
+                      <div className="muted small">{row.distance_from_site_m == null ? 'No distance' : `${Math.round(row.distance_from_site_m)} m from office`}</div>
                       <div className="muted small">Accuracy: {row.accuracy_meters || 'n/a'}</div>
                     </td>
                     <td>
@@ -407,7 +426,7 @@ export default function AttendanceHistoryPage({ me }) {
               <strong>{row.action} - {userDisplay(row).name}</strong>
               <span>{formatTime(row.created_at)}</span>
               <span>{row.latitude}, {row.longitude}</span>
-              <span className={statusClass(eventStatus(row))}>{eventStatus(row)}</span>
+              <span className={statusClass(eventStatus(row))}>{attendanceStatusLabel(eventStatus(row))}</span>
             </a>
           ))}
           {!mapRows.length ? <p className="muted">No GPS locations available for the current filter.</p> : null}

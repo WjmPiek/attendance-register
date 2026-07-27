@@ -40,7 +40,7 @@ export default function LoginPage({ onLogin, loading, error }) {
 
   const submitLogin = (event) => {
     event.preventDefault()
-    onLogin(email, password)
+    onLogin(email.trim(), password)
   }
 
   useEffect(() => {
@@ -152,7 +152,7 @@ export default function LoginPage({ onLogin, loading, error }) {
                 <input value={email} onChange={(event) => setEmail(event.target.value)} type="text" autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} required />
               </label>
               <label>Password
-                <div className="password-input-row"><input value={password} onChange={(event) => setPassword(event.target.value)} type={showPassword ? 'text' : 'password'} required /><button type="button" className="glass-button password-toggle" onClick={() => setShowPassword((v) => !v)}>{showPassword ? 'Hide' : 'Show'}</button></div>
+                <div className="password-input-row"><input value={password} onChange={(event) => setPassword(event.target.value)} type={showPassword ? 'text' : 'password'} autoComplete="current-password" required /><button type="button" className="glass-button password-toggle" onClick={() => setShowPassword((v) => !v)}>{showPassword ? 'Hide' : 'Show'}</button></div>
               </label>
               <div className="login-form-actions">
                 <button type="submit" disabled={loading}>{loading ? 'Logging in...' : 'Login'}</button>

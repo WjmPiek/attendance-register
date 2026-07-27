@@ -3,13 +3,19 @@
 ## Included behavior
 
 - Office attendance requires the assigned office's four-digit code.
-- The backend checks that the employee or manager is inside the configured
-  office radius before accepting sign-in or sign-out.
+- The backend records every evidence-complete sign-in or sign-out. Attendance
+  outside the configured office radius is not blocked; it is marked
+  **Not in office GPS range** and remains pending for review.
 - Open sessions and sign-in events remain visible before sign-out.
 - Session date filters retain open sessions that started before the selected
   date window.
 - Attendance exports default to users who have records in the current filters.
 - Franchise office management displays the code and prints it on the office PDF.
+- A saved GPS marker stays collapsed until **Edit GPS and radius** is selected.
+- QR scanning advances directly to the front-camera photo and then signature.
+- Manual four-digit code entry appears only when the user cannot scan.
+- Manager attendance and leave approvals now live beside each linked employee
+  in **My Staff**, together with commission history and notifications.
 
 ## Deployment
 
@@ -25,7 +31,7 @@ npm run build
 cd ..
 
 git add .
-git commit -m "phase3 require four digit office attendance code"
+git commit -m "phase3 staff hub and scan first attendance"
 git push origin main
 ```
 
@@ -62,10 +68,23 @@ menu and test the exact username shown in HR Staff.
 
 1. Assign a manager or employee to an active office.
 2. Confirm that office has latitude, longitude, and a radius.
-3. Print the new office sheet and note its four-digit code.
-4. Inside the radius, verify that the code permits sign-in.
-5. Before signing out, verify that Sessions shows an `open` row and Events
+3. Confirm that the GPS map collapses after save and reopens only with
+   **Edit GPS and radius**.
+4. Print the new office sheet and confirm the larger logo fits on one A4 page.
+5. Inside the radius, scan the QR and confirm the system captures the front
+   camera photo before showing signature and sign-in/out.
+6. Confirm the manual four-digit field is hidden until **Cannot scan? Enter
+   office code** is selected.
+7. Before signing out, verify that Sessions shows an `open` row and Events
    shows the `sign_in` event.
-6. Export Sessions and Events and confirm the sign-in appears.
-7. Outside the radius, verify that office attendance is rejected.
-8. Return inside the radius and sign out; verify the session becomes complete.
+8. Export Sessions and Events and confirm the sign-in appears.
+9. Outside the radius, verify that sign-in/out succeeds, preserves the
+   signature and coordinates, and Events/Sessions shows **Not in office GPS
+   range** with a pending approval.
+10. Return inside the radius and sign out; verify the session becomes complete
+    while retaining the outside-range exception on the session.
+11. As a manager, open **My Staff**, select a linked employee, then verify
+    attendance approval/rejection, leave approval/decline, commissions and
+    employee notifications are visible in that employee's work hub.
+12. Log in to the same deployment from a phone using an admin, manager and
+    employee account.

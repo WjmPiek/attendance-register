@@ -133,7 +133,7 @@ function LeaveReturnTimeline({ items = [] }) {
 }
 
 export default function LeavePage({ me }) {
-  const canDecide = me.roles.includes('FranchiseUser')
+  const canDecide = me.roles.includes('FranchiseUser') || me.roles.includes('ManagerUser')
   const canApply = me.roles.includes('EmployeeUser') || me.roles.includes('ManagerUser')
   const [apps, setApps] = useState([])
   const [form, setForm] = useState({ leave_type: 'Annual Leave', start_date: '', end_date: '', reason: '' })

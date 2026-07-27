@@ -43,7 +43,7 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
     { id: 'attendance', label: 'Mobile Sign In', visible: isSignCapable },
     { id: 'employee-card', label: 'Employee Card', visible: isEmployee || isManagerUser },
     { id: 'history', label: 'History', visible: isSignCapable || isApprovalCapable },
-    { id: 'approvals', label: 'Approvals', visible: isApprovalCapable },
+    { id: 'approvals', label: 'Approvals', visible: isSuperUser || isFranchiseUser },
     { id: 'staff', label: isManagerUser && !isFranchiseUser ? 'My Staff' : 'HR Staff', visible: isSuperUser || isFranchiseUser || isManagerUser },
     { id: 'business', label: 'Business Information', visible: isFranchiseUser },
     { id: 'franchises', label: 'Franchise Approvals', visible: isSuperUser },
@@ -55,6 +55,7 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
 
   const mobileStaffTabs = useMemo(() => [
     { id: 'attendance', label: 'Mobile Sign In', visible: isSignCapable },
+    { id: 'staff', label: 'My Staff', visible: isManagerUser },
     { id: 'employee-card', label: 'Employee Card', visible: isEmployee || isManagerUser },
     { id: 'history', label: 'History', visible: isSignCapable || isApprovalCapable },
     { id: 'leave', label: 'Leave', visible: isEmployee || isManagerUser },
@@ -125,8 +126,8 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
         {activeTab === 'attendance' && isSignCapable ? <MobileAttendancePage me={me} onDone={goBackToMobileMenu} /> : null}
         {activeTab === 'employee-card' && (isEmployee || isManagerUser) ? <DigitalIdCard /> : null}
         {activeTab === 'history' && (isSignCapable || isApprovalCapable) ? <AttendanceHistoryPage me={me} /> : null}
-        {activeTab === 'approvals' && isApprovalCapable ? <AttendanceApprovalPage me={me} /> : null}
-        {activeTab === 'staff' && (isSuperUser || isFranchiseUser || isManagerUser) ? <FranchiseStaffPage me={me} /> : null}
+        {activeTab === 'approvals' && (isSuperUser || isFranchiseUser) ? <AttendanceApprovalPage me={me} /> : null}
+        {activeTab === 'staff' && (isSuperUser || isFranchiseUser || isManagerUser) ? <FranchiseStaffPage me={me} onNavigate={openTab} /> : null}
         {activeTab === 'business' && isFranchiseUser ? <BusinessInformationPage /> : null}
         {activeTab === 'franchises' && isSuperUser ? <FranchiseRegistrationApprovalPage me={me} /> : null}
         {activeTab === 'leave' ? <LeavePage me={me} /> : null}

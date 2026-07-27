@@ -82,10 +82,33 @@ def test_four_digit_office_code_is_required_in_sign_in_and_sign_out():
     assert "_validate_office_qr_for_user" in sign_out_source
 
 
-def test_outside_radius_is_rejected_for_office_attendance():
+def test_outside_radius_is_recorded_for_office_attendance():
     source = inspect.getsource(attendance._validate_gps)
     assert "gps_status = 'outside_area'" in source
-    assert "outside the allowed range of your assigned office" in source
+    assert "outside the allowed range of your assigned office" not in source
+    assert "Range and accuracy exceptions are evidence" in source
+    assert "outside the office GPS range and is pending review" in attendance._attendance_action_message("sign_in", "outside_area")
+
+
+def test_outside_radius_remains_visible_on_session_report(monkeypatch):
+    monkeypatch.setattr(attendance, "_is_missing_sign_out", lambda db, event, now=None: False)
+    monkeypatch.setattr(attendance, "_user_display_context", lambda db, user_id: {"user_full_name": "Remote Employee"})
+    base = attendance.now_sa_naive()
+    sign_in = SimpleNamespace(
+        id=31, user_id=9, action="sign_in", created_at=base,
+        gps_status="outside_area", approval_status="pending",
+        work_location_type="outside_area", is_late=False, late_minutes=0,
+        latitude="-26.10", longitude="27.81",
+    )
+    sign_out = SimpleNamespace(
+        id=32, user_id=9, action="sign_out", created_at=base,
+        gps_status="inside_area", approval_status="pending",
+        work_location_type="office", left_early=False, early_leave_minutes=0,
+        latitude="-26.18", longitude="28.32",
+    )
+    session = attendance._build_sessions(object(), [sign_in, sign_out])[0]
+    assert session["status"] == "outside_area"
+    assert session["approval_status"] == "pending"
 
 
 def test_open_session_is_returned_before_sign_out(monkeypatch):

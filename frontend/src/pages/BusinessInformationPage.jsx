@@ -32,6 +32,7 @@ export default function BusinessInformationPage() {
   const [error, setError] = useState('')
   const [pickedLocation, setPickedLocation] = useState(null)
   const [gpsConfirmed, setGpsConfirmed] = useState(false)
+  const [editingGps, setEditingGps] = useState(false)
   const [radius, setRadius] = useState(100)
   const [deleteDialog, setDeleteDialog] = useState(null)
   const [replacementAreaId, setReplacementAreaId] = useState('')
@@ -51,6 +52,7 @@ export default function BusinessInformationPage() {
         || null
       setOffice(headOffice)
       setRadius(headOffice?.allowed_radius_m || 100)
+      setEditingGps(!(headOffice?.latitude != null && headOffice?.longitude != null))
     } catch (err) { setError(err.message || 'Unable to load business information') }
     finally { setLoading(false) }
   }
@@ -97,6 +99,7 @@ export default function BusinessInformationPage() {
       setPickedLocation(null)
       setGpsConfirmed(false)
       await load()
+      setEditingGps(false)
     } catch (err) { setError(err.message || 'Unable to save Head Office settings') }
     finally { setSaving(false) }
   }
@@ -250,7 +253,13 @@ export default function BusinessInformationPage() {
 
       <section className="form-card business-map-card">
         <div><h2>Head Office GPS and attendance radius</h2><p className="muted">All employees, agents and managers assigned to the business address use this office's weekly attendance code.</p><strong>{form.office_address || 'No business address saved yet.'}</strong></div>
-        {office ? <>
+        {office && !editingGps && office.latitude != null && office.longitude != null ? (
+          <div className="status-panel">
+            <p className="success"><strong>Head Office GPS is saved.</strong></p>
+            <p className="muted small">Entrance: {Number(office.latitude).toFixed(6)}, {Number(office.longitude).toFixed(6)} · Attendance radius: {office.allowed_radius_m || 100} m</p>
+            <button type="button" className="glass-button" onClick={() => setEditingGps(true)}>Edit GPS and radius</button>
+          </div>
+        ) : office ? <>
           <OfficeLocationMap office={{ ...office, address: form.office_address }} onPick={handleOfficePick} />
           <div className="form-grid two-column-grid business-qr-settings">
             <label>Attendance radius (metres)<input type="number" min="10" value={radius} onChange={(event) => setRadius(event.target.value)} /></label>
@@ -259,7 +268,7 @@ export default function BusinessInformationPage() {
           {pickedLocation ? <p className="muted small">Selected GPS: {pickedLocation.latitude.toFixed(6)}, {pickedLocation.longitude.toFixed(6)}</p> : null}
           {office.latitude != null && office.longitude != null ? <p className="muted small">Previously saved GPS: {Number(office.latitude).toFixed(6)}, {Number(office.longitude).toFixed(6)}</p> : null}
           <label className="user-check"><input type="checkbox" checked={gpsConfirmed} onChange={(event) => setGpsConfirmed(event.target.checked)} /><span>I confirmed this marker is the physical Head Office entrance.</span></label>
-          <div className="button-row"><button type="button" onClick={saveOfficeSettings} disabled={saving || !gpsConfirmed}>Save GPS and radius</button><button type="button" className="danger-button" onClick={beginDeleteOffice} disabled={saving}>Replace and archive address</button></div>
+          <div className="button-row"><button type="button" onClick={saveOfficeSettings} disabled={saving || !gpsConfirmed}>Save GPS and radius</button>{office.latitude != null && office.longitude != null ? <button type="button" className="glass-button" onClick={() => { setEditingGps(false); setPickedLocation(null); setGpsConfirmed(false) }}>Cancel edit</button> : null}<button type="button" className="danger-button" onClick={beginDeleteOffice} disabled={saving}>Replace and archive address</button></div>
         </> : <p className="muted">Save a complete business address first. The system will create the Head Office attendance location automatically.</p>}
       </section>
 
