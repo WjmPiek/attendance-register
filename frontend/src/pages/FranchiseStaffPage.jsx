@@ -230,6 +230,7 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
   const isEmployeeView = Boolean(
     me?.roles?.includes('EmployeeUser') && !isManagerView && !isSuperUser
   )
+  const canSeeManagerList = isSuperUser || (!isManagerView && !isEmployeeView)
   const [activeSubTab, setActiveSubTab] = useState('view')
   const [managers, setManagers] = useState([])
   const [employees, setEmployees] = useState([])
@@ -1187,8 +1188,8 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
             else editStaff('managers', viewItem)
           }} />
 
-          {isSuperUser ? <section className="form-card staff-list-card">
-            <h2>My Managers</h2>
+          {canSeeManagerList ? <section className="form-card staff-list-card">
+            <h2>{isSuperUser ? 'My Managers' : 'Managers'}</h2>
             <div className="table-wrap">
               <table>
                 <thead><tr><th>Name</th><th>Username</th><th>EMPL. NO</th><th>Email</th><th>Contact</th><th>Office</th><th>Office Hours</th><th>Active</th><th>Actions</th></tr></thead>

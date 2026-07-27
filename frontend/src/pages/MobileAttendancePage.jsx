@@ -20,38 +20,45 @@ async function getRearCameraStream() {
   }
 
   const streamFor = (video) => navigator.mediaDevices.getUserMedia({ video, audio: false })
+  const cameraSizes = {
+    width: { ideal: 1280 },
+    height: { ideal: 720 },
+  }
 
   try {
     return await streamFor({
       facingMode: { exact: 'environment' },
-      width: { ideal: 1280 },
-      height: { ideal: 720 },
+      ...cameraSizes,
     })
   } catch (exactError) {
     if (exactError?.name === 'NotAllowedError' || exactError?.name === 'SecurityError') throw exactError
   }
 
   try {
+    return await streamFor({
+      facingMode: { ideal: 'environment' },
+      ...cameraSizes,
+    })
+  } catch (idealError) {
+    if (idealError?.name === 'NotAllowedError' || idealError?.name === 'SecurityError') throw idealError
+  }
+
+  try {
     const devices = await navigator.mediaDevices.enumerateDevices()
-    const rearCamera = devices
-      .filter((device) => device.kind === 'videoinput')
-      .find((device) => REAR_CAMERA_HINTS.some((hint) => device.label.toLowerCase().includes(hint)))
+    const cameras = devices.filter((device) => device.kind === 'videoinput')
+    const rearCamera = cameras.find((device) => REAR_CAMERA_HINTS.some((hint) => device.label.toLowerCase().includes(hint)))
+      || (cameras.length > 1 ? cameras[cameras.length - 1] : null)
     if (rearCamera?.deviceId) {
       return await streamFor({
         deviceId: { exact: rearCamera.deviceId },
-        width: { ideal: 1280 },
-        height: { ideal: 720 },
+        ...cameraSizes,
       })
     }
   } catch (deviceError) {
     if (deviceError?.name === 'NotAllowedError' || deviceError?.name === 'SecurityError') throw deviceError
   }
 
-  return streamFor({
-    facingMode: { ideal: 'environment' },
-    width: { ideal: 1280 },
-    height: { ideal: 720 },
-  })
+  return streamFor(true)
 }
 
 export default function MobileAttendancePage({ me, onDone }) {
@@ -420,9 +427,8 @@ export default function MobileAttendancePage({ me, onDone }) {
 
           {!manualEntry ? (
             <div className="live-qr-scanner">
-              <video ref={scannerVideoRef} aria-label="Live office QR scanner" playsInline muted autoPlay />
-              <div className="qr-frame-guide" aria-hidden="true" />
-              <strong>{scanning ? 'Hold the QR code steady inside the frame' : 'Starting camera...'}</strong>
+              <video ref={scannerVideoRef} aria-label="Live office QR scanner" playsInline muted autoPlay disablePictureInPicture />
+              <strong>{scanning ? 'Hold the QR code steady in view' : 'Starting camera...'}</strong>
             </div>
           ) : (
             <div className="form-grid one-column">
