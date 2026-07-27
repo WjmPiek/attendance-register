@@ -1,16 +1,23 @@
 # Phase 3 — Attendance
 
-- [x] Office QR is optional
+- [x] Every office has a reusable four-digit attendance code
+- [x] Office code is required for office sign-in and sign-out
+- [x] Printed office PDF shows both the four-digit code and QR
 - [x] GPS coordinates and accuracy are required for every action
 - [x] Signature image is required for every action
 - [x] Front-camera attendance photo is captured automatically
 - [x] GPS allocation and office coordinates are required for office attendance
-- [x] Office radius distance is calculated and retained
-- [x] Outside-radius and low-accuracy events remain available for approval
+- [x] Office radius distance is calculated on the backend
+- [x] Office attendance is rejected outside the assigned office radius
+- [x] Low-accuracy office attendance is rejected until precise GPS is available
 - [x] On-road attendance requires a note and remains available for approval
 - [x] Franchise users and linked managers receive event notifications
 - [x] Employees receive approval and rejection notifications
 - [x] Attendance photos are scoped and viewable from Approvals
 - [x] Mobile completion returns to the staff navigation
 - [x] Historical events remain compatible after the evidence migration
-- [ ] Production migration, mobile permission test, and Render verification
+- [x] Open sessions and sign-in events display before sign-out
+- [x] Date-filtered sessions retain an open sign-in from before the date range
+- [x] Default exports include users with attendance records instead of a blank supervisor account
+- [x] Backend tests, verification audit, migration-head check, and frontend bundle validation
+- [ ] Run migration 011 and complete production mobile/Render verification

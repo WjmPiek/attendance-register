@@ -111,7 +111,7 @@ def _extract_qr_token(qr_value: str | None) -> str | None:
 
 
 def _qr_payload(token: str) -> str:
-    return f'ARP-OFFICE:{token}'
+    return str(token)
 
 
 def _qr_scan_url(token: str) -> str:
@@ -127,6 +127,29 @@ def _token_hash(token: str | None) -> str | None:
     if not token:
         return None
     return hashlib.sha256(str(token).encode('utf-8')).hexdigest()
+
+
+def _generate_office_code(db: Session, exclude_area_id: int | None = None) -> str:
+    """Return an unused reusable four-digit attendance code."""
+    for _ in range(9000):
+        candidate = str(1000 + secrets.randbelow(9000))
+        params = {'candidate': candidate}
+        exclude_sql = ''
+        if exclude_area_id is not None:
+            exclude_sql = 'AND id <> :exclude_area_id'
+            params['exclude_area_id'] = int(exclude_area_id)
+        exists = db.execute(text(f"""
+            SELECT 1
+            FROM areas
+            WHERE qr_token = :candidate
+              AND franchise_user_id IS NOT NULL
+              AND COALESCE(is_archived, FALSE) = FALSE
+              {exclude_sql}
+            LIMIT 1
+        """), params).scalar()
+        if not exists:
+            return candidate
+    raise HTTPException(status_code=503, detail='No office attendance code is currently available')
 
 
 def _office_address(row: dict) -> str:
@@ -182,7 +205,7 @@ def _upsert_address_area(db: Session, franchise_user_id: int, address: str, labe
         """), {'name': label[:120], 'address': address.strip(), 'now': now, 'id': row['id']})
         area_id = int(row['id'])
     else:
-        token = secrets.token_urlsafe(32)
+        token = _generate_office_code(db)
         inserted = db.execute(text("""
             INSERT INTO areas (name, code, description, office_address, allowed_radius_m, franchise_user_id,
                                qr_token, qr_enabled, is_archived, qr_updated_at, created_at, updated_at)
@@ -277,8 +300,9 @@ def _office_qr_row(db: Session, area_id: int):
     if not row:
         raise HTTPException(status_code=404, detail='Office / area not found')
     row = dict(row)
-    if not row.get('qr_token'):
-        token = secrets.token_urlsafe(32)
+    token_value = str(row.get('qr_token') or '').strip()
+    if len(token_value) != 4 or not token_value.isdigit():
+        token = _generate_office_code(db, exclude_area_id=area_id)
         db.execute(text("""
             UPDATE areas
             SET qr_token = :token, qr_enabled = TRUE, qr_updated_at = :now
@@ -295,7 +319,9 @@ def _validate_office_qr_for_user(db: Session, user_id: int, qr_value: str | None
     _ensure_office_qr_schema(db)
     token = _extract_qr_token(qr_value)
     if not token:
-        raise HTTPException(status_code=400, detail='Office QR code is required before sign in/out')
+        raise HTTPException(status_code=400, detail='The four-digit office code is required before sign in or out')
+    if len(token) != 4 or not token.isdigit():
+        raise HTTPException(status_code=400, detail='Enter the four-digit office code')
     area = db.execute(text("""
         SELECT id, name, code, description, office_address, latitude, longitude, allowed_radius_m,
                qr_token, COALESCE(qr_enabled, TRUE) AS qr_enabled, COALESCE(is_archived, FALSE) AS is_archived, archived_at, franchise_user_id
@@ -304,10 +330,10 @@ def _validate_office_qr_for_user(db: Session, user_id: int, qr_value: str | None
         LIMIT 1
     """), {'token': token}).mappings().first()
     if not area:
-        raise HTTPException(status_code=400, detail='Invalid office QR code')
+        raise HTTPException(status_code=400, detail='Invalid four-digit office code')
     area = dict(area)
     if area.get('qr_enabled') is False:
-        raise HTTPException(status_code=400, detail='This office QR code is disabled')
+        raise HTTPException(status_code=400, detail='This office attendance code is disabled')
     _sync_user_address_allocation(db, user_id)
     allocation = db.execute(text("""
         SELECT area_id
@@ -317,7 +343,7 @@ def _validate_office_qr_for_user(db: Session, user_id: int, qr_value: str | None
         LIMIT 1
     """), {'user_id': user_id}).mappings().first()
     if allocation and allocation.get('area_id') and int(allocation['area_id']) != int(area['id']):
-        raise HTTPException(status_code=400, detail='Scanned QR does not match your assigned office')
+        raise HTTPException(status_code=400, detail='This code does not match your assigned office')
     return area, token
 
 
@@ -672,6 +698,8 @@ def _validate_rules(db: Session, user: User, payload: AttendanceActionRequest, i
 
     if payload.work_location_type == 'on_road' and not payload.employee_note:
         raise HTTPException(status_code=400, detail='Employee note is required when signing on the road')
+    if (payload.work_location_type or 'office') == 'office' and not payload.qr_value:
+        raise HTTPException(status_code=400, detail='The four-digit office code is required for office attendance')
 
 
 def _payload_accuracy(payload: AttendanceActionRequest):
@@ -733,12 +761,14 @@ def _validate_gps(db: Session, user_id: int, payload: AttendanceActionRequest):
                 gps_status = 'inside_area'
 
             else:
-                # Keep the evidence and route the exception to approval instead
-                # of discarding the attendance attempt.
                 gps_status = 'outside_area'
 
     if (payload.work_location_type or 'office') == 'office' and gps_status == 'no_allocation':
         raise HTTPException(status_code=400, detail='A configured office GPS allocation is required before signing in or out')
+    if (payload.work_location_type or 'office') == 'office' and gps_status == 'accuracy_too_low':
+        raise HTTPException(status_code=400, detail='GPS accuracy is too low to verify the office. Enable precise location and try again')
+    if (payload.work_location_type or 'office') == 'office' and gps_status == 'outside_area':
+        raise HTTPException(status_code=400, detail='You are outside the allowed range of your assigned office')
     if (payload.work_location_type or 'office') == 'on_road' and gps_status == 'no_allocation':
         gps_status = 'on_road'
 
@@ -882,6 +912,35 @@ def _filtered_events(db: Session, requested_user_ids, from_date: Optional[str], 
         query = query.filter(AttendanceEvent.created_at < end)
     order = AttendanceEvent.created_at.asc() if ascending else AttendanceEvent.created_at.desc()
     return query.order_by(order).limit(1000).all()
+
+
+def _filtered_session_events(db: Session, requested_user_ids, from_date: Optional[str], to_date: Optional[str]):
+    """Include open sessions that began before the selected date window."""
+    if isinstance(requested_user_ids, int):
+        requested_user_ids = [requested_user_ids]
+    requested_user_ids = [int(uid) for uid in requested_user_ids if uid is not None]
+    events = _filtered_events(db, requested_user_ids, from_date, to_date, ascending=True)
+    if not requested_user_ids or not from_date:
+        return events
+
+    start = datetime.fromisoformat(from_date)
+    included_ids = {event.id for event in events}
+    prior_rows = (
+        db.query(AttendanceEvent)
+        .filter(
+            AttendanceEvent.user_id.in_(requested_user_ids),
+            AttendanceEvent.created_at < start,
+        )
+        .order_by(AttendanceEvent.user_id.asc(), AttendanceEvent.created_at.desc())
+        .all()
+    )
+    latest_prior_by_user = {}
+    for event in prior_rows:
+        latest_prior_by_user.setdefault(event.user_id, event)
+    for event in latest_prior_by_user.values():
+        if event.action == 'sign_in' and event.id not in included_ids:
+            events.append(event)
+    return sorted(events, key=lambda event: event.created_at)
 
 
 def _session_status(sign_in: Optional[AttendanceEvent], sign_out: Optional[AttendanceEvent], missing_sign_out: bool):
@@ -1105,7 +1164,7 @@ def attendance_sessions(user_id: Optional[int] = Query(default=None), franchise_
         requested_user_ids = [user_id]
     else:
         requested_user_ids = _visible_attendance_user_ids(db, current_user, franchise_id=franchise_id)
-    events = _filtered_events(db, requested_user_ids, from_date, to_date, ascending=True)
+    events = _filtered_session_events(db, requested_user_ids, from_date, to_date)
     sessions = _build_sessions(db, events)
     if not user_id:
         sessions = _include_users_without_sessions(db, sessions, requested_user_ids)
@@ -1386,7 +1445,8 @@ def _build_attendance_pdf(db: Session, view: str, selected_user_id: int, from_da
 
     ctx = _lookup_selected_user_context(db, selected_user_id)
     events = _filtered_events(db, [selected_user_id], from_date, to_date, ascending=True)
-    sessions = _build_sessions(db, events)
+    session_events = _filtered_session_events(db, [selected_user_id], from_date, to_date)
+    sessions = _build_sessions(db, session_events)
 
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -1586,7 +1646,7 @@ def create_office(payload: OfficeCreateRequest, current_user: User = Depends(get
     existing=db.execute(text("SELECT id FROM areas WHERE franchise_user_id=:fid AND LOWER(COALESCE(office_address,description,''))=LOWER(:address) AND COALESCE(is_archived,FALSE)=FALSE"), {'fid':fid,'address':address}).scalar()
     if existing:
         raise HTTPException(status_code=409, detail='This office address already exists')
-    token=secrets.token_urlsafe(24)
+    token=_generate_office_code(db)
     row=db.execute(text("""INSERT INTO areas(name,code,description,office_address,latitude,longitude,allowed_radius_m,franchise_user_id,qr_token,qr_enabled,is_archived,created_at,updated_at)
       VALUES(:name,:code,:address,:address,:lat,:lng,:radius,:fid,:token,TRUE,FALSE,:now,:now) RETURNING id"""),
       {'name':name,'code':f'OFF-{int(datetime.utcnow().timestamp())}','address':address,'lat':payload.latitude,'lng':payload.longitude,'radius':max(10,int(payload.allowed_radius_m or 100)),'fid':fid,'token':token,'now':now_sa_naive()}).scalar()
@@ -1698,7 +1758,8 @@ def print_office_qr_pdf(area_id: int, current_user: User = Depends(get_current_u
     dark = colors.HexColor('#292536')
     address = _office_address(area) or 'Address not captured'
     office_name = str(area.get('name') or 'Office').split(' [', 1)[0].strip()
-    scan_url = _qr_scan_url(area['qr_token'])
+    office_code = str(area['qr_token'])
+    scan_url = _qr_scan_url(office_code)
     qr_code = qr.QrCodeWidget(scan_url)
     bounds = qr_code.getBounds()
     width = bounds[2] - bounds[0]
@@ -1714,12 +1775,22 @@ def print_office_qr_pdf(area_id: int, current_user: User = Depends(get_current_u
     header_items = []
     if logo_path.exists():
         header_items.append(Image(str(logo_path), width=68*mm, height=34*mm, kind='proportional'))
-    header_items.extend([Paragraph('OFFICE ATTENDANCE', title_style), Paragraph(office_name, office_style), Paragraph(address, center_style)])
+    code_style = ParagraphStyle('OfficeCode', parent=styles['Title'], fontSize=38, leading=42, textColor=brand, alignment=TA_CENTER, spaceBefore=2*mm, spaceAfter=2*mm)
+    header_items.extend([
+        Paragraph('OFFICE ATTENDANCE', title_style),
+        Paragraph(office_name, office_style),
+        Paragraph(address, center_style),
+        Paragraph(f'<b>OFFICE CODE: {office_code}</b>', code_style),
+    ])
     header = Table([[item] for item in header_items], colWidths=[186*mm])
     header.setStyle(TableStyle([('ALIGN',(0,0),(-1,-1),'CENTER'),('VALIGN',(0,0),(-1,-1),'MIDDLE'),('BOTTOMPADDING',(0,0),(-1,-1),2*mm)]))
     qr_panel = Table([[drawing]], colWidths=[140*mm], rowHeights=[140*mm])
     qr_panel.setStyle(TableStyle([('ALIGN',(0,0),(-1,-1),'CENTER'),('VALIGN',(0,0),(-1,-1),'MIDDLE'),('BOX',(0,0),(-1,-1),2,brand),('BACKGROUND',(0,0),(-1,-1),colors.white),('LEFTPADDING',(0,0),(-1,-1),8*mm),('RIGHTPADDING',(0,0),(-1,-1),8*mm),('TOPPADDING',(0,0),(-1,-1),8*mm),('BOTTOMPADDING',(0,0),(-1,-1),8*mm)]))
-    footer = Table([[Paragraph('<b>SCAN TO SIGN IN OR SIGN OUT</b>', instruction_style)],[Paragraph('Use your registered staff login. The system verifies your account and assigned office before opening attendance.', center_style)],[Paragraph('GPS location and signature are required to complete attendance.', center_style)]], colWidths=[180*mm])
+    footer = Table([
+        [Paragraph(f'<b>ENTER CODE {office_code} OR SCAN TO SIGN IN OR SIGN OUT</b>', instruction_style)],
+        [Paragraph('Use your registered staff login. The code works only for staff assigned to this office and physically inside its configured GPS radius.', center_style)],
+        [Paragraph('GPS location, signature and automatic photo evidence are required to complete attendance.', center_style)],
+    ], colWidths=[180*mm])
     footer.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2ecff')),('BOX',(0,0),(-1,-1),1,colors.HexColor('#ded2f8')),('ALIGN',(0,0),(-1,-1),'CENTER'),('VALIGN',(0,0),(-1,-1),'MIDDLE'),('TOPPADDING',(0,0),(-1,-1),4*mm),('BOTTOMPADDING',(0,0),(-1,-1),4*mm),('LEFTPADDING',(0,0),(-1,-1),6*mm),('RIGHTPADDING',(0,0),(-1,-1),6*mm)]))
     doc.build([header, Spacer(1,5*mm), qr_panel, Spacer(1,6*mm), footer])
     buffer.seek(0)
@@ -1731,7 +1802,7 @@ def print_office_qr_pdf(area_id: int, current_user: User = Depends(get_current_u
 def regenerate_office_qr(area_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     area = _office_qr_row(db, area_id)
     _assert_office_area_access(db, current_user, area, write=True)
-    new_token = secrets.token_urlsafe(32)
+    new_token = _generate_office_code(db, exclude_area_id=area_id)
     now = now_sa_naive()
     db.execute(text("""
         UPDATE areas
@@ -1741,7 +1812,7 @@ def regenerate_office_qr(area_id: int, current_user: User = Depends(get_current_
     db.commit()
     updated = _office_qr_row(db, area_id)
     return {
-        'message': 'A new office QR code was generated. The previous printed QR code is now invalid.',
+        'message': 'A new four-digit office code was generated. The previous code is now invalid.',
         'office': updated,
     }
 
@@ -1937,7 +2008,7 @@ def sign_in(payload: AttendanceActionRequest, current_user: User = Depends(get_c
     _validate_rules(db, current_user, payload, True)
     qr_area = None
     qr_token = None
-    if (payload.work_location_type or 'office') == 'office' and payload.qr_value:
+    if (payload.work_location_type or 'office') == 'office':
         qr_area, qr_token = _validate_office_qr_for_user(db, current_user.id, payload.qr_value)
     last = _get_last_event(db, current_user.id)
     if last and last.action == 'sign_in':
@@ -1979,7 +2050,7 @@ def sign_out(payload: AttendanceActionRequest, current_user: User = Depends(get_
     _validate_rules(db, current_user, payload, False)
     qr_area = None
     qr_token = None
-    if (payload.work_location_type or 'office') == 'office' and payload.qr_value:
+    if (payload.work_location_type or 'office') == 'office':
         qr_area, qr_token = _validate_office_qr_for_user(db, current_user.id, payload.qr_value)
     last = _get_last_event(db, current_user.id)
     if not last or last.action != 'sign_in':

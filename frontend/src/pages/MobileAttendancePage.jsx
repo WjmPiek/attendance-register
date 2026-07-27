@@ -131,7 +131,7 @@ export default function MobileAttendancePage({ me, onDone }) {
   useEffect(() => () => stopCamera(), [])
 
   const validateQr = async (value) => {
-    if (!value?.trim()) throw new Error('Please scan or enter the office QR code first.')
+    if (!/^\d{4}$/.test(value?.trim() || '')) throw new Error('Enter the four-digit office code.')
     const office = await validateOfficeQr(value.trim())
     setQrOffice(office)
     setQrValue(office.qr_payload || value.trim())
@@ -195,7 +195,10 @@ export default function MobileAttendancePage({ me, onDone }) {
     setMessage('')
     try {
       if (!signatureValue) throw new Error('Signature is required before sign in/out.')
-      if (workLocationType === 'office' && qrValue.trim() && !qrOffice) {
+      if (workLocationType === 'office' && !/^\d{4}$/.test(qrValue.trim())) {
+        throw new Error('Enter the four-digit office code before signing in or out.')
+      }
+      if (workLocationType === 'office' && !qrOffice) {
         await validateQr(qrValue)
       }
       if (workLocationType === 'on_road' && !employeeNote.trim()) {
@@ -247,7 +250,7 @@ export default function MobileAttendancePage({ me, onDone }) {
 
   return (
     <Card title="Mobile Employee Attendance">
-      <p className="muted">GPS, signature and an automatic camera photo are required. The office QR code is optional.</p>
+      <p className="muted">GPS, signature, an automatic camera photo and the four-digit office code are required for office attendance.</p>
       <div className="status-panel">
         <div><strong>User:</strong> {me.full_name}</div>
         <div><strong>Status:</strong> {status?.current_status || 'loading'}</div>
@@ -272,8 +275,8 @@ export default function MobileAttendancePage({ me, onDone }) {
       <div className="qr-scan-card">
         <div className="detail-header mobile-qr-header">
           <div>
-            <h3>Office QR code <span className="muted">(optional)</span></h3>
-            <p className="muted small">Scan the office QR when available to link the record to that printed code. GPS still verifies your assigned office when no QR is used.</p>
+            <h3>Four-digit office code <span className="muted">(required)</span></h3>
+            <p className="muted small">Enter the code displayed at your assigned office. The backend accepts it only while your GPS position is inside that office’s configured radius.</p>
           </div>
           <button type="button" onClick={startQrScan} disabled={scanning || workLocationType !== 'office'}>
             {scanning ? 'Scanning...' : 'Scan QR'}
@@ -286,10 +289,22 @@ export default function MobileAttendancePage({ me, onDone }) {
           {cameraOpen ? <button type="button" className="secondary-action" onClick={stopCamera}>Close camera</button> : null}
         </div>
         <label>
-          Manual QR code entry (optional)
-          <input value={qrValue} onChange={(event) => { setQrValue(event.target.value); setQrOffice(null) }} placeholder="ARP-OFFICE:..." disabled={workLocationType !== 'office'} />
+          Four-digit office code
+          <input
+            value={qrValue}
+            onChange={(event) => {
+              setQrValue(event.target.value.replace(/\D/g, '').slice(0, 4))
+              setQrOffice(null)
+            }}
+            inputMode="numeric"
+            pattern="[0-9]{4}"
+            maxLength="4"
+            autoComplete="one-time-code"
+            placeholder="1234"
+            disabled={workLocationType !== 'office'}
+          />
         </label>
-        <button type="button" className="secondary-action" onClick={() => validateQr(qrValue).then(() => setMessage('Office QR linked.')).catch((err) => setError(err.message))} disabled={workLocationType !== 'office'}>Validate QR</button>
+        <button type="button" className="secondary-action" onClick={() => validateQr(qrValue).then(() => setMessage('Office code verified. GPS range will be checked when you sign in or out.')).catch((err) => setError(err.message))} disabled={workLocationType !== 'office'}>Verify office code</button>
         {qrOffice ? <p className="success">Linked to {qrOffice.office_name || 'office'} · {qrOffice.address || 'No address captured'}</p> : null}
         {workLocationType === 'on_road' ? <p className="muted small">QR scan is not required for on-road work, but the note is required and goes for approval.</p> : null}
       </div>

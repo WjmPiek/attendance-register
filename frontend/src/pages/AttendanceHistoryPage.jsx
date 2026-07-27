@@ -142,7 +142,10 @@ export default function AttendanceHistoryPage({ me }) {
 
   const handleExport = async (view) => {
     try {
-      const selectedIds = exportUserIds.length ? exportUserIds : [activeFilters.userId || String(me.id)]
+      const recordUserIds = [...new Set(events.map((row) => String(row.user_id)).filter(Boolean))]
+      const selectedIds = exportUserIds.length
+        ? exportUserIds
+        : (activeFilters.userId ? [String(activeFilters.userId)] : (recordUserIds.length ? recordUserIds : [String(me.id)]))
       const stamp = new Date().toISOString().slice(0, 10)
       if (selectedIds.length === 1) {
         const userId = selectedIds[0]
@@ -266,7 +269,13 @@ export default function AttendanceHistoryPage({ me }) {
               </label>
             ))}
           </div>
-          <p className="muted small">Selected for export: {exportUserIds.length ? exportUserIds.map(selectedUserLabel).join(', ') : selectedUserLabel(activeFilters.userId || me.id)}</p>
+          <p className="muted small">
+            Selected for export: {exportUserIds.length
+              ? exportUserIds.map(selectedUserLabel).join(', ')
+              : (activeFilters.userId
+                ? selectedUserLabel(activeFilters.userId)
+                : 'all users with attendance records in the current filters')}
+          </p>
         </div>
       ) : null}
 
@@ -290,6 +299,7 @@ export default function AttendanceHistoryPage({ me }) {
       <div className="summary-grid">
         <div><strong>{sessionSummary?.total_sessions || 0}</strong><span>Sessions</span></div>
         <div><strong>{sessionSummary?.completed_sessions || 0}</strong><span>Completed</span></div>
+        <div><strong>{sessionSummary?.open_sessions || 0}</strong><span>Currently signed in</span></div>
         <div><strong>{formatDuration(sessionSummary?.total_minutes || 0)}</strong><span>Total duration</span></div>
         <div><strong>{sessionSummary?.late_sessions || 0}</strong><span>Late</span></div>
         <div><strong>{sessionSummary?.early_leave_sessions || 0}</strong><span>Early leave</span></div>

@@ -1024,21 +1024,21 @@ export default function FranchiseStaffPage({ me }) {
 
       {activeSubTab === 'qr' ? (
         <section className="form-card staff-list-card">
-          <h2>Printable Office QR Codes</h2>
-          <p className="muted">Each QR code is generated from the franchise business address or a manager/employee assigned office address. Staff can only use the QR code linked to their assigned address.</p>
+          <h2>Office Attendance Codes</h2>
+          <p className="muted">Each office has a reusable four-digit code and printable QR. The code works only for staff assigned to that address while their GPS is inside the configured radius.</p>
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Office</th><th>Linked business / assigned address</th><th>Assigned staff</th><th>Radius</th><th>QR Link</th><th>Action</th></tr></thead>
+              <thead><tr><th>Office</th><th>Four-digit code</th><th>Linked business / assigned address</th><th>Assigned staff</th><th>Radius</th><th>Action</th></tr></thead>
               <tbody>
                 {officeQrs.map((office) => <tr key={office.id}>
                   <td>{(office.name || `Office #${office.id}`).split(' [', 1)[0]}</td>
+                  <td><strong>{office.qr_payload || '—'}</strong></td>
                   <td>{office.address || '—'}</td>
                   <td>{office.assigned_user_count || 0}</td>
                   <td>{office.allowed_radius_m || 100} m</td>
-                  <td><span className="muted small">Opens registered staff sign in/out</span></td>
                   <td>
                     <button type="button" onClick={() => printOfficeQr(office)}>
-                      Download / Print QR
+                      Download / Print Code
                     </button>
 
                     <button type="button" onClick={() => setSelectedOffice(office)}>Set GPS</button>
