@@ -1953,6 +1953,79 @@ input[type="date"]::-webkit-date-and-time-value,
 .overview-action-row.enterprise-action-stack > .form-card { height: 100%; }
 .metric-card.metric-link { cursor: pointer; text-align: left; width: 100%; font: inherit; color: inherit; }
 .metric-card.metric-link:hover { transform: translateY(-2px); box-shadow: 0 14px 32px rgba(91,65,120,.13); }
+
+/* Main site page navigation: top buttons replace the desktop sidebar. */
+.main-site-page-shell {
+  grid-template-columns: 1fr;
+}
+.main-site-page-shell > .sidebar {
+  display: none;
+}
+.main-site-page-shell .content-panel {
+  width: min(1440px, 100%);
+  margin: 0 auto;
+}
+.main-page-tab-bar {
+  position: sticky;
+  top: 12px;
+  z-index: 40;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 18px;
+  padding: 16px;
+}
+.main-page-tab-bar .brand-block {
+  margin: 0;
+}
+.main-page-tab-buttons,
+.page-card-button-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: stretch;
+}
+.main-page-tab-buttons {
+  justify-content: center;
+}
+.page-card-button-grid {
+  margin-bottom: 18px;
+}
+.page-card-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 11px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(140,108,190,.18);
+  background: rgba(255,255,255,.82);
+  color: var(--text);
+  box-shadow: 0 10px 24px rgba(55,44,74,.07);
+  font-weight: 850;
+  text-align: center;
+}
+.page-card-button.active {
+  color: #fff;
+  border-color: rgba(141,99,189,.58);
+  background: linear-gradient(135deg, rgba(191,163,223,.96), rgba(141,99,189,.82));
+  box-shadow: 0 16px 32px rgba(141,99,189,.22);
+}
+.page-card-button span {
+  min-width: 0;
+}
+@media (max-width:980px) {
+  .main-page-tab-bar {
+    grid-template-columns: 1fr;
+  }
+  .main-page-tab-buttons {
+    justify-content: flex-start;
+  }
+  .main-page-tab-bar .logout-button {
+    width: 100%;
+  }
+}
 @media (max-width: 760px) {
   .business-info-hero { align-items: flex-start; flex-direction: column; }
   .two-column-grid, .business-map-card { grid-template-columns: 1fr; }

@@ -339,6 +339,7 @@ export default function OverviewDashboardPage({ onNavigate }) {
   const [loading, setLoading] = useState(false)
   const [leaveStatusFilter, setLeaveStatusFilter] = useState('all')
   const [showNotificationHistory, setShowNotificationHistory] = useState(false)
+  const [activeCard, setActiveCard] = useState('control')
 
   const load = async () => {
     setLoading(true)
@@ -387,16 +388,43 @@ export default function OverviewDashboardPage({ onNavigate }) {
   const notifications = data?.notifications || []
   const unreadNotifications = notifications.filter((n) => !n.is_read)
   const readNotifications = notifications.filter((n) => n.is_read)
+  const cardButtons = [
+    { id: 'control', label: 'Control centre' },
+    { id: 'alerts', label: 'Attendance alerts' },
+    { id: 'suggestions', label: 'Smart suggestions' },
+    { id: 'notifications', label: 'Notifications' },
+    { id: 'leave-planner', label: 'Leave planner' },
+    { id: 'leave-applications', label: 'Leave applications' },
+    { id: 'leave-calendar', label: 'Leave calendar' },
+    { id: 'pending-leave', label: 'Pending leave' },
+    { id: 'not-signed-in', label: 'Not signed in' },
+    { id: 'late-arrivals', label: 'Late arrivals' },
+    { id: 'missing-sign-out', label: 'Missing sign-out' },
+    { id: 'gps-issues', label: 'GPS issues' },
+  ]
 
   return (
     <div className="overview-dashboard overview-dashboard-pro">
       {error ? <p className="error">{error}</p> : null}
 
-      <OverviewMetricRail metrics={metrics} lists={lists} onNavigate={onNavigate} />
+      <div className="page-card-button-grid" aria-label="Overview cards">
+        {cardButtons.map((card) => (
+          <button
+            key={card.id}
+            type="button"
+            className={activeCard === card.id ? 'page-card-button active' : 'page-card-button'}
+            onClick={() => setActiveCard(card.id)}
+          >
+            <span>{card.label}</span>
+          </button>
+        ))}
+      </div>
 
-      <OverviewNotifications lists={lists} metrics={metrics} onNavigate={onNavigate} />
+      {activeCard === 'control' ? <OverviewMetricRail metrics={metrics} lists={lists} onNavigate={onNavigate} /> : null}
 
-      <div className="overview-action-row enterprise-action-stack">
+      {activeCard === 'alerts' ? <OverviewNotifications lists={lists} metrics={metrics} onNavigate={onNavigate} /> : null}
+
+      {activeCard === 'suggestions' ? (
         <section className="form-card suggestions-card">
           <div className="overview-card-title">
             <div>
@@ -414,7 +442,9 @@ export default function OverviewDashboardPage({ onNavigate }) {
             )) : <p className="muted">No urgent suggestions right now.</p>}
           </div>
         </section>
+      ) : null}
 
+      {activeCard === 'notifications' ? (
         <section className="form-card notifications-card">
           <div className="overview-card-title split">
             <div>
@@ -436,19 +466,16 @@ export default function OverviewDashboardPage({ onNavigate }) {
             )) : <p className="muted">{showNotificationHistory ? 'No read notifications in history.' : 'No unread notifications.'}</p>}
           </div>
         </section>
-      </div>
+      ) : null}
 
-      <LeaveReturnTimeline items={lists.approved_leave || []} year={2026} month={4} />
-
-      <div className="overview-detail-grid">
-        <LeaveList title="Leave applications" items={lists.leave_applications || lists.approved_leave || []} emptyText="No leave applications found for this scope." statusFilter={leaveStatusFilter} onStatusChange={setLeaveStatusFilter} />
-        <LeaveCalendar items={lists.approved_leave || []} />
-        <PersonList title="Pending leave applications" items={lists.pending_leave || []} emptyText="No pending leave applications found." />
-        <PersonList title="Not signed in today" items={lists.not_signed_in || []} emptyText="Everyone in scope has signed in or no active staff found." />
-        <PersonList title="Late arrivals" items={lists.late || []} emptyText="No late arrivals found today." />
-        <PersonList title="Missing sign-out" items={lists.missing_sign_out || []} emptyText="No missing sign-outs found." />
-        <PersonList title="Outside area / GPS issues" items={lists.gps_issues || []} emptyText="No GPS issues found today." />
-      </div>
+      {activeCard === 'leave-planner' ? <LeaveReturnTimeline items={lists.approved_leave || []} year={2026} month={4} /> : null}
+      {activeCard === 'leave-applications' ? <LeaveList title="Leave applications" items={lists.leave_applications || lists.approved_leave || []} emptyText="No leave applications found for this scope." statusFilter={leaveStatusFilter} onStatusChange={setLeaveStatusFilter} /> : null}
+      {activeCard === 'leave-calendar' ? <LeaveCalendar items={lists.approved_leave || []} /> : null}
+      {activeCard === 'pending-leave' ? <PersonList title="Pending leave applications" items={lists.pending_leave || []} emptyText="No pending leave applications found." /> : null}
+      {activeCard === 'not-signed-in' ? <PersonList title="Not signed in today" items={lists.not_signed_in || []} emptyText="Everyone in scope has signed in or no active staff found." /> : null}
+      {activeCard === 'late-arrivals' ? <PersonList title="Late arrivals" items={lists.late || []} emptyText="No late arrivals found today." /> : null}
+      {activeCard === 'missing-sign-out' ? <PersonList title="Missing sign-out" items={lists.missing_sign_out || []} emptyText="No missing sign-outs found." /> : null}
+      {activeCard === 'gps-issues' ? <PersonList title="Outside area / GPS issues" items={lists.gps_issues || []} emptyText="No GPS issues found today." /> : null}
     </div>
   )
 }

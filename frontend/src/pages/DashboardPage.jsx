@@ -156,9 +156,10 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
 
   const showMobileStaffMenuOnly = isMobileLayout && isStaffSelfService && !canManagePayroll && activeTab === null
   const showMobileStaffContentOnly = isMobileLayout && isStaffSelfService && !canManagePayroll && activeTab !== null
+  const showMainSiteTopMenu = !showMobileStaffMenuOnly && !showMobileStaffContentOnly
 
   return (
-    <div className={showMobileStaffMenuOnly ? 'app-shell mobile-staff-menu-shell' : (showMobileStaffContentOnly ? 'app-shell mobile-staff-content-shell' : 'app-shell')}>
+    <div className={showMobileStaffMenuOnly ? 'app-shell mobile-staff-menu-shell' : (showMobileStaffContentOnly ? 'app-shell mobile-staff-content-shell' : 'app-shell main-site-page-shell')}>
       <AttendanceExceptionPopup me={me} onNavigate={openTab} />
       {!showMobileStaffContentOnly ? <aside className={showMobileStaffMenuOnly ? 'sidebar glass-card mobile-card-menu' : 'sidebar glass-card'}>
         <div className="brand-block">
@@ -180,6 +181,25 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
       </aside> : null}
 
       {!showMobileStaffMenuOnly ? <main className="page content-panel">
+        {showMainSiteTopMenu ? (
+          <div className="main-page-tab-bar glass-card">
+            <div className="brand-block">
+              <img src="/logo.png" alt="Martins logo" />
+              <div>
+                <strong>Attendance</strong>
+                <span>Register Platform</span>
+              </div>
+            </div>
+            <nav className="main-page-tab-buttons" aria-label="Main sections">
+              {tabs.map((tab) => (
+                <button key={`${tab.id}-${tab.label}-top`} type="button" className={activeTab === tab.id ? 'page-card-button active' : 'page-card-button'} onClick={() => openTab(tab.id)}>
+                  <span>{tab.label}</span>
+                </button>
+              ))}
+            </nav>
+            <button className="logout-button glass-button" onClick={onLogout}>Logout</button>
+          </div>
+        ) : null}
         {showMobileStaffContentOnly ? (
           <div className="mobile-page-header glass-card">
             <button type="button" className="glass-button" onClick={goBackToMobileMenu}>Back to menu</button>
