@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import Card from '../components/Card'
-import { exportAttendancePdf, exportAttendancePdfBatch, getAttendanceFranchises, getAttendanceHistory, getAttendanceSessions, getAttendanceVisibleUsers } from '../api/client'
+import { exportAttendancePdf, exportAttendancePdfBatch, getAttendanceEventPhoto, getAttendanceFranchises, getAttendanceHistory, getAttendanceSessions, getAttendanceVisibleUsers } from '../api/client'
 
 function statusClass(value) {
   if (value === 'no_attendance') return 'badge neutral'
   if (['present', 'signed_out', 'inside_area', 'complete'].includes(value)) return 'badge good'
-  if (['late', 'early_leave', 'accuracy_too_low', 'open'].includes(value)) return 'badge warn'
+  if (['late', 'early_leave', 'accuracy_too_low', 'open', 'on_road'].includes(value)) return 'badge warn'
   return 'badge bad'
 }
 
@@ -154,6 +154,21 @@ export default function AttendanceHistoryPage({ me }) {
       }
     } catch (err) {
       setError(err.message)
+    }
+  }
+
+  const openEventPhoto = async (eventId) => {
+    try {
+      const blob = await getAttendanceEventPhoto(eventId)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.target = '_blank'
+      link.rel = 'noopener'
+      link.click()
+      window.setTimeout(() => URL.revokeObjectURL(url), 60000)
+    } catch (err) {
+      setError(err.message || 'Attendance photo could not be opened')
     }
   }
 
@@ -336,6 +351,7 @@ export default function AttendanceHistoryPage({ me }) {
                 <th>Status</th>
                 <th>GPS</th>
                 <th>Rules</th>
+                <th>Evidence</th>
                 <th>Map</th>
               </tr>
             </thead>
@@ -359,11 +375,16 @@ export default function AttendanceHistoryPage({ me }) {
                       {row.missing_sign_out ? <div>Missing sign-out</div> : null}
                       {!row.is_late && !row.left_early && !row.missing_sign_out ? <span className="muted">OK</span> : null}
                     </td>
+                    <td>
+                      <div>Signature: {row.signature_status || 'n/a'}</div>
+                      <div>Photo: {row.photo_status || 'not available'}</div>
+                      {row.photo_status === 'captured' ? <button type="button" className="glass-button small-button" onClick={() => openEventPhoto(row.id)}>View photo</button> : null}
+                    </td>
                     <td>{row.map_url ? <a href={row.map_url} target="_blank" rel="noreferrer">Open map</a> : <span className="muted">n/a</span>}</td>
                   </tr>
                 )
               })}
-              {!events.length ? <tr><td colSpan="7" className="muted">No attendance events found.</td></tr> : null}
+              {!events.length ? <tr><td colSpan="8" className="muted">No attendance events found.</td></tr> : null}
             </tbody>
           </table>
         </div>

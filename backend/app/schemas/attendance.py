@@ -10,6 +10,7 @@ class AttendanceActionRequest(BaseModel):
     accuracy_meters: Optional[float] = None
     device_info: Optional[str] = None
     signature_value: Optional[str] = None
+    photo_value: Optional[str] = None
     work_location_type: Optional[str] = 'office'  # office or on_road
     employee_note: Optional[str] = None
     qr_value: Optional[str] = None
@@ -56,6 +57,7 @@ class AttendanceHistoryItem(BaseModel):
     approved_at: Optional[str] = None
     rejected_reason: Optional[str] = None
     signature_status: Optional[str] = None
+    photo_status: Optional[str] = None
     created_at: str
     map_url: Optional[str] = None
 
@@ -123,4 +125,3 @@ class ScanRequest(BaseModel):
     qr_code: str
     lat: float
     lng: float
-

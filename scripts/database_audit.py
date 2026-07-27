@@ -11,7 +11,7 @@ REQUIRED_COLUMNS = {
     "manager_users": {"id", "user_id", "franchise_user_id", "employee_number", "name", "surname", "email", "office_address_assigned", "is_active"},
     "employee_users": {"id", "user_id", "franchise_user_id", "manager_user_id", "employee_role", "employee_number", "name", "surname", "email", "office_address_assigned", "is_active"},
     "areas": {"id", "franchise_user_id", "office_address", "qr_token", "qr_enabled", "is_archived", "archived_at"},
-    "attendance_events": {"id", "user_id", "action", "qr_area_id", "qr_office_name", "qr_token_hash"},
+    "attendance_events": {"id", "user_id", "action", "qr_area_id", "qr_office_name", "qr_token_hash", "attendance_photo", "attendance_photo_mime", "attendance_photo_filename", "photo_status"},
     "commission_structures": {"id", "franchise_user_id", "commission_type", "rate", "is_active"},
     "commission_entries": {"id", "franchise_user_id", "employee_user_id", "service_date", "calculated_amount", "status"},
     "leave_applications": {"id", "applicant_user_id", "franchise_user_id", "status"},

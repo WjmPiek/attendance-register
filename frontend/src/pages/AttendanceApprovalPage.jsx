@@ -4,6 +4,7 @@ import {
   approveAttendanceEvent,
   getAttendanceApprovals,
   getAttendanceFranchises,
+  getAttendanceEventPhoto,
   getAttendanceVisibleUsers,
   rejectAttendanceEvent,
 } from '../api/client'
@@ -109,6 +110,21 @@ export default function AttendanceApprovalPage({ me }) {
     }
   }
 
+  const openPhoto = async (id) => {
+    try {
+      const blob = await getAttendanceEventPhoto(id)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.target = '_blank'
+      link.rel = 'noopener'
+      link.click()
+      window.setTimeout(() => URL.revokeObjectURL(url), 60000)
+    } catch (err) {
+      setError(err.message || 'Attendance photo could not be opened')
+    }
+  }
+
   return (
     <Card title="Attendance Approval">
       <p className="muted">Use the filters to view pending, approved, rejected or all attendance events in your allowed franchise scope.</p>
@@ -178,6 +194,8 @@ export default function AttendanceApprovalPage({ me }) {
                   <td>
                     <div>{row.signature_status || 'n/a'}</div>
                     <div className="muted small">Signature data saved in event record</div>
+                    <div><strong>Photo:</strong> {row.photo_status || 'not available'}</div>
+                    {row.photo_status === 'captured' ? <button type="button" className="glass-button small-button" onClick={() => openPhoto(row.id)}>View automatic photo</button> : null}
                   </td>
                   <td>
                     <div><strong>Employee:</strong> {row.employee_note || 'n/a'}</div>

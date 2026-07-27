@@ -16,6 +16,7 @@ export default function MobileAttendancePage({ me, onDone }) {
   const [scanning, setScanning] = useState(false)
   const [cameraOpen, setCameraOpen] = useState(false)
   const [cameraStream, setCameraStream] = useState(null)
+  const [photoPreview, setPhotoPreview] = useState('')
   const videoRef = useRef(null)
   const fileCaptureRef = useRef(null)
 
@@ -24,6 +25,7 @@ export default function MobileAttendancePage({ me, onDone }) {
       const data = await getAttendanceStatus()
       setStatus(data)
     } catch (err) {
+      setMessage('')
       setError(err.message)
     }
   }
@@ -57,6 +59,44 @@ export default function MobileAttendancePage({ me, onDone }) {
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
     )
   })
+
+  const captureAttendancePhoto = async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      throw new Error('Camera access is required to capture your attendance photo.')
+    }
+    stopCamera()
+    let stream
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'user' }, width: { ideal: 720 }, height: { ideal: 720 } },
+        audio: false,
+      })
+      const video = document.createElement('video')
+      video.playsInline = true
+      video.muted = true
+      video.srcObject = stream
+      await new Promise((resolve, reject) => {
+        const timeout = window.setTimeout(() => reject(new Error('Camera did not become ready.')), 10000)
+        video.onloadedmetadata = () => {
+          window.clearTimeout(timeout)
+          video.play().then(resolve).catch(reject)
+        }
+      })
+      const width = Math.min(720, video.videoWidth || 640)
+      const height = Math.min(720, video.videoHeight || 480)
+      const canvas = document.createElement('canvas')
+      canvas.width = width
+      canvas.height = height
+      canvas.getContext('2d').drawImage(video, 0, 0, width, height)
+      const value = canvas.toDataURL('image/jpeg', 0.76)
+      setPhotoPreview(value)
+      return value
+    } catch (err) {
+      throw new Error(err.message || 'Camera permission is required for the automatic attendance photo.')
+    } finally {
+      if (stream) stream.getTracks().forEach((track) => track.stop())
+    }
+  }
 
 
   const stopCamera = () => {
@@ -136,20 +176,23 @@ export default function MobileAttendancePage({ me, onDone }) {
     setMessage('')
     try {
       if (!signatureValue) throw new Error('Signature is required before sign in/out.')
-      if (workLocationType === 'office' && !qrOffice) {
+      if (workLocationType === 'office' && qrValue.trim() && !qrOffice) {
         await validateQr(qrValue)
       }
       if (workLocationType === 'on_road' && !employeeNote.trim()) {
         throw new Error('Please enter a road-work reason/note.')
       }
       const location = await getLocation()
+      setMessage('GPS captured. Taking attendance photo...')
+      const photoValue = await captureAttendancePhoto()
       const payload = {
         ...location,
         device_info: navigator.userAgent,
         signature_value: signatureValue,
+        photo_value: photoValue,
         work_location_type: workLocationType,
         employee_note: employeeNote.trim() || null,
-        qr_value: workLocationType === 'office' ? qrValue : null,
+        qr_value: workLocationType === 'office' && qrValue.trim() ? qrValue : null,
       }
       const result = await submitAttendance(action, payload)
       setMessage(result.message)
@@ -159,6 +202,7 @@ export default function MobileAttendancePage({ me, onDone }) {
       setQrOffice(null)
       await loadStatus()
     } catch (err) {
+      setMessage('')
       setError(err.message)
     } finally {
       setLoading(false)
@@ -167,7 +211,7 @@ export default function MobileAttendancePage({ me, onDone }) {
 
   return (
     <Card title="Mobile Employee Attendance">
-      <p className="muted">Sign in/out with GPS and signature. Choose On road when working away from the assigned office.</p>
+      <p className="muted">GPS, signature and an automatic camera photo are required. The office QR code is optional.</p>
       <div className="status-panel">
         <div><strong>User:</strong> {me.full_name}</div>
         <div><strong>Status:</strong> {status?.current_status || 'loading'}</div>
@@ -192,8 +236,8 @@ export default function MobileAttendancePage({ me, onDone }) {
       <div className="qr-scan-card">
         <div className="detail-header mobile-qr-header">
           <div>
-            <h3>Office QR code</h3>
-            <p className="muted small">Scan the printed office QR code before signing in or out. This links the attendance record to the office address.</p>
+            <h3>Office QR code <span className="muted">(optional)</span></h3>
+            <p className="muted small">Scan the office QR when available to link the record to that printed code. GPS still verifies your assigned office when no QR is used.</p>
           </div>
           <button type="button" onClick={startQrScan} disabled={scanning || workLocationType !== 'office'}>
             {scanning ? 'Scanning...' : 'Scan QR'}
@@ -206,7 +250,7 @@ export default function MobileAttendancePage({ me, onDone }) {
           {cameraOpen ? <button type="button" className="secondary-action" onClick={stopCamera}>Close camera</button> : null}
         </div>
         <label>
-          Manual QR code entry
+          Manual QR code entry (optional)
           <input value={qrValue} onChange={(event) => { setQrValue(event.target.value); setQrOffice(null) }} placeholder="ARP-OFFICE:..." disabled={workLocationType !== 'office'} />
         </label>
         <button type="button" className="secondary-action" onClick={() => validateQr(qrValue).then(() => setMessage('Office QR linked.')).catch((err) => setError(err.message))} disabled={workLocationType !== 'office'}>Validate QR</button>
@@ -216,6 +260,12 @@ export default function MobileAttendancePage({ me, onDone }) {
 
       <SignaturePad onChange={setSignatureValue} />
 
+      <div className="attendance-evidence-note">
+        <strong>Automatic attendance photo</strong>
+        <p className="muted small">Your front camera opens only after you press Sign in or Sign out. The photo is captured automatically and stored with the GPS and signature evidence.</p>
+        {photoPreview ? <img src={photoPreview} alt="Latest automatic attendance capture" className="attendance-photo-preview" /> : null}
+      </div>
+
       <div className="mobile-actions">
         <button disabled={loading || status?.current_status === 'signed_in'} onClick={() => handleAction('sign-in')}>
           {loading ? 'Working...' : 'Sign in'}
@@ -224,7 +274,7 @@ export default function MobileAttendancePage({ me, onDone }) {
           {loading ? 'Working...' : 'Sign out'}
         </button>
       </div>
-      <p className="muted small">GPS and signature are recorded for office and on-road events. On-road events go to approval review.</p>
+      <p className="muted small">GPS, signature and camera evidence are recorded for office and on-road events. Outside-radius, low-accuracy and on-road events remain visible for approval review.</p>
       {message ? <div className="status-panel"><p className="success">{message}</p><button type="button" onClick={() => onDone?.()}>Done</button></div> : null}
       {error ? <p className="error">{error}</p> : null}
     </Card>

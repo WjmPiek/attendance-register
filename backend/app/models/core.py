@@ -280,6 +280,10 @@ class AttendanceEvent(Base, TimestampMixin):
     signature_image: Mapped[Optional[bytes]] = mapped_column(LargeBinary, nullable=True)
     signature_image_mime: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
     signature_image_filename: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    attendance_photo: Mapped[Optional[bytes]] = mapped_column(LargeBinary, nullable=True)
+    attendance_photo_mime: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
+    attendance_photo_filename: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    photo_status: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
     source: Mapped[str] = mapped_column(String(20), default="mobile")
 
     # NEW FIELDS

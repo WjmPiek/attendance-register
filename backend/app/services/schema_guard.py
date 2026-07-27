@@ -32,3 +32,14 @@ def assert_operational_schema(engine) -> None:
             '`python -m alembic upgrade head`. users.email must allow NULL '
             'for username-only staff accounts.'
         )
+    attendance_columns = {column['name'] for column in inspector.get_columns('attendance_events')}
+    missing_attendance = sorted({
+        'attendance_photo', 'attendance_photo_mime',
+        'attendance_photo_filename', 'photo_status',
+    } - attendance_columns)
+    if missing_attendance:
+        raise RuntimeError(
+            'Database schema is behind the application. Run '
+            '`python -m alembic upgrade head`. Missing attendance evidence '
+            'columns: ' + ', '.join(missing_attendance)
+        )

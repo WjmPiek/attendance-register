@@ -158,6 +158,10 @@ export async function rejectAttendanceEvent(eventId, payload = {}) {
   return apiRequest(`/attendance/events/${eventId}/reject`, { method: 'POST', body: JSON.stringify(payload) })
 }
 
+export async function getAttendanceEventPhoto(eventId) {
+  return apiBlob(`/attendance/events/${eventId}/photo`)
+}
+
 export async function registerFranchise(payload) {
   return apiRequest('/franchise/register', { method: 'POST', body: JSON.stringify(payload) })
 }

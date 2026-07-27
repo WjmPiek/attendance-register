@@ -491,13 +491,14 @@ def _attendance_franchise_recipient(db: Session, staff_user_id: int):
 
 
 def _notify_franchise_attendance_event(db: Session, event: AttendanceEvent, action_label: str) -> None:
-    """Create an email/outbox notification linked to the franchise user for this attendance action."""
+    """Notify the franchise owner and the employee's linked manager."""
     ctx = _attendance_franchise_recipient(db, int(event.user_id))
     if not ctx:
         return
     status_text = event.attendance_status or event.gps_status or 'recorded'
     approval_text = event.approval_status or 'approved'
     signature_text = event.signature_status or ('captured' if getattr(event, 'signature_image', None) else 'missing')
+    photo_text = getattr(event, 'photo_status', None) or ('captured' if getattr(event, 'attendance_photo', None) else 'missing')
     when = format_sa_datetime(event.created_at) if event.created_at else format_sa_datetime(now_sa_naive())
     subject = f"Attendance {action_label}: {ctx.get('staff_name')}"
     message = (
@@ -506,30 +507,49 @@ def _notify_franchise_attendance_event(db: Session, event: AttendanceEvent, acti
         f"Status: {status_text}\n"
         f"Approval: {approval_text}\n"
         f"Signature: {signature_text}\n"
+        f"Automatic photo: {photo_text}\n"
         f"Work type: {event.work_location_type or 'office'}\n\n"
         "Open the Attendance Register Platform to review the event and export the signed PDF if required."
     )
     target_tab = 'approvals' if approval_text == 'pending' else 'history'
-    create_notification(
-        db,
-        notification_type=f'attendance_{event.action}',
-        subject=subject,
-        message=message,
-        recipient_email=ctx.get('recipient_email'),
-        related_table='attendance_events',
-        related_id=int(event.id),
-        user_id=int(event.user_id),
-        recipient_user_id=ctx.get('recipient_user_id'),
-        franchise_user_id=ctx.get('franchise_user_id'),
-        severity='warning' if approval_text == 'pending' else 'info',
-        target_tab=target_tab,
-        send_email=True,
-    )
+    recipients = [{
+        'user_id': ctx.get('recipient_user_id'),
+        'email': ctx.get('recipient_email'),
+    }]
+    manager = db.execute(text("""
+        SELECT manager_login.id AS recipient_user_id, manager_login.email AS recipient_email
+        FROM employee_users employee
+        JOIN manager_users manager ON manager.id=employee.manager_user_id
+        JOIN users manager_login ON manager_login.id=manager.user_id
+        WHERE employee.user_id=:staff_user_id
+          AND COALESCE(employee.is_active,TRUE)=TRUE
+          AND COALESCE(manager.is_active,TRUE)=TRUE
+          AND COALESCE(manager_login.is_active,TRUE)=TRUE
+        LIMIT 1
+    """), {'staff_user_id':int(event.user_id)}).mappings().first()
+    if manager and int(manager['recipient_user_id']) != int(ctx.get('recipient_user_id') or 0):
+        recipients.append({'user_id':manager['recipient_user_id'],'email':manager['recipient_email']})
+    for recipient in recipients:
+        create_notification(
+            db,
+            notification_type=f'attendance_{event.action}',
+            subject=subject,
+            message=message,
+            recipient_email=recipient.get('email'),
+            related_table='attendance_events',
+            related_id=int(event.id),
+            user_id=int(event.user_id),
+            recipient_user_id=recipient.get('user_id'),
+            franchise_user_id=ctx.get('franchise_user_id'),
+            severity='warning' if approval_text == 'pending' else 'info',
+            target_tab=target_tab,
+            send_email=True,
+        )
 
 
 
 def _ensure_attendance_signature_columns(db: Session):
-    """Keep older databases compatible with signature image storage."""
+    """Keep older databases compatible with attendance evidence storage."""
     try:
         db.execute(text("ALTER TABLE attendance_events ADD COLUMN IF NOT EXISTS signature_image BYTEA"))
         db.execute(text("ALTER TABLE attendance_events ADD COLUMN IF NOT EXISTS signature_image_mime VARCHAR(80)"))
@@ -537,6 +557,10 @@ def _ensure_attendance_signature_columns(db: Session):
         db.execute(text("ALTER TABLE attendance_events ADD COLUMN IF NOT EXISTS qr_area_id INTEGER NULL"))
         db.execute(text("ALTER TABLE attendance_events ADD COLUMN IF NOT EXISTS qr_office_name VARCHAR(255) NULL"))
         db.execute(text("ALTER TABLE attendance_events ADD COLUMN IF NOT EXISTS qr_token_hash VARCHAR(128) NULL"))
+        db.execute(text("ALTER TABLE attendance_events ADD COLUMN IF NOT EXISTS attendance_photo BYTEA NULL"))
+        db.execute(text("ALTER TABLE attendance_events ADD COLUMN IF NOT EXISTS attendance_photo_mime VARCHAR(80) NULL"))
+        db.execute(text("ALTER TABLE attendance_events ADD COLUMN IF NOT EXISTS attendance_photo_filename VARCHAR(255) NULL"))
+        db.execute(text("ALTER TABLE attendance_events ADD COLUMN IF NOT EXISTS photo_status VARCHAR(30) NULL"))
         db.commit()
     except Exception:
         db.rollback()
@@ -564,6 +588,30 @@ def _signature_data_url_to_image(signature_value: Optional[str], event_action: s
         raise HTTPException(status_code=400, detail='Signature image is too large')
     ext = 'jpg' if mime in {'image/jpeg', 'image/jpg'} else mime.split('/')[-1]
     filename = f'signature_user_{int(user_id)}_{event_action}_{now_sa_naive().strftime("%Y%m%d%H%M%S")}.{ext}'
+    return image_bytes, mime, filename
+
+
+def _photo_data_url_to_image(photo_value: Optional[str], event_action: str, user_id: int):
+    """Validate and decode the automatically captured attendance photo."""
+    if not photo_value:
+        raise HTTPException(status_code=400, detail='Automatic attendance photo is required for this action')
+    value = str(photo_value).strip()
+    if not value.startswith('data:image/') or ';base64,' not in value:
+        raise HTTPException(status_code=400, detail='Attendance photo data is invalid')
+    header, encoded = value.split(';base64,', 1)
+    mime = header.replace('data:', '').strip().lower() or 'image/jpeg'
+    if mime not in {'image/png', 'image/jpeg', 'image/jpg', 'image/webp'}:
+        raise HTTPException(status_code=400, detail='Attendance photo must be PNG, JPG or WEBP')
+    try:
+        image_bytes = base64.b64decode(encoded, validate=True)
+    except (binascii.Error, ValueError):
+        raise HTTPException(status_code=400, detail='Attendance photo data is invalid')
+    if not image_bytes:
+        raise HTTPException(status_code=400, detail='Attendance photo is empty')
+    if len(image_bytes) > 4_000_000:
+        raise HTTPException(status_code=400, detail='Attendance photo is too large')
+    ext = 'jpg' if mime in {'image/jpeg', 'image/jpg'} else mime.split('/')[-1]
+    filename = f'attendance_user_{int(user_id)}_{event_action}_{now_sa_naive().strftime("%Y%m%d%H%M%S")}.{ext}'
     return image_bytes, mime, filename
 
 
@@ -607,15 +655,20 @@ def _validate_rules(db: Session, user: User, payload: AttendanceActionRequest, i
     if payload.work_location_type and payload.work_location_type not in ALLOWED_WORK_TYPES:
         raise HTTPException(status_code=400, detail='work_location_type must be office or on_road')
 
-    gps_rule = db.query(GPSRule).filter(GPSRule.is_active == True).order_by(GPSRule.id.desc()).first()
-    gps_required = False
-    if gps_rule:
-        gps_required = gps_rule.require_gps_on_clock_in if is_sign_in else gps_rule.require_gps_on_clock_out
-    if gps_required and (payload.latitude is None or payload.longitude is None):
+    # Phase 3 requires GPS for every mobile attendance action. A missing rules
+    # row must never silently make location optional.
+    if payload.latitude is None or payload.longitude is None:
         raise HTTPException(status_code=400, detail='GPS location is required for this action')
+    if not (-90 <= float(payload.latitude) <= 90) or not (-180 <= float(payload.longitude) <= 180):
+        raise HTTPException(status_code=400, detail='GPS coordinates are invalid')
+    accuracy = _payload_accuracy(payload)
+    if accuracy is None or float(accuracy) <= 0:
+        raise HTTPException(status_code=400, detail='GPS accuracy is required for this action')
 
-    if not payload.signature_value:
+    if not payload.signature_value or not str(payload.signature_value).startswith('data:image/'):
         raise HTTPException(status_code=400, detail='Signature is required for this action')
+    if not payload.photo_value:
+        raise HTTPException(status_code=400, detail='Automatic attendance photo is required for this action')
 
     if payload.work_location_type == 'on_road' and not payload.employee_note:
         raise HTTPException(status_code=400, detail='Employee note is required when signing on the road')
@@ -671,20 +724,23 @@ def _validate_gps(db: Session, user_id: int, payload: AttendanceActionRequest):
 
             allowed_radius = area.allowed_radius_m or allocation.radius_meters or 100
 
-            if float(accuracy or 999) > 100:
+            if (payload.work_location_type or 'office') == 'on_road':
+                gps_status = 'on_road'
+            elif float(accuracy or 999) > 100:
                 gps_status = 'accuracy_too_low'
 
             elif distance <= allowed_radius:
                 gps_status = 'inside_area'
 
             else:
+                # Keep the evidence and route the exception to approval instead
+                # of discarding the attendance attempt.
                 gps_status = 'outside_area'
 
-                # 🔥 HARD BLOCK HERE
-                raise HTTPException(
-                    status_code=403,
-                    detail='You are outside the allowed office location'
-                )
+    if (payload.work_location_type or 'office') == 'office' and gps_status == 'no_allocation':
+        raise HTTPException(status_code=400, detail='A configured office GPS allocation is required before signing in or out')
+    if (payload.work_location_type or 'office') == 'on_road' and gps_status == 'no_allocation':
+        gps_status = 'on_road'
 
     return gps_status, distance
 
@@ -804,6 +860,7 @@ def _event_to_item(db: Session, event: AttendanceEvent):
         'approved_at': event.approved_at.isoformat() if getattr(event, 'approved_at', None) else None,
         'rejected_reason': getattr(event, 'rejected_reason', None),
         'signature_status': getattr(event, 'signature_status', None),
+        'photo_status': getattr(event, 'photo_status', None),
         'qr_area_id': getattr(event, 'qr_area_id', None),
         'qr_office_name': getattr(event, 'qr_office_name', None),
         'created_at': event.created_at.isoformat(),
@@ -1089,6 +1146,22 @@ def approval_list(approval_status: str = Query(default='pending'), user_id: Opti
     return {'items': [_event_to_item(db, event) for event in events]}
 
 
+@router.get('/events/{event_id}/photo')
+def attendance_event_photo(event_id:int,current_user:User=Depends(get_current_user),db:Session=Depends(get_db)):
+    event = db.query(AttendanceEvent).filter(AttendanceEvent.id==event_id).first()
+    if not event:
+        raise HTTPException(status_code=404,detail='Attendance event not found')
+    if int(event.user_id) not in [int(x) for x in _visible_attendance_user_ids(db,current_user)]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,detail='You may only view attendance photos in your allowed scope')
+    if not getattr(event,'attendance_photo',None):
+        raise HTTPException(status_code=404,detail='Attendance photo not available')
+    return Response(
+        content=bytes(event.attendance_photo),
+        media_type=event.attendance_photo_mime or 'image/jpeg',
+        headers={'Content-Disposition':f'inline; filename="{event.attendance_photo_filename or f"attendance-{event_id}.jpg"}"'},
+    )
+
+
 def _decide_event(db: Session, event_id: int, current_user: User, decision: str, payload: ApprovalDecisionRequest):
     _require_approval_access(db, current_user)
     event = db.query(AttendanceEvent).filter(AttendanceEvent.id == event_id).first()
@@ -1115,6 +1188,21 @@ def _decide_event(db: Session, event_id: int, current_user: User, decision: str,
     event.approved_at = now_sa_naive()
     db.commit()
     db.refresh(event)
+    staff = db.execute(text("SELECT email FROM users WHERE id=:id"), {'id':int(event.user_id)}).mappings().first()
+    create_notification(
+        db,
+        notification_type=f'attendance_{decision}',
+        subject=f'Attendance {decision}',
+        message=f'Your {event.action.replace("_"," ")} attendance event #{event.id} was {decision}.',
+        recipient_email=staff.get('email') if staff else None,
+        related_table='attendance_events',
+        related_id=int(event.id),
+        user_id=int(event.user_id),
+        recipient_user_id=int(event.user_id),
+        severity='success' if decision=='approved' else 'danger',
+        target_tab='history',
+        send_email=True,
+    )
     return _event_to_item(db, event)
 
 
@@ -1376,7 +1464,7 @@ def _build_attendance_pdf(db: Session, view: str, selected_user_id: int, from_da
     story.append(Paragraph(f"Attendance {view.title()} - selected user only", styles['HeaderLilac']))
 
     if view == 'events':
-        headers = ['Time', 'Action', 'Status', 'GPS', 'QR Office', 'Work', 'Approval', 'Signature', 'Notes']
+        headers = ['Time', 'Action', 'Status', 'GPS', 'QR Office', 'Work', 'Approval', 'Signature', 'Photo', 'Notes']
         data = [headers]
         for event in events:
             status_value = event.attendance_status or event.gps_status or 'recorded'
@@ -1389,9 +1477,10 @@ def _build_attendance_pdf(db: Session, view: str, selected_user_id: int, from_da
                 _safe_text(event.work_location_type),
                 _safe_text(event.approval_status),
                 _signature_pdf_image(event) or _pdf_paragraph(event.signature_status or 'missing', styles['Tiny']),
+                _safe_text(getattr(event, 'photo_status', None) or 'not available'),
                 _safe_text(event.employee_note or event.manager_note or event.rejected_reason),
             ])
-        col_widths = [26*mm, 17*mm, 22*mm, 22*mm, 31*mm, 18*mm, 22*mm, 34*mm, 72*mm]
+        col_widths = [26*mm, 17*mm, 22*mm, 22*mm, 31*mm, 18*mm, 22*mm, 34*mm, 18*mm, 54*mm]
     else:
         headers = ['Sign In', 'Sign Out', 'Duration', 'Status', 'GPS', 'QR In', 'QR Out', 'Approval', 'In Signature', 'Out Signature', 'Late', 'Missing']
         data = [headers]
@@ -1848,7 +1937,7 @@ def sign_in(payload: AttendanceActionRequest, current_user: User = Depends(get_c
     _validate_rules(db, current_user, payload, True)
     qr_area = None
     qr_token = None
-    if (payload.work_location_type or 'office') == 'office':
+    if (payload.work_location_type or 'office') == 'office' and payload.qr_value:
         qr_area, qr_token = _validate_office_qr_for_user(db, current_user.id, payload.qr_value)
     last = _get_last_event(db, current_user.id)
     if last and last.action == 'sign_in':
@@ -1875,7 +1964,8 @@ def sign_in(payload: AttendanceActionRequest, current_user: User = Depends(get_c
         attendance_status = 'late'
     accuracy = _payload_accuracy(payload)
     signature_image, signature_mime, signature_filename = _signature_data_url_to_image(payload.signature_value, 'sign_in', current_user.id)
-    event = AttendanceEvent(user_id=current_user.id, action='sign_in', latitude=str(payload.latitude) if payload.latitude is not None else None, longitude=str(payload.longitude) if payload.longitude is not None else None, accuracy_meters=str(accuracy) if accuracy is not None else None, device_info=payload.device_info, signature_value=payload.signature_value, signature_image=signature_image, signature_image_mime=signature_mime, signature_image_filename=signature_filename, source='mobile_qr' if qr_area else 'mobile', qr_area_id=(int(qr_area['id']) if qr_area else None), qr_office_name=(qr_area.get('name') if qr_area else None), qr_token_hash=_token_hash(qr_token), distance_from_site_m=distance, gps_status=gps_status, is_late=is_late, late_minutes=late_minutes, missing_sign_out=False, attendance_status=attendance_status, approval_status=approval_status, work_location_type=work_location_type, employee_note=payload.employee_note, signature_required=True, signature_status=signature_status)
+    photo, photo_mime, photo_filename = _photo_data_url_to_image(payload.photo_value, 'sign_in', current_user.id)
+    event = AttendanceEvent(user_id=current_user.id, action='sign_in', latitude=str(payload.latitude) if payload.latitude is not None else None, longitude=str(payload.longitude) if payload.longitude is not None else None, accuracy_meters=str(accuracy) if accuracy is not None else None, device_info=payload.device_info, signature_value=payload.signature_value, signature_image=signature_image, signature_image_mime=signature_mime, signature_image_filename=signature_filename, attendance_photo=photo, attendance_photo_mime=photo_mime, attendance_photo_filename=photo_filename, photo_status='captured', source='mobile_qr' if qr_area else 'mobile_gps', qr_area_id=(int(qr_area['id']) if qr_area else None), qr_office_name=(qr_area.get('name') if qr_area else None), qr_token_hash=_token_hash(qr_token), distance_from_site_m=distance, gps_status=gps_status, is_late=is_late, late_minutes=late_minutes, missing_sign_out=False, attendance_status=attendance_status, approval_status=approval_status, work_location_type=work_location_type, employee_note=payload.employee_note, signature_required=True, signature_status=signature_status)
     db.add(event)
     db.commit()
     db.refresh(event)
@@ -1889,7 +1979,7 @@ def sign_out(payload: AttendanceActionRequest, current_user: User = Depends(get_
     _validate_rules(db, current_user, payload, False)
     qr_area = None
     qr_token = None
-    if (payload.work_location_type or 'office') == 'office':
+    if (payload.work_location_type or 'office') == 'office' and payload.qr_value:
         qr_area, qr_token = _validate_office_qr_for_user(db, current_user.id, payload.qr_value)
     last = _get_last_event(db, current_user.id)
     if not last or last.action != 'sign_in':
@@ -1916,7 +2006,8 @@ def sign_out(payload: AttendanceActionRequest, current_user: User = Depends(get_
         attendance_status = 'early_leave'
     accuracy = _payload_accuracy(payload)
     signature_image, signature_mime, signature_filename = _signature_data_url_to_image(payload.signature_value, 'sign_out', current_user.id)
-    event = AttendanceEvent(user_id=current_user.id, action='sign_out', latitude=str(payload.latitude) if payload.latitude is not None else None, longitude=str(payload.longitude) if payload.longitude is not None else None, accuracy_meters=str(accuracy) if accuracy is not None else None, device_info=payload.device_info, signature_value=payload.signature_value, signature_image=signature_image, signature_image_mime=signature_mime, signature_image_filename=signature_filename, source='mobile_qr' if qr_area else 'mobile', qr_area_id=(int(qr_area['id']) if qr_area else None), qr_office_name=(qr_area.get('name') if qr_area else None), qr_token_hash=_token_hash(qr_token), distance_from_site_m=distance, gps_status=gps_status, left_early=left_early, early_leave_minutes=early_minutes, missing_sign_out=False, attendance_status=attendance_status, approval_status=approval_status, work_location_type=work_location_type, employee_note=payload.employee_note, signature_required=True, signature_status=signature_status)
+    photo, photo_mime, photo_filename = _photo_data_url_to_image(payload.photo_value, 'sign_out', current_user.id)
+    event = AttendanceEvent(user_id=current_user.id, action='sign_out', latitude=str(payload.latitude) if payload.latitude is not None else None, longitude=str(payload.longitude) if payload.longitude is not None else None, accuracy_meters=str(accuracy) if accuracy is not None else None, device_info=payload.device_info, signature_value=payload.signature_value, signature_image=signature_image, signature_image_mime=signature_mime, signature_image_filename=signature_filename, attendance_photo=photo, attendance_photo_mime=photo_mime, attendance_photo_filename=photo_filename, photo_status='captured', source='mobile_qr' if qr_area else 'mobile_gps', qr_area_id=(int(qr_area['id']) if qr_area else None), qr_office_name=(qr_area.get('name') if qr_area else None), qr_token_hash=_token_hash(qr_token), distance_from_site_m=distance, gps_status=gps_status, left_early=left_early, early_leave_minutes=early_minutes, missing_sign_out=False, attendance_status=attendance_status, approval_status=approval_status, work_location_type=work_location_type, employee_note=payload.employee_note, signature_required=True, signature_status=signature_status)
     db.add(event)
     db.commit()
     db.refresh(event)
