@@ -160,7 +160,7 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
   return (
     <div className={showMobileStaffMenuOnly ? 'app-shell mobile-staff-menu-shell' : (showMobileStaffContentOnly ? 'app-shell mobile-staff-content-shell' : 'app-shell')}>
       <AttendanceExceptionPopup me={me} onNavigate={openTab} />
-      {!showMobileStaffContentOnly ? <aside className="sidebar glass-card">
+      {!showMobileStaffContentOnly ? <aside className={showMobileStaffMenuOnly ? 'sidebar glass-card mobile-card-menu' : 'sidebar glass-card'}>
         <div className="brand-block">
           <img src="/logo.png" alt="Martins logo" />
           <div>
@@ -168,10 +168,11 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
             <span>Register Platform</span>
           </div>
         </div>
-        <nav className="sidebar-tabs" aria-label="Main sections">
+        <nav className={showMobileStaffMenuOnly ? 'sidebar-tabs mobile-card-menu-grid' : 'sidebar-tabs'} aria-label="Main sections">
           {tabs.map((tab) => (
-            <button key={tab.id} type="button" className={activeTab === tab.id ? 'tab-button active' : 'tab-button'} onClick={() => openTab(tab.id)}>
-              {tab.label}
+            <button key={`${tab.id}-${tab.label}`} type="button" className={activeTab === tab.id ? 'tab-button active' : 'tab-button'} onClick={() => openTab(tab.id)}>
+              <span>{tab.label}</span>
+              {showMobileStaffMenuOnly ? <small>Open</small> : null}
             </button>
           ))}
         </nav>

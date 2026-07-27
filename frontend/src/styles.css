@@ -1624,6 +1624,14 @@ h3 { font-size: 1.25rem; }
     gap: 18px;
   }
 
+  .mobile-staff-menu-shell .mobile-card-menu {
+    box-shadow: none;
+    border: 0;
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
   .mobile-staff-menu-shell .brand-block {
     margin-bottom: 6px;
   }
@@ -1638,7 +1646,8 @@ h3 { font-size: 1.25rem; }
     font-size: 1.35rem;
   }
 
-  .mobile-staff-menu-shell .sidebar-tabs {
+  .mobile-staff-menu-shell .sidebar-tabs,
+  .mobile-card-menu-grid {
     display: grid;
     grid-template-columns: 1fr;
     gap: 13px;
@@ -1652,6 +1661,26 @@ h3 { font-size: 1.25rem; }
     border-radius: 22px;
     padding: 16px 18px;
     font-size: 1rem;
+  }
+
+  .mobile-staff-menu-shell .tab-button {
+    align-items: center;
+    justify-content: space-between;
+    text-align: left;
+    background: rgba(255,255,255,.9);
+    border: 1px solid rgba(140,108,190,.16);
+    box-shadow: 0 12px 28px rgba(55,44,74,.08);
+  }
+
+  .mobile-staff-menu-shell .tab-button span {
+    min-width: 0;
+    font-weight: 850;
+  }
+
+  .mobile-staff-menu-shell .tab-button small {
+    flex: 0 0 auto;
+    color: var(--lilac-strong);
+    font-weight: 900;
   }
 
   .mobile-staff-menu-shell .logout-button {
@@ -1700,6 +1729,27 @@ h3 { font-size: 1.25rem; }
   .mobile-staff-content-shell .topbar,
   .mobile-staff-content-shell .glass-card {
     border-radius: 24px;
+  }
+
+  .mobile-staff-content-shell .form-grid,
+  .mobile-staff-content-shell .staff-form-single,
+  .mobile-staff-content-shell .history-toolbar,
+  .mobile-staff-content-shell .payroll-import-form,
+  .mobile-staff-content-shell .office-map-search-row,
+  .mobile-staff-content-shell .overview-action-row,
+  .mobile-staff-content-shell .dashboard-two-col,
+  .mobile-staff-content-shell .leave-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 16px !important;
+    align-items: stretch !important;
+  }
+
+  .mobile-staff-content-shell .detail-header,
+  .mobile-staff-content-shell .button-row,
+  .mobile-staff-content-shell .actions,
+  .mobile-staff-content-shell .filters,
+  .login-form-actions {
+    align-items: stretch !important;
   }
 }
 
@@ -2065,7 +2115,33 @@ input[type="date"]::-webkit-date-and-time-value,
   .commission-open-label { white-space: normal; text-align: right; }
 }
 
-.password-input-row{display:flex;gap:.5rem;align-items:center}.password-input-row input{flex:1}.password-toggle{white-space:nowrap;padding:.65rem .9rem}
+.password-input-row{display:flex;gap:.5rem;align-items:center}.password-input-row input{flex:1;min-width:0}.password-toggle{white-space:nowrap;padding:.65rem .9rem}
+@media (max-width:760px){
+  input,
+  select,
+  textarea {
+    font-size:16px !important;
+    line-height:1.35 !important;
+  }
+  .password-input-row {
+    display:grid;
+    grid-template-columns:minmax(0, 1fr) auto;
+    gap:10px;
+    align-items:stretch;
+  }
+  .password-input-row input,
+  .password-input-row .password-toggle {
+    min-height:48px;
+  }
+}
+@media (max-width:380px){
+  .password-input-row {
+    grid-template-columns:1fr;
+  }
+  .password-input-row .password-toggle {
+    width:100%;
+  }
+}
 
 /* Unified manager/franchise employee work hub */
 .employee-row-actions { display:flex; flex-wrap:wrap; gap:7px; margin-bottom:7px; }
