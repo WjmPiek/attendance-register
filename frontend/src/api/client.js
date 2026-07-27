@@ -487,6 +487,7 @@ export async function getCommissionEntries(filters = {}) {
   return apiRequest(`/commission/entries${qs ? `?${qs}` : ''}`)
 }
 export async function createCommissionEntry(payload) { return apiRequest('/commission/entries', { method: 'POST', body: JSON.stringify(payload) }) }
+export async function getCommissionEntry(id) { return apiRequest(`/commission/entries/${id}`) }
 export async function deleteCommissionEntry(id) { return apiRequest(`/commission/entries/${id}`, { method: 'DELETE' }) }
 export async function reviewCommissionEntry(id, payload) { return apiRequest(`/commission/entries/${id}/review`, { method: 'PUT', body: JSON.stringify(payload) }) }
 export async function bulkReviewCommissionEntries(payload) { return apiRequest('/commission/entries/bulk-review', { method: 'POST', body: JSON.stringify(payload) }) }

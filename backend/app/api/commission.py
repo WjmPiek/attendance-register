@@ -212,13 +212,13 @@ def employees(franchise_user_id: int | None = None, current_user: User = Depends
         params["uid"] = current_user.id
     rows = db.execute(text(f"""
       SELECT * FROM (
-        SELECT e.user_id, e.franchise_user_id, e.manager_user_id, COALESCE(e.is_active,TRUE) active,
+        SELECT e.user_id, e.franchise_user_id, e.manager_user_id, NULL::integer AS manager_profile_id, COALESCE(e.is_active,TRUE) active,
           COALESCE(NULLIF(TRIM(CONCAT(COALESCE(e.name,''),' ',COALESCE(e.surname,''))),''),u.full_name) full_name,
           e.employee_number, COALESCE(NULLIF(e.employee_role,''),'Employee') employee_role,
           COALESCE(NULLIF(e.email,''),u.email) email, e.office_address_assigned, 'employee' staff_type
         FROM employee_users e JOIN users u ON u.id=e.user_id WHERE COALESCE(u.is_active,TRUE)=TRUE
         UNION ALL
-        SELECT m.user_id, m.franchise_user_id, NULL, COALESCE(m.is_active,TRUE),
+        SELECT m.user_id, m.franchise_user_id, NULL, m.id, COALESCE(m.is_active,TRUE),
           COALESCE(NULLIF(TRIM(CONCAT(COALESCE(m.name,''),' ',COALESCE(m.surname,''))),''),u.full_name),
           m.employee_number, 'Manager', COALESCE(NULLIF(m.email,''),u.email), m.office_address_assigned, 'manager'
         FROM manager_users m JOIN users u ON u.id=m.user_id WHERE COALESCE(u.is_active,TRUE)=TRUE
@@ -323,8 +323,10 @@ def _rows(db, user, employee_user_id=None, from_date=None, to_date=None, status=
         where.append("c.franchise_user_id=:fid")
         params["fid"] = fid
     elif kind == "manager":
-        where.append("(c.employee_user_id=:uid OR ep.manager_user_id=:mid)")
-        params.update({"uid": user.id, "mid": manager_profile_id})
+        # Keep the manager's own totals separate. Assigned employees are
+        # requested explicitly through employee_user_id.
+        where.append("c.employee_user_id=:uid")
+        params["uid"] = user.id
     elif kind == "employee":
         where.append("c.employee_user_id=:uid")
         params["uid"] = user.id
@@ -358,6 +360,24 @@ def entries(employee_user_id:int|None=None,from_date:date|None=None,to_date:date
     overtime = sum((Decimal(r["calculated_amount"] or 0) for r in approved if r["commission_type"] == "overtime"), Decimal(0))
     counts = {x: sum(1 for r in rows if r["status"] == x) for x in ["pending","approved","rejected","cancelled"]}
     return {"items":[dict(r) for r in rows],"total":total,"commission_total":total-overtime,"overtime_total":overtime,"counts":counts}
+
+
+@router.get('/entries/{entry_id}')
+def entry_detail(entry_id:int,current_user:User=Depends(get_current_user),db:Session=Depends(get_db)):
+    entry = db.execute(text("SELECT employee_user_id,franchise_user_id FROM commission_entries WHERE id=:id"), {"id":entry_id}).mappings().first()
+    if not entry:
+        raise HTTPException(404,"Entry not found")
+    _participant(db,current_user,int(entry["employee_user_id"]))
+    rows = _rows(
+        db,current_user,
+        employee_user_id=int(entry["employee_user_id"]),
+        franchise_user_id=int(entry["franchise_user_id"]),
+    )
+    selected = next((row for row in rows if int(row["id"])==entry_id),None)
+    if not selected:
+        raise HTTPException(404,"Entry not found")
+    return dict(selected)
+
 
 @router.put('/entries/{entry_id}/review')
 def review(entry_id:int,payload:ReviewIn,current_user:User=Depends(get_current_user),db:Session=Depends(get_db)):

@@ -126,3 +126,52 @@ def test_submission_insert_does_not_reuse_status_in_sql_case_expression():
     source = inspect.getsource(commission.create_entry)
     assert "CASE WHEN :status" not in source
     assert ":reviewed_at,:reviewed_by" in source
+
+
+class _RowsResult:
+    def mappings(self):
+        return self
+
+    def all(self):
+        return []
+
+
+class _RowsDb:
+    def __init__(self):
+        self.statement = ""
+        self.params = {}
+
+    def execute(self, statement, params):
+        self.statement = str(statement)
+        self.params = params
+        return _RowsResult()
+
+
+def test_manager_landing_history_contains_only_manager_commissions(monkeypatch):
+    monkeypatch.setattr(
+        commission,
+        "_profile",
+        lambda db, user: ({"ManagerUser"}, 2, 5, user.id, "manager"),
+    )
+    db = _RowsDb()
+    commission._rows(db, SimpleNamespace(id=10))
+    assert "c.employee_user_id=:uid" in db.statement
+    assert "ep.manager_user_id=:mid" not in db.statement
+    assert db.params == {"uid": 10}
+
+
+def test_manager_can_load_one_linked_employee_separately(monkeypatch):
+    monkeypatch.setattr(
+        commission,
+        "_profile",
+        lambda db, user: ({"ManagerUser"}, 2, 5, user.id, "manager"),
+    )
+    monkeypatch.setattr(
+        commission,
+        "_participant",
+        lambda db, user, user_id: {"user_id": user_id, "franchise_user_id": 2},
+    )
+    db = _RowsDb()
+    commission._rows(db, SimpleNamespace(id=10), employee_user_id=20)
+    assert "c.employee_user_id=:employee" in db.statement
+    assert db.params == {"employee": 20}
