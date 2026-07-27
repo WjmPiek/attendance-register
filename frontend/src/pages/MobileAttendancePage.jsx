@@ -5,12 +5,53 @@ import { getAttendanceStatus, submitAttendance, validateOfficeQr } from '../api/
 import { formatJohannesburgDateTime } from '../utils/dateTime'
 
 const GPS_OPTIONS = { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
+const REAR_CAMERA_HINTS = ['back', 'rear', 'environment', 'world']
 
 function locationErrorMessage(error) {
   if (error?.code === 1) return 'Location permission was denied. Allow Location for this site and enable precise device location.'
   if (error?.code === 2) return 'The device could not determine its GPS coordinates. Enable precise/high-accuracy location and try again.'
   if (error?.code === 3) return 'GPS location timed out. Move near a window or outdoors and try again.'
   return 'GPS coordinates are required for every sign-in and sign-out.'
+}
+
+async function getRearCameraStream() {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    throw new Error('Camera access is required to scan the office QR code.')
+  }
+
+  const streamFor = (video) => navigator.mediaDevices.getUserMedia({ video, audio: false })
+
+  try {
+    return await streamFor({
+      facingMode: { exact: 'environment' },
+      width: { ideal: 1280 },
+      height: { ideal: 720 },
+    })
+  } catch (exactError) {
+    if (exactError?.name === 'NotAllowedError' || exactError?.name === 'SecurityError') throw exactError
+  }
+
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices()
+    const rearCamera = devices
+      .filter((device) => device.kind === 'videoinput')
+      .find((device) => REAR_CAMERA_HINTS.some((hint) => device.label.toLowerCase().includes(hint)))
+    if (rearCamera?.deviceId) {
+      return await streamFor({
+        deviceId: { exact: rearCamera.deviceId },
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+      })
+    }
+  } catch (deviceError) {
+    if (deviceError?.name === 'NotAllowedError' || deviceError?.name === 'SecurityError') throw deviceError
+  }
+
+  return streamFor({
+    facingMode: { ideal: 'environment' },
+    width: { ideal: 1280 },
+    height: { ideal: 720 },
+  })
 }
 
 export default function MobileAttendancePage({ me, onDone }) {
@@ -190,10 +231,7 @@ export default function MobileAttendancePage({ me, onDone }) {
         const formats = await window.BarcodeDetector.getSupportedFormats?.()
         if (formats && !formats.includes('qr_code')) throw new Error('QR detection is unavailable in this browser.')
         const detector = new window.BarcodeDetector({ formats: ['qr_code'] })
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
-          audio: false,
-        })
+        stream = await getRearCameraStream()
         if (cancelled) return
         const video = scannerVideoRef.current
         video.srcObject = stream
@@ -224,7 +262,7 @@ export default function MobileAttendancePage({ me, onDone }) {
         frameId = window.requestAnimationFrame(scanFrame)
       } catch (err) {
         setScanning(false)
-        setScanError(err?.name === 'NotAllowedError'
+        setScanError(err?.name === 'NotAllowedError' || err?.name === 'SecurityError'
           ? 'Camera permission was denied. Allow Camera for this site and try again.'
           : (err.message || 'The QR scanner could not start.'))
       }
@@ -367,7 +405,7 @@ export default function MobileAttendancePage({ me, onDone }) {
 
           {!manualEntry ? (
             <div className="live-qr-scanner">
-              <video ref={scannerVideoRef} aria-label="Live office QR scanner" />
+              <video ref={scannerVideoRef} aria-label="Live office QR scanner" playsInline muted autoPlay />
               <div className="qr-frame-guide" aria-hidden="true" />
               <strong>{scanning ? 'Hold the QR code steady inside the frame' : 'Starting camera...'}</strong>
             </div>

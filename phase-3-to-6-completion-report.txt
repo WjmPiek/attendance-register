@@ -1,0 +1,19 @@
+Phase 3-6 completion pass
+
+Scope completed in this pass:
+- Confirmed Phase 3 Attendance is implemented through migration head 013_single_use_office_codes.
+- Confirmed Phase 4 Business Information has additional office creation, office editing, staff reassignment, office archive, QR issue/regeneration, and linked-staff management checks.
+- Confirmed Phase 5 Authentication has forgot-password and reset-password endpoints.
+- Confirmed Phase 6 HR/Payroll/Reports modules are present and registered in the FastAPI app.
+- Fixed backend/app/api/routes.py so the shared api_router also includes alerts, commission, IRP5, leave, payroll, and audit routers.
+- Added backend/tests/test_phase_routes.py to prevent remaining phase API routes from being accidentally dropped.
+
+Verification run:
+- python -m compileall backend/app backend/alembic/versions: passed
+- python -m pytest backend/tests -q: 37 passed
+- python scripts/verify_v3.py: 169 checks passed
+- python -m alembic heads from backend/: 013_single_use_office_codes (head)
+
+Frontend build note:
+- npm run build could not run in this extracted workspace because Windows blocked spawning esbuild with EPERM.
+- This is the same local extracted-node_modules execution issue seen earlier, not a failing source compile reported by Vite.
