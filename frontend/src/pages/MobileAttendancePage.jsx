@@ -67,6 +67,7 @@ export default function MobileAttendancePage({ me, onDone }) {
   const [manualEntry, setManualEntry] = useState(false)
   const [scanning, setScanning] = useState(false)
   const [scanError, setScanError] = useState('')
+  const [manualEntryAvailable, setManualEntryAvailable] = useState(false)
   const [scanRestart, setScanRestart] = useState(0)
   const [gpsEvidence, setGpsEvidence] = useState(null)
   const [gpsError, setGpsError] = useState('')
@@ -208,11 +209,13 @@ export default function MobileAttendancePage({ me, onDone }) {
     let cancelled = false
     let stream = null
     let frameId = null
+    let fallbackTimer = null
     let detecting = false
 
     const stopScanner = () => {
       cancelled = true
       if (frameId) window.cancelAnimationFrame(frameId)
+      if (fallbackTimer) window.clearTimeout(fallbackTimer)
       if (stream) stream.getTracks().forEach((track) => track.stop())
       if (scannerVideoRef.current) scannerVideoRef.current.srcObject = null
       setScanning(false)
@@ -223,8 +226,8 @@ export default function MobileAttendancePage({ me, onDone }) {
       scanLockedRef.current = false
       setScanError('')
       if (!window.BarcodeDetector) {
-        setManualEntry(true)
-        setScanError('Automatic QR detection is not supported by this browser. Use the four-digit QR value below or open this page in Chrome/Edge on the phone.')
+        setManualEntryAvailable(true)
+        setScanError('Automatic QR detection is not supported by this browser. Ask your manager/franchise user for the four-digit code, or open this page in Chrome/Edge on the phone.')
         return
       }
       try {
@@ -239,6 +242,11 @@ export default function MobileAttendancePage({ me, onDone }) {
         video.muted = true
         await video.play()
         setScanning(true)
+        fallbackTimer = window.setTimeout(() => {
+          if (cancelled || scanLockedRef.current) return
+          setManualEntryAvailable(true)
+          setScanError('The rear camera is open but no QR code has been detected yet. Keep scanning, or ask your manager/franchise user for the four-digit code.')
+        }, 45000)
 
         const scanFrame = async () => {
           if (cancelled || scanLockedRef.current) return
@@ -262,9 +270,10 @@ export default function MobileAttendancePage({ me, onDone }) {
         frameId = window.requestAnimationFrame(scanFrame)
       } catch (err) {
         setScanning(false)
+        setManualEntryAvailable(true)
         setScanError(err?.name === 'NotAllowedError' || err?.name === 'SecurityError'
           ? 'Camera permission was denied. Allow Camera for this site and try again.'
-          : (err.message || 'The QR scanner could not start.'))
+          : (err.message || 'The QR scanner could not start. Ask your manager/franchise user for the four-digit code.'))
       }
     }
 
@@ -278,6 +287,7 @@ export default function MobileAttendancePage({ me, onDone }) {
     setMessage('GPS capture started in the background. Hold the office QR code inside the camera frame.')
     setError('')
     setScanError('')
+    setManualEntryAvailable(false)
     setQrValue('')
     setQrOffice(null)
     setSignatureValue('')
@@ -289,7 +299,7 @@ export default function MobileAttendancePage({ me, onDone }) {
 
   const verifyManualQr = async () => {
     if (!/^\d{4}$/.test(qrValue.trim())) {
-      setError('Enter the four-digit value printed in the QR code.')
+      setError('Enter the four-digit code from your manager or franchise user.')
       return
     }
     await acceptQr(qrValue.trim())
@@ -322,6 +332,7 @@ export default function MobileAttendancePage({ me, onDone }) {
     setGpsEvidence(null)
     setGpsError('')
     setManualEntry(false)
+    setManualEntryAvailable(false)
   }
 
   const saveAttendance = async () => {
@@ -427,10 +438,10 @@ export default function MobileAttendancePage({ me, onDone }) {
             </div>
           )}
           {scanError ? <p className="error">{scanError}</p> : null}
-          {!manualEntry ? <button type="button" className="link-button" onClick={() => {
+          {!manualEntry && manualEntryAvailable ? <button type="button" className="link-button" onClick={() => {
             scannerStopRef.current()
             setManualEntry(true)
-          }}>Camera scanner unavailable? Enter QR value</button> : null}
+          }}>Enter manager/franchise four-digit code</button> : null}
         </section>
       ) : null}
 

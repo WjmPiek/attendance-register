@@ -1,0 +1,20 @@
+Mobile Step 2 QR camera flow update
+
+Updated file:
+frontend/src/pages/MobileAttendancePage.jsx
+
+Behavior now:
+- Step 2 opens the live QR scanner as the default path.
+- The scanner requests the mobile rear camera.
+- When a QR code is detected, it is validated/registered immediately.
+- After successful registration, the attendance flow moves automatically to Step 3.
+- Manual four-digit code entry is not shown at the start of Step 2.
+- Manual entry becomes available only if:
+  - the browser does not support automatic QR detection,
+  - camera permission/camera startup fails, or
+  - the rear camera stays open for 45 seconds without detecting a QR code.
+- The manual fallback text tells the employee to get the four-digit code from a manager/franchise user.
+
+Verification note:
+- Backend compile check passed.
+- Full frontend build was not rerun because this extracted workspace has repeatedly hit Windows spawn EPERM when Vite tries to launch esbuild.
