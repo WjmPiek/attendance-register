@@ -374,7 +374,8 @@ export default function OverviewDashboardPage({ onNavigate }) {
         setError(err.message || 'Failed to update notification')
       }
     }
-    if (notification.target_tab) onNavigate?.(notification.target_tab)
+    const target = notification.related_table === 'attendance_events' ? 'approvals' : notification.target_tab
+    if (target) onNavigate?.(target)
   }
 
   if (loading && !data) return <div className="form-card"><p>Loading dashboard...</p></div>

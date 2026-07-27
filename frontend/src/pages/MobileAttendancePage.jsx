@@ -225,15 +225,7 @@ export default function MobileAttendancePage({ me, onDone }) {
     const startScanner = async () => {
       scanLockedRef.current = false
       setScanError('')
-      if (!window.BarcodeDetector) {
-        setManualEntryAvailable(true)
-        setScanError('Automatic QR detection is not supported by this browser. Ask your manager/franchise user for the four-digit code, or open this page in Chrome/Edge on the phone.')
-        return
-      }
       try {
-        const formats = await window.BarcodeDetector.getSupportedFormats?.()
-        if (formats && !formats.includes('qr_code')) throw new Error('QR detection is unavailable in this browser.')
-        const detector = new window.BarcodeDetector({ formats: ['qr_code'] })
         stream = await getRearCameraStream()
         if (cancelled) return
         const video = scannerVideoRef.current
@@ -242,6 +234,18 @@ export default function MobileAttendancePage({ me, onDone }) {
         video.muted = true
         await video.play()
         setScanning(true)
+        if (!window.BarcodeDetector) {
+          setManualEntryAvailable(true)
+          setScanError('The rear camera is open, but this browser cannot automatically read QR codes. Use Chrome/Edge for automatic scanning, or ask your manager/franchise user for the four-digit code.')
+          return
+        }
+        const formats = await window.BarcodeDetector.getSupportedFormats?.()
+        if (formats && !formats.includes('qr_code')) {
+          setManualEntryAvailable(true)
+          setScanError('The rear camera is open, but this browser cannot automatically read QR codes. Use Chrome/Edge for automatic scanning, or ask your manager/franchise user for the four-digit code.')
+          return
+        }
+        const detector = new window.BarcodeDetector({ formats: ['qr_code'] })
         fallbackTimer = window.setTimeout(() => {
           if (cancelled || scanLockedRef.current) return
           setManualEntryAvailable(true)

@@ -629,7 +629,7 @@ def _notify_franchise_attendance_event(db: Session, event: AttendanceEvent, acti
         recipients.append({
             'user_id': manager['recipient_user_id'],
             'email': manager['recipient_email'],
-            'target_tab': 'staff',
+            'target_tab': 'approvals' if approval_text == 'pending' else 'history',
         })
     for recipient in recipients:
         create_notification(

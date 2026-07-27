@@ -51,7 +51,7 @@ function AttendanceExceptionPopup({ me, onNavigate }) {
     } catch {
       // The popup can still close if the read receipt cannot be saved.
     }
-    const target = notification.target_tab
+    const target = notification.related_table === 'attendance_events' ? 'approvals' : notification.target_tab
     setNotification(null)
     if (openTarget && target) onNavigate(target)
   }
@@ -103,7 +103,7 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
     { id: 'attendance', label: 'Mobile Sign In', visible: isSignCapable },
     { id: 'employee-card', label: 'Employee Card', visible: isEmployee || isManagerUser },
     { id: 'history', label: 'History', visible: isSignCapable || isApprovalCapable },
-    { id: 'approvals', label: 'Approvals', visible: isSuperUser || isFranchiseUser },
+    { id: 'approvals', label: 'Approvals', visible: isSuperUser || isFranchiseUser || isManagerUser },
     { id: 'staff', label: isSuperUser ? 'HR Staff' : (isManagerUser ? 'My Staff' : 'My Profile'), visible: isSuperUser || isManagerUser || isEmployee },
     { id: 'business', label: 'Business Information', visible: isFranchiseUser },
     { id: 'franchises', label: 'Franchise Approvals', visible: isSuperUser },
@@ -119,6 +119,7 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
     { id: 'staff', label: 'My Profile', visible: isEmployee },
     { id: 'employee-card', label: 'Employee Card', visible: isEmployee || isManagerUser },
     { id: 'history', label: 'History', visible: isSignCapable || isApprovalCapable },
+    { id: 'approvals', label: 'Approvals', visible: isManagerUser },
     { id: 'leave', label: 'Leave', visible: isEmployee || isManagerUser },
     { id: 'commission', label: 'Commission & Overtime', visible: isEmployee || isManagerUser },
     { id: 'payroll', label: 'Payslips', visible: canUsePayroll },
@@ -188,7 +189,7 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
         {activeTab === 'attendance' && isSignCapable ? <MobileAttendancePage me={me} onDone={goBackToMobileMenu} /> : null}
         {activeTab === 'employee-card' && (isEmployee || isManagerUser) ? <DigitalIdCard /> : null}
         {activeTab === 'history' && (isSignCapable || isApprovalCapable) ? <AttendanceHistoryPage me={me} /> : null}
-        {activeTab === 'approvals' && (isSuperUser || isFranchiseUser) ? <AttendanceApprovalPage me={me} /> : null}
+        {activeTab === 'approvals' && (isSuperUser || isFranchiseUser || isManagerUser) ? <AttendanceApprovalPage me={me} /> : null}
         {activeTab === 'staff' && (isSuperUser || isManagerUser || isEmployee) ? <FranchiseStaffPage me={me} onNavigate={openTab} /> : null}
         {activeTab === 'business' && isFranchiseUser ? <BusinessInformationPage /> : null}
         {activeTab === 'franchises' && isSuperUser ? <FranchiseRegistrationApprovalPage me={me} /> : null}

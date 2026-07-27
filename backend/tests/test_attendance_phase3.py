@@ -219,7 +219,7 @@ def test_outside_office_notifies_franchise_and_linked_manager(monkeypatch):
     assert all(item["notification_type"] == "attendance_outside_area" for item in created)
     assert all(item["severity"] == "danger" for item in created)
     assert created[0]["target_tab"] == "approvals"
-    assert created[1]["target_tab"] == "staff"
+    assert created[1]["target_tab"] == "approvals"
     assert "GPS coordinates: -26.106851, 27.811233" in created[0]["message"]
 
 
