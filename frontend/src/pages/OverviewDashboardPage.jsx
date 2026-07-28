@@ -37,6 +37,10 @@ function OverviewMetricRail({ metrics = {}, lists = {}, suggestions = [], notifi
         <StatBlock title="Leave applications to review" value={metrics.pending_leave || (lists.pending_leave || []).length} subtitle="Pending decisions" tone={metrics.pending_leave ? 'warning' : ''} onClick={() => onOpenCard?.('pending-leave')} />
         <StatBlock title="Leave pending" value={metrics.pending_leave || 0} subtitle="Applications to review" tone={metrics.pending_leave ? 'warning' : ''} onClick={() => onNavigate?.('leave')} />
         <StatBlock title="Leave" value={(metrics.pending_leave || 0) + approvedLeave.length} subtitle="Review and return cards" tone={metrics.pending_leave ? 'warning' : ''} onClick={() => onOpenCard?.('leave')} />
+        <span className="overview-metric-row-break" aria-hidden="true" />
+        <StatBlock title="Commission & Overtime" value="Open" subtitle="Commission and overtime" onClick={() => onNavigate?.('commission')} />
+        <StatBlock title="Payroll" value="Open" subtitle="Payroll and payslips" onClick={() => onNavigate?.('payroll')} />
+        <StatBlock title="IRP 5 Uploads" value="Open" subtitle="Tax documents" onClick={() => onNavigate?.('irp5')} />
       </div>
     </section>
   )
