@@ -1218,6 +1218,7 @@ h3 { font-size: 1.25rem; }
 .overview-hero-copy h2 { margin: 0; font-size: clamp(2rem, 2.6vw, 3rem); }
 .overview-hero-copy p { margin: 0; }
 .overview-metric-rail { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.overview-metric-row-break { display: block; grid-column: 1 / -1; height: 0; min-height: 0; }
 .overview-metric-rail .metric-card { min-height: 96px; background: rgba(255,255,255,.74); }
 .metric-card.success strong { color: #15803d; }
 .overview-notification-grid { grid-template-columns: repeat(3, minmax(220px, 1fr)); }
@@ -1246,6 +1247,7 @@ h3 { font-size: 1.25rem; }
 }
 @media (max-width: 700px) {
   .overview-metric-rail, .overview-notification-grid { grid-template-columns: 1fr; }
+  .overview-metric-row-break { display: none; }
   .overview-hero-panel { padding: 18px; border-radius: 24px; }
 }
 

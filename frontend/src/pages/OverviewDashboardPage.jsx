@@ -24,17 +24,19 @@ function OverviewMetricRail({ metrics = {}, lists = {}, suggestions = [], notifi
         <p className="muted">Attendance, exceptions, leave and notifications for your current franchise scope.</p>
       </div>
       <div className="overview-metric-rail">
-        <StatBlock title="Active staff" value={metrics.total_staff || 0} subtitle="In current scope" onClick={() => onNavigate?.('staff')} />
-        <StatBlock title="Completed" value={goodCount} subtitle="Signed in and out" tone="success" onClick={() => onNavigate?.('history')} />
-        <StatBlock title="Open issues" value={totalIssues} subtitle="Needs review" tone={totalIssues ? 'danger' : 'success'} onClick={() => onNavigate?.('approvals')} />
-        <StatBlock title="Leave pending" value={metrics.pending_leave || 0} subtitle="Applications to review" tone={metrics.pending_leave ? 'warning' : ''} onClick={() => onNavigate?.('leave')} />
-        <StatBlock title="Attendance" value={totalIssues} subtitle="Arrival and exception cards" tone={totalIssues ? 'warning' : ''} onClick={() => onOpenCard?.('attendance')} />
-        <StatBlock title="Attendance arrivals" value={metrics.late || (lists.late || []).length} subtitle="Late arrivals today" tone={metrics.late ? 'warning' : ''} onClick={() => onOpenCard?.('late-arrivals')} />
-        <StatBlock title="Leave" value={(metrics.pending_leave || 0) + approvedLeave.length} subtitle="Review and return cards" tone={metrics.pending_leave ? 'warning' : ''} onClick={() => onOpenCard?.('leave')} />
-        <StatBlock title="Leave applications to review" value={metrics.pending_leave || (lists.pending_leave || []).length} subtitle="Pending decisions" tone={metrics.pending_leave ? 'warning' : ''} onClick={() => onOpenCard?.('pending-leave')} />
-        <StatBlock title="Approved leave and return dates" value={approvedLeave.length} subtitle="Return planner" tone="info" onClick={() => onOpenCard?.('leave-planner')} />
         <StatBlock title="Smart suggestions" value={suggestions.length} subtitle="Recommended actions" onClick={() => onOpenCard?.('suggestions')} />
         <StatBlock title="Notifications" value={notifications.filter((n) => !n.is_read).length} subtitle="Unread and history" onClick={() => onOpenCard?.('notifications')} />
+        <StatBlock title="Open issues" value={totalIssues} subtitle="Needs review" tone={totalIssues ? 'danger' : 'success'} onClick={() => onNavigate?.('approvals')} />
+        <StatBlock title="Completed" value={goodCount} subtitle="Signed in and out" tone="success" onClick={() => onNavigate?.('history')} />
+        <span className="overview-metric-row-break" aria-hidden="true" />
+        <StatBlock title="Active staff" value={metrics.total_staff || 0} subtitle="In current scope" onClick={() => onNavigate?.('staff')} />
+        <StatBlock title="Attendance" value={totalIssues} subtitle="Arrival and exception cards" tone={totalIssues ? 'warning' : ''} onClick={() => onOpenCard?.('attendance')} />
+        <StatBlock title="Attendance arrivals" value={metrics.late || (lists.late || []).length} subtitle="Late arrivals today" tone={metrics.late ? 'warning' : ''} onClick={() => onOpenCard?.('late-arrivals')} />
+        <span className="overview-metric-row-break" aria-hidden="true" />
+        <StatBlock title="Approved leave and return dates" value={approvedLeave.length} subtitle="Return planner" tone="info" onClick={() => onOpenCard?.('leave-planner')} />
+        <StatBlock title="Leave applications to review" value={metrics.pending_leave || (lists.pending_leave || []).length} subtitle="Pending decisions" tone={metrics.pending_leave ? 'warning' : ''} onClick={() => onOpenCard?.('pending-leave')} />
+        <StatBlock title="Leave pending" value={metrics.pending_leave || 0} subtitle="Applications to review" tone={metrics.pending_leave ? 'warning' : ''} onClick={() => onNavigate?.('leave')} />
+        <StatBlock title="Leave" value={(metrics.pending_leave || 0) + approvedLeave.length} subtitle="Review and return cards" tone={metrics.pending_leave ? 'warning' : ''} onClick={() => onOpenCard?.('leave')} />
       </div>
     </section>
   )
