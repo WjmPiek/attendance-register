@@ -426,6 +426,13 @@ export default function MobileAttendancePage({ me, onDone }) {
             <button type="button" className="glass-button" onClick={resetFlow}>Cancel</button>
           </div>
 
+          {!manualEntry ? <button type="button" className="glass-button manual-qr-open-button manual-qr-open-button-top" onClick={() => {
+            scannerStopRef.current()
+            setScanError('')
+            setMessage('Enter the four-digit office code, then tap Save QR code and continue.')
+            setManualEntry(true)
+          }}>{manualEntryAvailable ? 'Scan and save QR code manually' : 'Enter four-digit office code'}</button> : null}
+
           {!manualEntry ? (
             <div className="live-qr-scanner">
               <video ref={scannerVideoRef} aria-label="Live office QR scanner" playsInline muted autoPlay disablePictureInPicture />
@@ -449,12 +456,6 @@ export default function MobileAttendancePage({ me, onDone }) {
               <button type="button" className="primary-action" onClick={verifyManualQr} disabled={qrValue.length !== 4}>Save QR code and continue</button>
             </div>
           )}
-          {!manualEntry ? <button type="button" className="glass-button manual-qr-open-button" onClick={() => {
-            scannerStopRef.current()
-            setScanError('')
-            setMessage('Enter the four-digit office code, then tap Save QR code and continue.')
-            setManualEntry(true)
-          }}>{manualEntryAvailable ? 'Scan and save QR code manually' : 'Use four-digit office code'}</button> : null}
           {scanError ? <p className="error qr-scan-error">{scanError}</p> : null}
         </section>
       ) : null}
