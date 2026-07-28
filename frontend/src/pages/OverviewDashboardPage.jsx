@@ -333,6 +333,30 @@ function LeaveCalendar({ items = [] }) {
   )
 }
 
+function OverviewCardMenu({ title, subtitle, cards = [], activeCard, onSelect }) {
+  return (
+    <section className="overview-card-menu-page">
+      <div className="overview-card-menu-header">
+        <p className="eyebrow">{title}</p>
+        {subtitle ? <p className="muted">{subtitle}</p> : null}
+      </div>
+      <div className="overview-card-menu-grid">
+        {cards.map((card) => (
+          <button
+            key={card.id}
+            type="button"
+            className={`overview-drill-card ${card.tone || ''}`}
+            onClick={() => onSelect(card.id)}
+          >
+            <span>{card.label}</span>
+            <small>{card.count} item(s)</small>
+          </button>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 export default function OverviewDashboardPage({ onNavigate }) {
   const [data, setData] = useState(null)
   const [error, setError] = useState('')
@@ -390,17 +414,22 @@ export default function OverviewDashboardPage({ onNavigate }) {
   const readNotifications = notifications.filter((n) => n.is_read)
   const cardButtons = [
     { id: 'control', label: 'Control centre' },
-    { id: 'alerts', label: 'Attendance alerts' },
+    { id: 'attendance', label: 'Attendance' },
+    { id: 'leave', label: 'Leave' },
     { id: 'suggestions', label: 'Smart suggestions' },
     { id: 'notifications', label: 'Notifications' },
-    { id: 'leave-planner', label: 'Leave planner' },
-    { id: 'leave-applications', label: 'Leave applications' },
-    { id: 'leave-calendar', label: 'Leave calendar' },
-    { id: 'pending-leave', label: 'Pending leave' },
-    { id: 'not-signed-in', label: 'Not signed in' },
-    { id: 'late-arrivals', label: 'Late arrivals' },
-    { id: 'missing-sign-out', label: 'Missing sign-out' },
-    { id: 'gps-issues', label: 'GPS issues' },
+  ]
+  const attendanceCards = [
+    { id: 'not-signed-in', label: 'Not signed in', count: metrics.not_signed_in || (lists.not_signed_in || []).length, tone: 'warning' },
+    { id: 'late-arrivals', label: 'Late arrivals', count: metrics.late || (lists.late || []).length, tone: 'warning' },
+    { id: 'missing-sign-out', label: 'Missing sign-out', count: metrics.missing_sign_out || (lists.missing_sign_out || []).length, tone: 'danger' },
+    { id: 'gps-issues', label: 'GPS issues', count: (lists.gps_issues || []).length, tone: 'danger' },
+  ]
+  const leaveCards = [
+    { id: 'leave-planner', label: 'Leave planner', count: (lists.approved_leave || []).length, tone: 'info' },
+    { id: 'leave-applications', label: 'Leave applications', count: (lists.leave_applications || lists.approved_leave || []).length, tone: 'info' },
+    { id: 'leave-calendar', label: 'Leave calendar', count: (lists.approved_leave || []).length, tone: 'info' },
+    { id: 'pending-leave', label: 'Pending leave', count: metrics.pending_leave || (lists.pending_leave || []).length, tone: 'warning' },
   ]
 
   return (
@@ -422,7 +451,25 @@ export default function OverviewDashboardPage({ onNavigate }) {
 
       {activeCard === 'control' ? <OverviewMetricRail metrics={metrics} lists={lists} onNavigate={onNavigate} /> : null}
 
-      {activeCard === 'alerts' ? <OverviewNotifications lists={lists} metrics={metrics} onNavigate={onNavigate} /> : null}
+      {activeCard === 'attendance' ? (
+        <OverviewCardMenu
+          title="Attendance"
+          subtitle="Choose one attendance card to open the full-width detail page."
+          cards={attendanceCards}
+          activeCard={activeCard}
+          onSelect={setActiveCard}
+        />
+      ) : null}
+
+      {activeCard === 'leave' ? (
+        <OverviewCardMenu
+          title="Leave"
+          subtitle="Choose one leave card to open the full-width detail page."
+          cards={leaveCards}
+          activeCard={activeCard}
+          onSelect={setActiveCard}
+        />
+      ) : null}
 
       {activeCard === 'suggestions' ? (
         <section className="form-card suggestions-card">
