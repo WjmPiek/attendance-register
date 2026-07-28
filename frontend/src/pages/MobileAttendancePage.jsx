@@ -243,20 +243,20 @@ export default function MobileAttendancePage({ me, onDone }) {
         setScanning(true)
         if (!window.BarcodeDetector) {
           setManualEntryAvailable(true)
-          setScanError('The rear camera is open, but this browser cannot automatically read QR codes. Use Chrome/Edge for automatic scanning, or ask your manager/franchise user for the four-digit code.')
+          setScanError('This browser cannot read QR codes automatically. Tap the button above and enter the four-digit office code.')
           return
         }
         const formats = await window.BarcodeDetector.getSupportedFormats?.()
         if (formats && !formats.includes('qr_code')) {
           setManualEntryAvailable(true)
-          setScanError('The rear camera is open, but this browser cannot automatically read QR codes. Use Chrome/Edge for automatic scanning, or ask your manager/franchise user for the four-digit code.')
+          setScanError('This browser cannot read QR codes automatically. Tap the button above and enter the four-digit office code.')
           return
         }
         const detector = new window.BarcodeDetector({ formats: ['qr_code'] })
         fallbackTimer = window.setTimeout(() => {
           if (cancelled || scanLockedRef.current) return
           setManualEntryAvailable(true)
-          setScanError('The rear camera is open but no QR code has been detected yet. Keep scanning, or ask your manager/franchise user for the four-digit code.')
+          setScanError('No QR code has been detected yet. Keep scanning, or tap the button above to enter the four-digit office code.')
         }, 45000)
 
         const scanFrame = async () => {
@@ -449,13 +449,13 @@ export default function MobileAttendancePage({ me, onDone }) {
               <button type="button" className="primary-action" onClick={verifyManualQr} disabled={qrValue.length !== 4}>Save QR code and continue</button>
             </div>
           )}
-          {scanError ? <p className="error">{scanError}</p> : null}
           {!manualEntry ? <button type="button" className="glass-button manual-qr-open-button" onClick={() => {
             scannerStopRef.current()
             setScanError('')
             setMessage('Enter the four-digit office code, then tap Save QR code and continue.')
             setManualEntry(true)
           }}>{manualEntryAvailable ? 'Scan and save QR code manually' : 'Use four-digit office code'}</button> : null}
+          {scanError ? <p className="error qr-scan-error">{scanError}</p> : null}
         </section>
       ) : null}
 
