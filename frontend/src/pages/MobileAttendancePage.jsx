@@ -313,6 +313,7 @@ export default function MobileAttendancePage({ me, onDone }) {
       setError('Enter the four-digit code from your manager or franchise user.')
       return
     }
+    setMessage('Saving the QR code and confirming the assigned office...')
     await acceptQr(qrValue.trim())
   }
 
@@ -431,7 +432,8 @@ export default function MobileAttendancePage({ me, onDone }) {
               <strong>{scanning ? 'Hold the QR code steady in view' : 'Starting camera...'}</strong>
             </div>
           ) : (
-            <div className="form-grid one-column">
+            <div className="manual-qr-save-panel">
+              <p className="muted small">If this browser cannot scan the QR code automatically, ask your manager or franchise user for the four-digit office code. Enter it here, then save it to continue.</p>
               <label>
                 Four-digit QR value
                 <input
@@ -444,14 +446,16 @@ export default function MobileAttendancePage({ me, onDone }) {
                   placeholder="0000"
                 />
               </label>
-              <button type="button" onClick={verifyManualQr} disabled={qrValue.length !== 4}>Register QR code</button>
+              <button type="button" className="primary-action" onClick={verifyManualQr} disabled={qrValue.length !== 4}>Save QR code and continue</button>
             </div>
           )}
           {scanError ? <p className="error">{scanError}</p> : null}
           {!manualEntry && manualEntryAvailable ? <button type="button" className="link-button" onClick={() => {
             scannerStopRef.current()
+            setScanError('')
+            setMessage('Enter the four-digit office code, then tap Save QR code and continue.')
             setManualEntry(true)
-          }}>Enter manager/franchise four-digit code</button> : null}
+          }}>Scan and save QR code manually</button> : null}
         </section>
       ) : null}
 

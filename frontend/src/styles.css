@@ -2360,6 +2360,10 @@ input[type="date"]::-webkit-date-and-time-value,
 .live-qr-scanner video { display:block; width:100%; height:auto; min-height:0; max-height:70dvh; object-fit:contain; transform:none; background:#16131b; }
 .live-qr-scanner > strong { position:absolute; left:16px; right:16px; bottom:14px; padding:10px 12px; border-radius:12px; background:rgba(0,0,0,.68); text-align:center; }
 .qr-frame-guide { display:none; }
+.manual-qr-save-panel { display:grid; grid-template-columns:1fr; gap:14px; padding:16px; border-radius:18px; border:1px solid rgba(108,76,166,.16); background:rgba(255,255,255,.72); }
+.manual-qr-save-panel p,.manual-qr-save-panel label { margin:0 !important; }
+.manual-qr-save-panel input { text-align:center; font-size:22px !important; letter-spacing:.18em; font-weight:700; }
+.manual-qr-save-panel .primary-action { width:100%; min-height:50px; }
 .attendance-evidence-status { display:flex; flex-wrap:wrap; gap:10px; }
 .attendance-evidence-status span { padding:8px 12px; border-radius:999px; font-size:.85rem; font-weight:800; }
 .attendance-evidence-status .ready { color:#11643f; background:rgba(20,122,85,.12); }
