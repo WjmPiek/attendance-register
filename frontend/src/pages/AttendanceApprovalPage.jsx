@@ -34,6 +34,7 @@ function UserCell({ row }) {
 export default function AttendanceApprovalPage({ me }) {
   const isSuperUser = me?.roles?.includes('SuperUser')
   const [approvalStatus, setApprovalStatus] = useState('pending')
+  const [activeCard, setActiveCard] = useState('menu')
   const [franchiseId, setFranchiseId] = useState('')
   const [franchises, setFranchises] = useState([])
   const [users, setUsers] = useState([])
@@ -125,9 +126,46 @@ export default function AttendanceApprovalPage({ me }) {
     }
   }
 
+  const openAttendanceCard = (cardId, status = approvalStatus) => {
+    setApprovalStatus(status)
+    setActiveCard(cardId)
+  }
+
   return (
     <Card title="Attendance Approval">
       <p className="muted">Use the filters to view pending, approved, rejected or all attendance events in your allowed franchise scope.</p>
+
+      {activeCard === 'menu' ? (
+        <section className="overview-card-menu-page">
+          <div className="overview-card-menu-header">
+            <p className="eyebrow">Attendance</p>
+            <p className="muted">Choose an attendance card to open only that page.</p>
+          </div>
+          <div className="overview-card-menu-grid">
+            <button type="button" className="overview-drill-card warning" onClick={() => openAttendanceCard('pending', 'pending')}>
+              <span>Attendance approvals</span>
+              <small>Pending review</small>
+            </button>
+            <button type="button" className="overview-drill-card info" onClick={() => openAttendanceCard('arrivals', 'all')}>
+              <span>Attendance arrivals</span>
+              <small>All sign-in and sign-out events</small>
+            </button>
+            <button type="button" className="overview-drill-card info" onClick={() => openAttendanceCard('approved', 'approved')}>
+              <span>Approved attendance</span>
+              <small>Approved records</small>
+            </button>
+            <button type="button" className="overview-drill-card danger" onClick={() => openAttendanceCard('rejected', 'rejected')}>
+              <span>Rejected attendance</span>
+              <small>Rejected records</small>
+            </button>
+          </div>
+        </section>
+      ) : null}
+
+      {activeCard !== 'menu' ? <button type="button" className="glass-button overview-back-button" onClick={() => setActiveCard('menu')}>Back to attendance cards</button> : null}
+
+      {activeCard !== 'menu' ? (
+      <>
       <div className="history-toolbar approval-toolbar">
         {isSuperUser ? (
           <label>
@@ -156,11 +194,13 @@ export default function AttendanceApprovalPage({ me }) {
         </label>
         <button onClick={load} disabled={loading}>{loading ? 'Loading...' : 'Refresh'}</button>
       </div>
+      </>
+      ) : null}
 
       {message ? <p className="success">{message}</p> : null}
       {error ? <p className="error">{error}</p> : null}
 
-      <div className="table-wrap">
+      {activeCard !== 'menu' ? <div className="table-wrap">
         <table className="history-table approval-table">
           <thead>
             <tr>
@@ -228,7 +268,7 @@ export default function AttendanceApprovalPage({ me }) {
             {!items.length ? <tr><td colSpan="6" className="muted">No approval records found.</td></tr> : null}
           </tbody>
         </table>
-      </div>
+      </div> : null}
     </Card>
   )
 }

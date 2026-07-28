@@ -12,9 +12,10 @@ function StatBlock({ title, value, subtitle, tone = '', onClick }) {
   ) : <div className={`metric-card ${tone}`}>{content}</div>
 }
 
-function OverviewMetricRail({ metrics = {}, lists = {}, onNavigate }) {
+function OverviewMetricRail({ metrics = {}, lists = {}, suggestions = [], notifications = [], onNavigate, onOpenCard }) {
   const totalIssues = Number(metrics.not_signed_in || 0) + Number(metrics.late || 0) + Number(metrics.missing_sign_out || 0) + Number((lists.gps_issues || []).length || 0)
   const goodCount = Math.max(0, Number(metrics.completed || 0))
+  const approvedLeave = lists.approved_leave || []
   return (
     <section className="overview-hero-panel">
       <div className="overview-hero-copy">
@@ -27,6 +28,13 @@ function OverviewMetricRail({ metrics = {}, lists = {}, onNavigate }) {
         <StatBlock title="Completed" value={goodCount} subtitle="Signed in and out" tone="success" onClick={() => onNavigate?.('history')} />
         <StatBlock title="Open issues" value={totalIssues} subtitle="Needs review" tone={totalIssues ? 'danger' : 'success'} onClick={() => onNavigate?.('approvals')} />
         <StatBlock title="Leave pending" value={metrics.pending_leave || 0} subtitle="Applications to review" tone={metrics.pending_leave ? 'warning' : ''} onClick={() => onNavigate?.('leave')} />
+        <StatBlock title="Attendance" value={totalIssues} subtitle="Arrival and exception cards" tone={totalIssues ? 'warning' : ''} onClick={() => onOpenCard?.('attendance')} />
+        <StatBlock title="Attendance arrivals" value={metrics.late || (lists.late || []).length} subtitle="Late arrivals today" tone={metrics.late ? 'warning' : ''} onClick={() => onOpenCard?.('late-arrivals')} />
+        <StatBlock title="Leave" value={(metrics.pending_leave || 0) + approvedLeave.length} subtitle="Review and return cards" tone={metrics.pending_leave ? 'warning' : ''} onClick={() => onOpenCard?.('leave')} />
+        <StatBlock title="Leave applications to review" value={metrics.pending_leave || (lists.pending_leave || []).length} subtitle="Pending decisions" tone={metrics.pending_leave ? 'warning' : ''} onClick={() => onOpenCard?.('pending-leave')} />
+        <StatBlock title="Approved leave and return dates" value={approvedLeave.length} subtitle="Return planner" tone="info" onClick={() => onOpenCard?.('leave-planner')} />
+        <StatBlock title="Smart suggestions" value={suggestions.length} subtitle="Recommended actions" onClick={() => onOpenCard?.('suggestions')} />
+        <StatBlock title="Notifications" value={notifications.filter((n) => !n.is_read).length} subtitle="Unread and history" onClick={() => onOpenCard?.('notifications')} />
       </div>
     </section>
   )
@@ -412,44 +420,26 @@ export default function OverviewDashboardPage({ onNavigate }) {
   const notifications = data?.notifications || []
   const unreadNotifications = notifications.filter((n) => !n.is_read)
   const readNotifications = notifications.filter((n) => n.is_read)
-  const cardButtons = [
-    { id: 'control', label: 'Control centre' },
-    { id: 'attendance', label: 'Attendance' },
-    { id: 'leave', label: 'Leave' },
-    { id: 'suggestions', label: 'Smart suggestions' },
-    { id: 'notifications', label: 'Notifications' },
-  ]
   const attendanceCards = [
     { id: 'not-signed-in', label: 'Not signed in', count: metrics.not_signed_in || (lists.not_signed_in || []).length, tone: 'warning' },
-    { id: 'late-arrivals', label: 'Late arrivals', count: metrics.late || (lists.late || []).length, tone: 'warning' },
+    { id: 'late-arrivals', label: 'Attendance arrivals', count: metrics.late || (lists.late || []).length, tone: 'warning' },
     { id: 'missing-sign-out', label: 'Missing sign-out', count: metrics.missing_sign_out || (lists.missing_sign_out || []).length, tone: 'danger' },
     { id: 'gps-issues', label: 'GPS issues', count: (lists.gps_issues || []).length, tone: 'danger' },
   ]
   const leaveCards = [
-    { id: 'leave-planner', label: 'Leave planner', count: (lists.approved_leave || []).length, tone: 'info' },
+    { id: 'leave-planner', label: 'Approved leave and return dates', count: (lists.approved_leave || []).length, tone: 'info' },
     { id: 'leave-applications', label: 'Leave applications', count: (lists.leave_applications || lists.approved_leave || []).length, tone: 'info' },
     { id: 'leave-calendar', label: 'Leave calendar', count: (lists.approved_leave || []).length, tone: 'info' },
-    { id: 'pending-leave', label: 'Pending leave', count: metrics.pending_leave || (lists.pending_leave || []).length, tone: 'warning' },
+    { id: 'pending-leave', label: 'Leave applications to review', count: metrics.pending_leave || (lists.pending_leave || []).length, tone: 'warning' },
   ]
 
   return (
     <div className="overview-dashboard overview-dashboard-pro">
       {error ? <p className="error">{error}</p> : null}
 
-      <div className="page-card-button-grid" aria-label="Overview cards">
-        {cardButtons.map((card) => (
-          <button
-            key={card.id}
-            type="button"
-            className={activeCard === card.id ? 'page-card-button active' : 'page-card-button'}
-            onClick={() => setActiveCard(card.id)}
-          >
-            <span>{card.label}</span>
-          </button>
-        ))}
-      </div>
+      {activeCard !== 'control' ? <button type="button" className="glass-button overview-back-button" onClick={() => setActiveCard('control')}>Back to control centre</button> : null}
 
-      {activeCard === 'control' ? <OverviewMetricRail metrics={metrics} lists={lists} onNavigate={onNavigate} /> : null}
+      {activeCard === 'control' ? <OverviewMetricRail metrics={metrics} lists={lists} suggestions={suggestions} notifications={notifications} onNavigate={onNavigate} onOpenCard={setActiveCard} /> : null}
 
       {activeCard === 'attendance' ? (
         <OverviewCardMenu

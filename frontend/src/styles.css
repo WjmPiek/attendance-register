@@ -1963,6 +1963,23 @@ input[type="date"]::-webkit-date-and-time-value,
 .overview-action-row.enterprise-action-stack > .form-card { height: 100%; }
 .metric-card.metric-link { cursor: pointer; text-align: left; width: 100%; font: inherit; color: inherit; }
 .metric-card.metric-link:hover { transform: translateY(-2px); box-shadow: 0 14px 32px rgba(91,65,120,.13); }
+.overview-dashboard-pro .metric-card strong,
+.overview-dashboard-pro .metric-card span,
+.overview-dashboard-pro .metric-card small,
+.overview-drill-card span,
+.overview-drill-card small,
+.page-card-button,
+.main-page-tab-bar .logout-button {
+  font-weight: 500 !important;
+}
+.overview-dashboard-pro .metric-card strong {
+  font-size: 1.18rem;
+}
+.overview-back-button {
+  width: fit-content;
+  margin-bottom: 14px;
+  font-weight: 500 !important;
+}
 
 /* Main site page navigation: top buttons replace the desktop sidebar. */
 .main-site-page-shell {

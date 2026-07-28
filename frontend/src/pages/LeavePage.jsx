@@ -136,6 +136,7 @@ export default function LeavePage({ me }) {
   const canDecide = me.roles.includes('FranchiseUser') || me.roles.includes('ManagerUser')
   const canApply = me.roles.includes('EmployeeUser') || me.roles.includes('ManagerUser')
   const [apps, setApps] = useState([])
+  const [activeCard, setActiveCard] = useState('menu')
   const [form, setForm] = useState({ leave_type: 'Annual Leave', start_date: '', end_date: '', reason: '' })
   const [status, setStatus] = useState('')
   const [msg, setMsg] = useState('')
@@ -192,6 +193,14 @@ export default function LeavePage({ me }) {
     }
   }
 
+  const approvedLeaveCount = apps.filter((a) => String(a.status || '').toLowerCase() === 'approved').length
+  const pendingLeaveCount = apps.filter((a) => String(a.status || '').toLowerCase() === 'pending').length
+  const leaveCards = [
+    canApply ? { id: 'apply', label: 'Apply for leave', count: 1, tone: 'info' } : null,
+    { id: 'planner', label: 'Approved leave and return dates', count: approvedLeaveCount, tone: 'info' },
+    { id: 'applications', label: canDecide ? 'Leave applications to review' : 'My leave applications', count: canDecide ? pendingLeaveCount : apps.length, tone: pendingLeaveCount ? 'warning' : 'info' },
+  ].filter(Boolean)
+
   return (
     <div className="leave-page">
       <section className="section-header compact-header">
@@ -202,7 +211,26 @@ export default function LeavePage({ me }) {
       {msg ? <p className="success">{msg}</p> : null}
       {err ? <p className="error">{err}</p> : null}
 
-      {canApply ? (
+      {activeCard !== 'menu' ? <button type="button" className="glass-button overview-back-button" onClick={() => setActiveCard('menu')}>Back to leave cards</button> : null}
+
+      {activeCard === 'menu' ? (
+        <section className="overview-card-menu-page">
+          <div className="overview-card-menu-header">
+            <p className="eyebrow">Leave</p>
+            <p className="muted">Choose a leave card to open only that page.</p>
+          </div>
+          <div className="overview-card-menu-grid">
+            {leaveCards.map((card) => (
+              <button key={card.id} type="button" className={`overview-drill-card ${card.tone || ''}`} onClick={() => setActiveCard(card.id)}>
+                <span>{card.label}</span>
+                <small>{card.count} item(s)</small>
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {canApply && activeCard === 'apply' ? (
         <section className="leave-grid single">
           <form className="form-card staff-form-single" onSubmit={submit}>
             <h2>Apply for leave</h2>
@@ -215,12 +243,12 @@ export default function LeavePage({ me }) {
         </section>
       ) : null}
 
-      <LeaveReturnTimeline items={apps} year={2026} month={4} />
+      {activeCard === 'planner' ? <LeaveReturnTimeline items={apps} year={2026} month={4} /> : null}
 
-      <section className="form-card staff-list-card">
+      {activeCard === 'applications' ? <section className="form-card staff-list-card">
         <div className="list-header"><h2>{canDecide ? 'Leave applications to review' : 'My leave applications'}</h2><label>Status<select value={status} onChange={(e) => setStatus(e.target.value)}><option value="">All</option><option value="pending">Pending</option><option value="approved">Approved</option><option value="declined">Declined</option></select></label></div>
         <div className="table-wrap"><table><thead><tr><th>Employee</th><th>Type</th><th>Approved leave / return dates</th><th>Status</th><th>Reason</th><th>Decision</th></tr></thead><tbody>{apps.map((a) => <tr key={a.id}><td><strong>{a.name || a.full_name} {a.surname || ''}</strong><small>{a.role || a.email}</small></td><td>{a.leave_type}</td><td>{formatDate(a.start_date)} to {formatDate(a.end_date)}<br /><small>Return: {a.return_date ? formatDate(a.return_date) : 'after leave'}</small></td><td><span className={`status-pill ${a.status}`}>{a.status}</span></td><td>{a.reason || '—'}</td><td>{canDecide && a.status === 'pending' ? <div className="action-row"><button type="button" className="link-button" onClick={() => decide(a.id, 'approve')}>Accept</button><button type="button" className="link-button danger" onClick={() => decide(a.id, 'decline')}>Decline</button></div> : (a.decision_note || '—')}</td></tr>)}{!apps.length ? <tr><td colSpan="6" className="muted">No leave applications found.</td></tr> : null}</tbody></table></div>
-      </section>
+      </section> : null}
     </div>
   )
 }
