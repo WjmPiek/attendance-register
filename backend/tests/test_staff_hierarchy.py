@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.api.franchise_staff import (
     UpdateEmployeeRequest,
     _active_manager_profile,
+    _ensure_active_office_assignment,
     _ensure_manager_assignment,
     _ensure_staff_integrity,
     _require_superuser,
@@ -13,6 +14,7 @@ from app.api.franchise_staff import (
     _ensure_email_available,
     _ensure_staff_identity_unique,
     _preserve_blank_identity_values,
+    _staff_integrity_report,
     _unique_username,
 )
 from app.db.base import Base
@@ -248,3 +250,66 @@ def test_staff_integrity_rejects_orphaned_manager_assignment():
 
     with pytest.raises(HTTPException, match="Selected manager is not under this franchise"):
         _ensure_manager_assignment(session, manager_user_id=99, franchise_user_id=3)
+
+
+def test_staff_integrity_rejects_missing_active_office_assignment():
+    session = IntegritySession(missing_fragment="FROM gps_allocations_per_user")
+
+    with pytest.raises(HTTPException, match="active office assignment"):
+        _ensure_active_office_assignment(session, user_id=10, franchise_user_id=3, office_area_id=5)
+
+
+class RowsResult:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def mappings(self):
+        return self
+
+    def all(self):
+        return self.rows
+
+
+class ReportSession:
+    def execute(self, statement):
+        assert "UNION ALL" in str(statement)
+        return RowsResult([
+            {
+                "staff_type": "manager",
+                "staff_id": 1,
+                "user_id": 11,
+                "franchise_user_id": 3,
+                "manager_user_id": None,
+                "office_area_id": 4,
+                "user_exists": True,
+                "franchise_exists": True,
+                "role_exists": True,
+                "office_exists": True,
+                "manager_exists": True,
+            },
+            {
+                "staff_type": "employee",
+                "staff_id": 2,
+                "user_id": 12,
+                "franchise_user_id": 3,
+                "manager_user_id": 99,
+                "office_area_id": None,
+                "user_exists": True,
+                "franchise_exists": True,
+                "role_exists": False,
+                "office_exists": False,
+                "manager_exists": False,
+            },
+        ])
+
+
+def test_staff_integrity_report_lists_existing_orphaned_records():
+    report = _staff_integrity_report(ReportSession())
+
+    assert report["total_staff"] == 2
+    assert report["invalid_count"] == 3
+    assert {issue["issue"] for issue in report["issues"]} == {
+        "Missing required user role",
+        "Missing active office assignment",
+        "Missing or cross-franchise manager assignment",
+    }

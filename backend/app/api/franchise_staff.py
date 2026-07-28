@@ -312,6 +312,7 @@ def _ensure_staff_integrity(
     franchise_user_id: int,
     office_area_id: int | None = None,
     manager_user_id: int | None = None,
+    require_office_assignment: bool = False,
 ) -> None:
     role_name = "ManagerUser" if staff_type == "manager" else "EmployeeUser"
     _ensure_user_exists(db, user_id)
@@ -319,8 +320,107 @@ def _ensure_staff_integrity(
     _ensure_franchise_exists(db, franchise_user_id)
     if office_area_id is not None:
         _area_row(db, office_area_id, franchise_user_id)
+    if require_office_assignment:
+        _ensure_active_office_assignment(db, user_id, franchise_user_id, office_area_id)
     if staff_type == "employee":
         _ensure_manager_assignment(db, manager_user_id, franchise_user_id)
+
+
+def _ensure_active_office_assignment(
+    db: Session,
+    user_id: int,
+    franchise_user_id: int,
+    office_area_id: int | None = None,
+) -> None:
+    filters = ["g.user_id = :user_id", "COALESCE(g.is_active, TRUE) = TRUE", "a.franchise_user_id = :franchise_user_id", "COALESCE(a.is_archived, FALSE) = FALSE"]
+    params = {"user_id": user_id, "franchise_user_id": franchise_user_id}
+    if office_area_id is not None:
+        filters.append("g.area_id = :office_area_id")
+        params["office_area_id"] = office_area_id
+    row = db.execute(text(f"""
+        SELECT g.area_id
+        FROM gps_allocations_per_user g
+        JOIN areas a ON a.id = g.area_id
+        WHERE {' AND '.join(filters)}
+        LIMIT 1
+    """), params).mappings().first()
+    if not row:
+        raise HTTPException(status_code=400, detail="Staff member must have an active office assignment")
+
+
+def _integrity_issue(label: str, row: dict) -> dict:
+    return {
+        "staff_type": row["staff_type"],
+        "staff_id": row["staff_id"],
+        "user_id": row.get("user_id"),
+        "franchise_user_id": row.get("franchise_user_id"),
+        "manager_user_id": row.get("manager_user_id"),
+        "office_area_id": row.get("office_area_id"),
+        "issue": label,
+    }
+
+
+def _staff_integrity_report(db: Session) -> dict:
+    rows = [dict(row) for row in db.execute(text("""
+        SELECT 'manager' AS staff_type,
+               mu.id AS staff_id,
+               mu.user_id,
+               mu.franchise_user_id,
+               NULL::INTEGER AS manager_user_id,
+               g.area_id AS office_area_id,
+               CASE WHEN u.id IS NULL THEN FALSE ELSE TRUE END AS user_exists,
+               CASE WHEN fu.id IS NULL THEN FALSE ELSE TRUE END AS franchise_exists,
+               CASE WHEN r.id IS NULL THEN FALSE ELSE TRUE END AS role_exists,
+               CASE WHEN a.id IS NULL THEN FALSE ELSE TRUE END AS office_exists,
+               TRUE AS manager_exists
+        FROM manager_users mu
+        LEFT JOIN users u ON u.id = mu.user_id AND COALESCE(u.is_active, TRUE) = TRUE
+        LEFT JOIN franchise_users fu ON fu.id = mu.franchise_user_id AND COALESCE(fu.is_active, TRUE) = TRUE
+        LEFT JOIN user_roles ur ON ur.user_id = mu.user_id
+        LEFT JOIN roles r ON r.id = ur.role_id AND r.name = 'ManagerUser'
+        LEFT JOIN gps_allocations_per_user g ON g.user_id = mu.user_id AND COALESCE(g.is_active, TRUE) = TRUE
+        LEFT JOIN areas a ON a.id = g.area_id AND a.franchise_user_id = mu.franchise_user_id AND COALESCE(a.is_archived, FALSE) = FALSE
+        WHERE COALESCE(mu.is_active, TRUE) = TRUE
+        UNION ALL
+        SELECT 'employee' AS staff_type,
+               eu.id AS staff_id,
+               eu.user_id,
+               eu.franchise_user_id,
+               eu.manager_user_id,
+               g.area_id AS office_area_id,
+               CASE WHEN u.id IS NULL THEN FALSE ELSE TRUE END AS user_exists,
+               CASE WHEN fu.id IS NULL THEN FALSE ELSE TRUE END AS franchise_exists,
+               CASE WHEN r.id IS NULL THEN FALSE ELSE TRUE END AS role_exists,
+               CASE WHEN a.id IS NULL THEN FALSE ELSE TRUE END AS office_exists,
+               CASE WHEN eu.manager_user_id IS NULL OR mu.id IS NOT NULL THEN TRUE ELSE FALSE END AS manager_exists
+        FROM employee_users eu
+        LEFT JOIN users u ON u.id = eu.user_id AND COALESCE(u.is_active, TRUE) = TRUE
+        LEFT JOIN franchise_users fu ON fu.id = eu.franchise_user_id AND COALESCE(fu.is_active, TRUE) = TRUE
+        LEFT JOIN user_roles ur ON ur.user_id = eu.user_id
+        LEFT JOIN roles r ON r.id = ur.role_id AND r.name = 'EmployeeUser'
+        LEFT JOIN manager_users mu ON mu.id = eu.manager_user_id AND mu.franchise_user_id = eu.franchise_user_id AND COALESCE(mu.is_active, TRUE) = TRUE
+        LEFT JOIN gps_allocations_per_user g ON g.user_id = eu.user_id AND COALESCE(g.is_active, TRUE) = TRUE
+        LEFT JOIN areas a ON a.id = g.area_id AND a.franchise_user_id = eu.franchise_user_id AND COALESCE(a.is_archived, FALSE) = FALSE
+        WHERE COALESCE(eu.is_active, TRUE) = TRUE
+    """)).mappings().all()]
+    issues = []
+    seen = set()
+    for row in rows:
+        checks = [
+            ("Missing or inactive linked user account", row.get("user_exists")),
+            ("Missing or inactive franchise profile", row.get("franchise_exists")),
+            ("Missing required user role", row.get("role_exists")),
+            ("Missing active office assignment", row.get("office_exists")),
+            ("Missing or cross-franchise manager assignment", row.get("manager_exists")),
+        ]
+        for label, ok in checks:
+            if ok:
+                continue
+            key = (row["staff_type"], row["staff_id"], label)
+            if key not in seen:
+                seen.add(key)
+                issues.append(_integrity_issue(label, row))
+    return {"total_staff": len({(r["staff_type"], r["staff_id"]) for r in rows}), "invalid_count": len(issues), "issues": issues}
 
 
 def _safe_email(prefix: str, name: str, surname: str) -> str:
@@ -1113,6 +1213,12 @@ def employee_roles(current_user: User = Depends(get_current_user), db: Session =
     return {"roles": EMPLOYEE_ROLES}
 
 
+@router.get("/integrity")
+def staff_integrity(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _require_superuser(db, current_user)
+    return _staff_integrity_report(db)
+
+
 @router.get("/managers")
 def list_managers(
     franchise_user_id: int | None = Query(default=None),
@@ -1446,6 +1552,14 @@ def create_manager(payload: CreateManagerRequest, current_user: User = Depends(g
     }).scalar_one()
 
     _assign_office_gps(db, user_id, payload.office_area_id, franchise_user_id)
+    _ensure_staff_integrity(
+        db,
+        staff_type="manager",
+        user_id=user_id,
+        franchise_user_id=franchise_user_id,
+        office_area_id=payload.office_area_id,
+        require_office_assignment=True,
+    )
     write_audit_log(db, actor_user_id=current_user.id, action="create", entity_type="manager", entity_id=manager_id, franchise_user_id=franchise_user_id, new_values=payload.model_dump(exclude={"password"}), note="Manager created")
     db.commit()
     return {"message": "Manager created", "manager_id": manager_id, "user_id": user_id, "username": login_username, "login_name": login_username if not payload.email else login_email}
@@ -1540,6 +1654,15 @@ def create_employee(payload: CreateEmployeeRequest, current_user: User = Depends
     }).scalar_one()
 
     _assign_office_gps(db, user_id, payload.office_area_id, franchise_user_id)
+    _ensure_staff_integrity(
+        db,
+        staff_type="employee",
+        user_id=user_id,
+        franchise_user_id=franchise_user_id,
+        office_area_id=payload.office_area_id,
+        manager_user_id=payload.manager_user_id,
+        require_office_assignment=True,
+    )
     write_audit_log(db, actor_user_id=current_user.id, action="create", entity_type="employee", entity_id=employee_id, franchise_user_id=franchise_user_id, new_values=payload.model_dump(exclude={"password"}), note="Employee created")
     db.commit()
     return {"message": "Employee created", "employee_id": employee_id, "user_id": user_id, "username": login_username, "login_name": login_username if not payload.email else login_email}
@@ -1722,6 +1845,7 @@ def update_manager(manager_id: int, payload: UpdateManagerRequest, current_user:
         user_id=row["user_id"],
         franchise_user_id=row["franchise_user_id"],
         office_area_id=values.get("office_area_id") if "office_area_id" in values else None,
+        require_office_assignment=True,
     )
     write_audit_log(db, actor_user_id=current_user.id, action="update", entity_type="manager", entity_id=manager_id, franchise_user_id=row["franchise_user_id"], old_values=dict(row), new_values=values, note="Manager edited")
     db.commit()
@@ -1789,6 +1913,7 @@ def update_employee(employee_id: int, payload: UpdateEmployeeRequest, current_us
         franchise_user_id=row["franchise_user_id"],
         office_area_id=values.get("office_area_id") if "office_area_id" in values else None,
         manager_user_id=values.get("manager_user_id", row.get("manager_user_id")),
+        require_office_assignment=True,
     )
     write_audit_log(db, actor_user_id=current_user.id, action="update", entity_type="employee", entity_id=employee_id, franchise_user_id=row["franchise_user_id"], old_values=dict(row), new_values=values, note="Employee edited")
     db.commit()
