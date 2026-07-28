@@ -6,10 +6,13 @@ from sqlalchemy.orm import Session
 from app.api.franchise_staff import (
     UpdateEmployeeRequest,
     _active_manager_profile,
+    _ensure_manager_assignment,
+    _ensure_staff_integrity,
     _require_superuser,
     _create_user,
     _ensure_email_available,
     _ensure_staff_identity_unique,
+    _preserve_blank_identity_values,
     _unique_username,
 )
 from app.db.base import Base
@@ -91,6 +94,20 @@ def test_explicit_null_manager_assignment_is_distinguishable_from_omission():
 
     assert "manager_user_id" not in omitted.model_fields_set
     assert "manager_user_id" in cleared.model_fields_set
+
+
+def test_blank_identity_fields_are_preserved_on_edit():
+    values = _preserve_blank_identity_values({
+        "id_number": "",
+        "username": "   ",
+        "password": "",
+        "employee_number": "",
+        "email": "",
+        "contact_number": "",
+        "name": "Updated",
+    })
+
+    assert values == {"contact_number": "", "name": "Updated"}
 
 
 class EmptyResult:
@@ -180,3 +197,54 @@ def test_superuser_passes_staff_mutation_guard(monkeypatch):
 
     monkeypatch.setattr(franchise_staff, "_is_superuser", lambda db, user: True)
     assert _require_superuser(object(), object()) is None
+
+
+class SequenceResult:
+    def __init__(self, row=None):
+        self.row = row
+
+    def mappings(self):
+        return self
+
+    def first(self):
+        return self.row
+
+
+class IntegritySession:
+    def __init__(self, missing_fragment=None):
+        self.missing_fragment = missing_fragment
+        self.calls = []
+
+    def execute(self, statement, params):
+        sql = str(statement)
+        self.calls.append((sql, params))
+        if self.missing_fragment and self.missing_fragment in sql:
+            return SequenceResult(None)
+        return SequenceResult({"id": params.get("user_id") or params.get("franchise_user_id") or params.get("manager_user_id") or params.get("area_id") or 1})
+
+
+def test_staff_integrity_checks_user_role_franchise_office_and_manager():
+    session = IntegritySession()
+
+    _ensure_staff_integrity(
+        session,
+        staff_type="employee",
+        user_id=8,
+        franchise_user_id=3,
+        office_area_id=4,
+        manager_user_id=7,
+    )
+
+    sql = "\n".join(statement for statement, _ in session.calls)
+    assert "FROM users" in sql
+    assert "JOIN roles" in sql
+    assert "FROM franchise_users" in sql
+    assert "FROM areas" in sql
+    assert "FROM manager_users" in sql
+
+
+def test_staff_integrity_rejects_orphaned_manager_assignment():
+    session = IntegritySession(missing_fragment="FROM manager_users")
+
+    with pytest.raises(HTTPException, match="Selected manager is not under this franchise"):
+        _ensure_manager_assignment(session, manager_user_id=99, franchise_user_id=3)
