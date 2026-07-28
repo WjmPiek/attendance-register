@@ -106,9 +106,6 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
     { id: 'staff', label: isSuperUser ? 'HR Staff' : (isManagerUser ? 'My Staff' : 'My Profile'), visible: isSuperUser || isManagerUser || isEmployee },
     { id: 'business', label: 'Business Information', visible: isFranchiseUser },
     { id: 'franchises', label: 'Franchise Approvals', visible: isSuperUser },
-    { id: 'commission', label: 'Commission & Overtime', visible: isFranchiseUser || isManagerUser || isEmployee || isSuperUser },
-    { id: 'payroll', label: canManagePayroll ? 'Payroll' : 'Payslips', visible: canUsePayroll },
-    { id: 'irp5', label: canManagePayroll ? 'IRP 5 Uploads' : 'My IRP 5', visible: isStaffSelfService || isFranchiseUser || isSuperUser },
   ].filter((tab) => tab.visible), [isSignCapable, isApprovalCapable, isSuperUser, isFranchiseUser, isEmployee, isManagerUser, isFinanceEmployee, isStaffSelfService, canManagePayroll, canUsePayroll])
 
   const mobileStaffTabs = useMemo(() => [
@@ -117,9 +114,6 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
     { id: 'staff', label: 'My Profile', visible: isEmployee },
     { id: 'employee-card', label: 'Employee Card', visible: isEmployee || isManagerUser },
     { id: 'history', label: 'History', visible: isSignCapable || isApprovalCapable },
-    { id: 'commission', label: 'Commission & Overtime', visible: isEmployee || isManagerUser },
-    { id: 'payroll', label: 'Payslips', visible: canUsePayroll },
-    { id: 'irp5', label: 'My IRP 5', visible: isStaffSelfService },
   ].filter((tab) => tab.visible), [isSignCapable, isApprovalCapable, isEmployee, isManagerUser, canUsePayroll, isStaffSelfService])
 
   const tabs = isMobileLayout && isStaffSelfService && !canManagePayroll ? mobileStaffTabs : fullTabs
@@ -127,7 +121,10 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
     ...tabs.map((tab) => tab.id),
     isApprovalCapable ? 'approvals' : null,
     (isEmployee || isManagerUser || isFranchiseUser || isSuperUser) ? 'leave' : null,
-  ].filter(Boolean)), [tabs, isApprovalCapable, isEmployee, isManagerUser, isFranchiseUser, isSuperUser])
+    (isFranchiseUser || isManagerUser || isEmployee || isSuperUser) ? 'commission' : null,
+    canUsePayroll ? 'payroll' : null,
+    (isStaffSelfService || isFranchiseUser || isSuperUser) ? 'irp5' : null,
+  ].filter(Boolean)), [tabs, isApprovalCapable, isEmployee, isManagerUser, isFranchiseUser, isSuperUser, canUsePayroll, isStaffSelfService])
   const queryParams = new URLSearchParams(window.location.search)
   const defaultTab = queryParams.get('office_qr') ? 'attendance' : (queryParams.get('tab') || 'home')
   const shouldStartOnMobileMenu = isMobileLayout && isStaffSelfService && !canManagePayroll && !queryParams.get('tab') && !queryParams.get('office_qr')
