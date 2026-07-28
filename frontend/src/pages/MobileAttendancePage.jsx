@@ -450,12 +450,12 @@ export default function MobileAttendancePage({ me, onDone }) {
             </div>
           )}
           {scanError ? <p className="error">{scanError}</p> : null}
-          {!manualEntry && manualEntryAvailable ? <button type="button" className="link-button" onClick={() => {
+          {!manualEntry ? <button type="button" className="glass-button manual-qr-open-button" onClick={() => {
             scannerStopRef.current()
             setScanError('')
             setMessage('Enter the four-digit office code, then tap Save QR code and continue.')
             setManualEntry(true)
-          }}>Scan and save QR code manually</button> : null}
+          }}>{manualEntryAvailable ? 'Scan and save QR code manually' : 'Use four-digit office code'}</button> : null}
         </section>
       ) : null}
 

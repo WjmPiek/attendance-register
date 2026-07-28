@@ -2364,6 +2364,7 @@ input[type="date"]::-webkit-date-and-time-value,
 .manual-qr-save-panel p,.manual-qr-save-panel label { margin:0 !important; }
 .manual-qr-save-panel input { text-align:center; font-size:22px !important; letter-spacing:.18em; font-weight:700; }
 .manual-qr-save-panel .primary-action { width:100%; min-height:50px; }
+.manual-qr-open-button { width:100%; min-height:50px; justify-content:center; }
 .attendance-evidence-status { display:flex; flex-wrap:wrap; gap:10px; }
 .attendance-evidence-status span { padding:8px 12px; border-radius:999px; font-size:.85rem; font-weight:800; }
 .attendance-evidence-status .ready { color:#11643f; background:rgba(20,122,85,.12); }
