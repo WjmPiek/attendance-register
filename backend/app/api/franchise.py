@@ -1,6 +1,6 @@
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -16,6 +16,10 @@ from app.schemas.franchise import (
 )
 
 router = APIRouter()
+
+
+class ResetFranchisePasswordRequest(BaseModel):
+    password: str = Field(min_length=8)
 
 
 def _ensure_franchise_website_schema(db: Session):
@@ -162,6 +166,45 @@ def reject_franchise_registration(
     db.commit()
     db.refresh(registration)
     return registration
+
+
+@router.post("/registrations/{registration_id}/reset-password")
+def reset_franchise_registration_password(
+    registration_id: int,
+    payload: ResetFranchisePasswordRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _require_superuser(db, current_user)
+    registration = db.query(FranchiseRegistration).filter(FranchiseRegistration.id == registration_id).first()
+    if not registration:
+        raise HTTPException(status_code=404, detail="Registration not found")
+
+    user = db.query(User).filter(User.email == registration.email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Approved franchise user account not found for this registration email")
+
+    password_hash = hash_password(payload.password)
+    now = datetime.utcnow()
+    user.password_hash = password_hash
+    user.updated_at = now
+    db.execute(text("""
+        UPDATE franchise_registrations
+        SET password_hash = :password_hash,
+            updated_at = :updated_at
+        WHERE id = :id
+    """), {"id": registration_id, "password_hash": password_hash, "updated_at": now})
+    write_audit_log(
+        db,
+        actor_user_id=current_user.id,
+        action="reset_password",
+        entity_type="franchise_registration",
+        entity_id=registration_id,
+        new_values={"password_reset": True, "target_user_id": user.id},
+        note="Franchise user password reset by SuperUser",
+    )
+    db.commit()
+    return {"message": "Franchise user password reset", "registration_id": registration_id, "user_id": user.id, "email": user.email}
 
 
 class FranchiseRegistrationUpdate(BaseModel):

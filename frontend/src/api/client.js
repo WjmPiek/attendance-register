@@ -190,6 +190,10 @@ export async function rejectFranchiseRegistration(registrationId, note = '') {
   return apiRequest(`/franchise/registrations/${registrationId}/reject`, { method: 'POST', body: JSON.stringify({ note }) })
 }
 
+export async function resetFranchiseRegistrationPassword(registrationId, password) {
+  return apiRequest(`/franchise/registrations/${registrationId}/reset-password`, { method: 'POST', body: JSON.stringify({ password }) })
+}
+
 export async function apiFetch(path, options = {}) {
   const normalizedPath = path.startsWith(API_BASE_URL) ? path.slice(API_BASE_URL.length) : path
   if (path.startsWith('http') && !path.startsWith(API_BASE_URL)) {

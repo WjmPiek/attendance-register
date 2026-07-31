@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { approveFranchiseRegistration, getFranchiseRegistrations, rejectFranchiseRegistration, updateFranchiseRegistration } from '../api/client'
+import { approveFranchiseRegistration, getFranchiseRegistrations, rejectFranchiseRegistration, resetFranchiseRegistrationPassword, updateFranchiseRegistration } from '../api/client'
 import Card from '../components/Card'
 
 export default function FranchiseRegistrationApprovalPage({ me }) {
@@ -139,6 +139,24 @@ export default function FranchiseRegistrationApprovalPage({ me }) {
     }
   }
 
+  const resetPassword = async (item) => {
+    const label = item.email || `${item.franchisee_name || ''} ${item.franchisee_surname || ''}`.trim() || `registration #${item.id}`
+    const password = window.prompt(`Enter a new temporary password for ${label}. Minimum 8 characters.`, '')
+    if (password === null) return
+    if (!password || password.length < 8) {
+      setError('Password must be at least 8 characters.')
+      return
+    }
+    setMessage('')
+    setError('')
+    try {
+      const result = await resetFranchiseRegistrationPassword(item.id, password)
+      setMessage(`Password reset for ${result.email || label}. Give the temporary password to the franchise user.`)
+    } catch (err) {
+      setError(err.message || 'Failed to reset franchise user password')
+    }
+  }
+
   if (!isSuperUser) return null
 
   return (
@@ -167,7 +185,11 @@ export default function FranchiseRegistrationApprovalPage({ me }) {
                 <h3>{item.business_name}</h3>
                 <p className="muted">Trading as: {item.trading_as || 'Not supplied'}</p>
               </div>
-              <div className="action-links"><button type="button" className="link-button" onClick={() => beginEdit(item)}>Edit</button><span className={`badge ${item.status === 'approved' ? 'good' : item.status === 'rejected' ? 'bad' : 'warn'}`}>{item.status}</span></div>
+              <div className="action-links">
+                <button type="button" className="link-button" onClick={() => beginEdit(item)}>Edit</button>
+                {item.status === 'approved' ? <button type="button" className="link-button" onClick={() => resetPassword(item)}>Reset Password</button> : null}
+                <span className={`badge ${item.status === 'approved' ? 'good' : item.status === 'rejected' ? 'bad' : 'warn'}`}>{item.status}</span>
+              </div>
             </div>
 
             <div className="details-grid franchise-details-grid">
