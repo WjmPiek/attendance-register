@@ -103,7 +103,7 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
     { id: 'attendance', label: 'Mobile Sign In', visible: isSignCapable },
     { id: 'employee-card', label: 'Employee Card', visible: isEmployee || isManagerUser },
     { id: 'history', label: 'History', visible: isSignCapable || isApprovalCapable },
-    { id: 'staff', label: isSuperUser ? 'HR Staff' : (isManagerUser ? 'My Staff' : 'My Profile'), visible: isSuperUser || isManagerUser || isEmployee },
+    { id: 'staff', label: isSuperUser || isFranchiseUser ? 'HR Staff' : (isManagerUser ? 'My Staff' : 'My Profile'), visible: isSuperUser || isFranchiseUser || isManagerUser || isEmployee },
     { id: 'business', label: 'Business Information', visible: isFranchiseUser },
     { id: 'franchises', label: 'Franchise Approvals', visible: isSuperUser },
   ].filter((tab) => tab.visible), [isSignCapable, isApprovalCapable, isSuperUser, isFranchiseUser, isEmployee, isManagerUser, isFinanceEmployee, isStaffSelfService, canManagePayroll, canUsePayroll])
@@ -209,7 +209,7 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
         {activeTab === 'employee-card' && (isEmployee || isManagerUser) ? <DigitalIdCard /> : null}
         {activeTab === 'history' && (isSignCapable || isApprovalCapable) ? <AttendanceHistoryPage me={me} /> : null}
         {activeTab === 'approvals' && (isSuperUser || isFranchiseUser || isManagerUser) ? <AttendanceApprovalPage me={me} /> : null}
-        {activeTab === 'staff' && (isSuperUser || isManagerUser || isEmployee) ? <FranchiseStaffPage me={me} onNavigate={openTab} /> : null}
+        {activeTab === 'staff' && (isSuperUser || isFranchiseUser || isManagerUser || isEmployee) ? <FranchiseStaffPage me={me} onNavigate={openTab} /> : null}
         {activeTab === 'business' && isFranchiseUser ? <BusinessInformationPage /> : null}
         {activeTab === 'franchises' && isSuperUser ? <FranchiseRegistrationApprovalPage me={me} /> : null}
         {activeTab === 'leave' ? <LeavePage me={me} /> : null}
