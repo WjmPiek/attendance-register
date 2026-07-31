@@ -127,7 +127,7 @@ def send_smtp_email(recipient_email: str | None, subject: str, message: str) -> 
     if not cfg.smtp_username:
         return "pending", None, "SMTP_USERNAME is not configured. Check backend/.env.", diagnostics
     if not cfg.smtp_password:
-        return "pending", None, "SMTP_PASSWORD is not configured. Use a Gmail App Password, not the normal Gmail password.", diagnostics
+        return "pending", None, "SMTP_PASSWORD is not configured. For Microsoft 365, use the mailbox password or app password and make sure SMTP AUTH is enabled for this mailbox.", diagnostics
     if not _valid_email(cfg.smtp_from_email):
         return "pending", None, "SMTP_FROM_EMAIL is missing or invalid.", diagnostics
 
@@ -151,6 +151,6 @@ def send_smtp_email(recipient_email: str | None, subject: str, message: str) -> 
                 smtp.send_message(email)
         return "sent", now_sa_naive(), None, diagnostics
     except smtplib.SMTPAuthenticationError as exc:
-        return "failed", None, "SMTP authentication failed. For Gmail, enable 2-Step Verification and generate a new App Password. " + str(exc), diagnostics
+        return "failed", None, "SMTP authentication failed. For Microsoft 365, verify the mailbox credentials and enable authenticated SMTP for this mailbox. " + str(exc), diagnostics
     except Exception as exc:
         return "failed", None, str(exc)[:1000], diagnostics
