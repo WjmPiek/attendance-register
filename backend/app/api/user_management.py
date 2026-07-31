@@ -1,15 +1,21 @@
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
+from app.core.security import hash_password
 from app.db.session import get_db
 from app.models.core import User, UserRole
 
 router = APIRouter()
 
 PROTECTED_SUPERUSER_EMAIL = "wjm@martinsdirect.com"
+
+
+class ResetUserPasswordRequest(BaseModel):
+    password: str = Field(min_length=8)
 
 
 def _roles(db: Session, user: User) -> list[str]:
@@ -372,3 +378,36 @@ def activate_user(
 
     db.commit()
     return {"message": "User activated system-wide", "user_id": user_id}
+
+
+@router.post("/{user_id}/reset-password")
+def reset_user_password(
+    user_id: int,
+    payload: ResetUserPasswordRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _require_superuser(db, current_user)
+
+    user = db.execute(text("SELECT id, email, full_name FROM users WHERE id = :id"), {"id": user_id}).mappings().first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if (user.get("email") or "").strip().lower() == PROTECTED_SUPERUSER_EMAIL:
+        raise HTTPException(status_code=403, detail="The protected Martinsdirect SuperUser password cannot be reset here")
+
+    db.execute(text("""
+        UPDATE users
+        SET password_hash = :password_hash,
+            updated_at = :updated_at
+        WHERE id = :id
+    """), {
+        "id": user_id,
+        "password_hash": hash_password(payload.password),
+        "updated_at": datetime.utcnow(),
+    })
+    db.commit()
+    return {
+        "message": "Password reset successfully",
+        "user_id": user_id,
+        "login": user.get("email") or user.get("full_name") or f"User #{user_id}",
+    }

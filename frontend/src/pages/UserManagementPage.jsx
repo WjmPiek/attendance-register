@@ -5,6 +5,7 @@ export default function UserManagementPage() {
   const [users, setUsers] = useState([]);
   const [role, setRole] = useState("");
   const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
 
   const load = async () => {
     setError("");
@@ -22,13 +23,35 @@ export default function UserManagementPage() {
   }, []);
 
   const deactivate = async (id) => {
+    setMessage("");
     await apiFetch(`/users/${id}/deactivate`, { method: "POST", body: JSON.stringify({}) });
     load();
   };
 
   const activate = async (id) => {
+    setMessage("");
     await apiFetch(`/users/${id}/activate`, { method: "POST", body: JSON.stringify({}) });
     load();
+  };
+
+  const resetPassword = async (user) => {
+    const password = window.prompt(`Enter a new temporary password for ${user.email || user.full_name || `user #${user.id}`}. Minimum 8 characters.`, "");
+    if (password === null) return;
+    if (!password || password.length < 8) {
+      setError("Password must be at least 8 characters.");
+      return;
+    }
+    setError("");
+    setMessage("");
+    try {
+      const result = await apiFetch(`/users/${user.id}/reset-password`, {
+        method: "POST",
+        body: JSON.stringify({ password }),
+      });
+      setMessage(`${result.message || "Password reset successfully"} for ${user.email || user.full_name || `user #${user.id}`}.`);
+    } catch (err) {
+      setError(err.message || "Failed to reset password");
+    }
   };
 
   return (
@@ -48,6 +71,7 @@ export default function UserManagementPage() {
       </div>
 
       {error && <p style={{ color: "red" }}>{error}</p>}
+      {message && <p style={{ color: "green" }}>{message}</p>}
 
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
         <thead>
@@ -71,10 +95,15 @@ export default function UserManagementPage() {
               <td>
                 {u.is_protected ? (
                   <strong>Protected</strong>
-                ) : u.is_active ? (
-                  <button onClick={() => deactivate(u.id)}>Deactivate</button>
                 ) : (
-                  <button onClick={() => activate(u.id)}>Activate</button>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    {u.is_active ? (
+                      <button onClick={() => deactivate(u.id)}>Deactivate</button>
+                    ) : (
+                      <button onClick={() => activate(u.id)}>Activate</button>
+                    )}
+                    <button onClick={() => resetPassword(u)}>Reset Password</button>
+                  </div>
                 )}
               </td>
             </tr>

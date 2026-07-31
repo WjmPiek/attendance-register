@@ -14,6 +14,7 @@ def test_phase_subsystem_routes_are_registered():
         "/api/attendance/office-qr/offices",
         "/api/auth/forgot-password",
         "/api/auth/reset-password",
+        "/api/users/{user_id}/reset-password",
     }
 
     assert expected_paths <= paths
