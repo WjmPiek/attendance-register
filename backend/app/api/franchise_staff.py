@@ -2212,7 +2212,7 @@ def export_id_cards(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    _require_superuser(db, current_user)
+    _require_staff_manager(db, current_user)
     _ensure_profile_photo_columns(db)
     rows = _id_card_staff_rows(db, current_user, franchise_id=franchise_id, staff_type=staff_type, staff_id=staff_id)
     if staff_id is not None and not rows:

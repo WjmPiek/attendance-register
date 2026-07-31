@@ -230,6 +230,7 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
   const isEmployeeView = Boolean(
     me?.roles?.includes('EmployeeUser') && !isManagerView && !isSuperUser
   )
+  const canManageStaff = isSuperUser || Boolean(me?.roles?.includes('FranchiseUser'))
   const canSeeManagerList = isSuperUser || (!isManagerView && !isEmployeeView)
   const [activeSubTab, setActiveSubTab] = useState('view')
   const [managers, setManagers] = useState([])
@@ -725,17 +726,17 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
       <td className="actions-cell">
         {type === 'employees' && !isEmployeeView ? <div className="employee-row-actions">
           <button type="button" onClick={() => setWorkHubEmployee(item)}>Work hub</button>
-          {isSuperUser ? <button type="button" className="glass-button" onClick={() => editStaff(type, item)}>Edit</button> : null}
+          {canManageStaff ? <button type="button" className="glass-button" onClick={() => editStaff(type, item)}>Edit</button> : null}
         </div> : null}
         <select className="actions-dropdown" defaultValue="" onChange={handleActionChange} aria-label={`More actions for ${label}`}>
           <option value="" disabled>Actions</option>
           <option value="view">View</option>
-          {type !== 'employees' && isSuperUser ? <option value="edit">Edit</option> : null}
-          {isSuperUser ? <option value="reset-password">Reset Password</option> : null}
-          {isSuperUser ? <option value="download-id-card">Download ID Card</option> : null}
-          {isSuperUser ? <option value="upload-id-photo">Upload ID Photo</option> : null}
-          {isSuperUser ? <option value="upload-irp5">Upload IRP 5</option> : null}
-          {isSuperUser ? <option value="delete">Delete</option> : null}
+          {type !== 'employees' && canManageStaff ? <option value="edit">Edit</option> : null}
+          {canManageStaff ? <option value="reset-password">Reset Password</option> : null}
+          {canManageStaff ? <option value="download-id-card">Download ID Card</option> : null}
+          {canManageStaff ? <option value="upload-id-photo">Upload ID Photo</option> : null}
+          {canManageStaff ? <option value="upload-irp5">Upload IRP 5</option> : null}
+          {canManageStaff ? <option value="delete">Delete</option> : null}
         </select>
       </td>
     )
@@ -784,8 +785,8 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
     <div className="staff-page">
       <div className="section-header">
         <p className="eyebrow">HR Management</p>
-        <h2>{isSuperUser ? 'Franchise Staff' : (isManagerView ? 'My Assigned Staff' : 'My Staff Profile')}</h2>
-        <p className="muted">{isSuperUser
+        <h2>{canManageStaff ? 'Franchise Staff' : (isManagerView ? 'My Assigned Staff' : 'My Staff Profile')}</h2>
+        <p className="muted">{canManageStaff
           ? 'Create and manage staff, assign employees to managers, and maintain staff records.'
           : (isManagerView ? 'Read and work only with employees assigned to you.' : 'View only your own staff information.')}</p>
       </div>
@@ -832,7 +833,7 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
           View Staff
         </button>
 
-        {isSuperUser ? <button
+        {canManageStaff ? <button
           className={activeSubTab === 'add' ? 'active' : ''}
           onClick={() => {
             resetForm()
@@ -1180,10 +1181,10 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
         workHubEmployee ? <StaffWorkHub
           employee={workHubEmployee}
           onClose={() => setWorkHubEmployee(null)}
-          onEdit={isSuperUser ? () => editStaff('employees', workHubEmployee) : null}
+          onEdit={canManageStaff ? () => editStaff('employees', workHubEmployee) : null}
           onNavigate={onNavigate}
         /> : <>
-          <StaffDetail title={viewTitle} item={viewItem} allowEdit={isSuperUser} onClose={() => setViewItem(null)} onEdit={() => {
+          <StaffDetail title={viewTitle} item={viewItem} allowEdit={canManageStaff} onClose={() => setViewItem(null)} onEdit={() => {
             if (viewTitle.includes('Employee')) editStaff('employees', viewItem)
             else editStaff('managers', viewItem)
           }} />
