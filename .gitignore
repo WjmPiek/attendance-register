@@ -6,6 +6,7 @@ frontend/.env
 # Python
 __pycache__/
 *.pyc
+.pytest_cache/
 venv/
 
 # Databases
@@ -18,7 +19,20 @@ node_modules/
 
 # Frontend build
 dist/
+frontend/dist/
+frontend/node_modules/
 
 # OS
 .DS_Store
 Thumbs.db
+
+# Local patch/report scratch files
+APPLY_*.py
+apply_patch.py
+patch_*.py
+*_CHECKLIST.md
+*_REPORT.md
+*completion-report.txt
+*flow-report.txt
+frontend_build.log
+Adjust ID Card Alignment.docx

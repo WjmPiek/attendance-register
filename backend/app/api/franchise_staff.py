@@ -200,6 +200,15 @@ def _require_superuser(db: Session, user: User) -> None:
         raise HTTPException(status_code=403, detail="Only SuperUser can manage staff")
 
 
+def _require_staff_manager(db: Session, user: User) -> int | None:
+    names = set(_roles(db, user))
+    if "SuperUser" in names:
+        return None
+    if "FranchiseUser" in names:
+        return _franchise_profile_id(db, user.id)
+    raise HTTPException(status_code=403, detail="Only SuperUser or FranchiseUser can manage staff")
+
+
 def _active_manager_profile(db: Session, user_id: int):
     """Return the authenticated user's active manager scope, when present.
 
@@ -230,7 +239,11 @@ def _staff_franchise_id(
     current_user: User,
     requested_franchise_user_id: int | None = None,
 ) -> int:
-    _require_superuser(db, current_user)
+    current_franchise_id = _require_staff_manager(db, current_user)
+    if current_franchise_id is not None:
+        if requested_franchise_user_id is not None and int(requested_franchise_user_id) != int(current_franchise_id):
+            raise HTTPException(status_code=403, detail="Selected franchise is outside your scope")
+        return int(current_franchise_id)
     if requested_franchise_user_id is None:
         raise HTTPException(status_code=400, detail="Select a franchise before creating staff")
     row = db.execute(text("""
@@ -769,10 +782,15 @@ def _ensure_profile_photo_columns(db: Session):
 
 
 def _scope_staff_row(db: Session, current_user: User, staff_type: str, staff_id: int):
-    _require_superuser(db, current_user)
     if staff_type not in {'employees', 'managers'}:
         raise HTTPException(status_code=400, detail='staff_type must be employees or managers')
+    current_franchise_id = _require_staff_manager(db, current_user)
     table = 'employee_users' if staff_type == 'employees' else 'manager_users'
+    scope_sql = ""
+    params = {'staff_id': staff_id}
+    if current_franchise_id is not None:
+        scope_sql = "AND s.franchise_user_id = :franchise_user_id"
+        params["franchise_user_id"] = current_franchise_id
     row = db.execute(text(f"""
         SELECT s.*, u.full_name AS login_full_name, u.email AS login_email,
                fu.franchise_name, fu.business_name, fu.website, fu.office_address
@@ -780,8 +798,9 @@ def _scope_staff_row(db: Session, current_user: User, staff_type: str, staff_id:
         JOIN users u ON u.id = s.user_id
         LEFT JOIN franchise_users fu ON fu.id = s.franchise_user_id
         WHERE s.id = :staff_id
+          {scope_sql}
         LIMIT 1
-    """), {'staff_id': staff_id}).mappings().first()
+    """), params).mappings().first()
     if not row:
         raise HTTPException(status_code=404, detail='Staff member not found')
     return dict(row)
@@ -1266,6 +1285,38 @@ def list_managers(
         """), params).mappings().all()
     else:
         names = set(_roles(db, current_user))
+        if "FranchiseUser" in names:
+            franchise_id = _franchise_profile_id(db, current_user.id)
+            rows = db.execute(text("""
+                SELECT
+                    mu.id,
+                    mu.user_id,
+                    mu.franchise_user_id,
+                    mu.employee_number,
+                    mu.name,
+                    mu.surname,
+                    mu.email AS email,
+                    mu.contact_number,
+                    mu.office_address_assigned,
+                    COALESCE(mu.work_start_time, '08:00') AS work_start_time,
+                    COALESCE(mu.work_end_time, '17:00') AS work_end_time,
+                    g.area_id AS office_area_id,
+                    a.name AS office_name,
+                    COALESCE(mu.is_active, TRUE) AS is_active,
+                    u.is_active AS login_active,
+                    u.username AS username,
+                    COALESCE(mu.profile_photo, u.profile_photo) AS profile_photo,
+                    COALESCE(mu.profile_photo_mime, u.profile_photo_mime, 'image/png') AS profile_photo_mime
+                FROM manager_users mu
+                JOIN users u ON u.id = mu.user_id
+                LEFT JOIN gps_allocations_per_user g ON g.user_id = mu.user_id AND COALESCE(g.is_active, TRUE) = TRUE
+                LEFT JOIN areas a ON a.id = g.area_id
+                WHERE mu.franchise_user_id = :franchise_user_id
+                  AND COALESCE(mu.is_active, TRUE) = TRUE
+                  AND COALESCE(u.is_active, TRUE) = TRUE
+                ORDER BY mu.id DESC
+            """), {"franchise_user_id": franchise_id}).mappings().all()
+            return [_public_staff_dict(row) for row in rows]
         manager_row = (
             _active_manager_profile(db, current_user.id)
             if "FranchiseUser" not in names
@@ -1359,6 +1410,40 @@ def list_employees(
         """), params).mappings().all()
     else:
         names = set(_roles(db, current_user))
+        if "FranchiseUser" in names:
+            franchise_id = _franchise_profile_id(db, current_user.id)
+            rows = db.execute(text("""
+            SELECT
+                eu.id,
+                eu.user_id,
+                eu.franchise_user_id,
+                eu.manager_user_id,
+                eu.employee_role,
+                eu.employee_number,
+                eu.name,
+                eu.surname,
+                eu.email AS email,
+                eu.contact_number,
+                eu.office_address_assigned,
+                COALESCE(eu.work_start_time, '08:00') AS work_start_time,
+                COALESCE(eu.work_end_time, '17:00') AS work_end_time,
+                g.area_id AS office_area_id,
+                a.name AS office_name,
+                COALESCE(eu.is_active, TRUE) AS is_active,
+                u.is_active AS login_active,
+                u.username AS username,
+                COALESCE(eu.profile_photo, u.profile_photo) AS profile_photo,
+                COALESCE(eu.profile_photo_mime, u.profile_photo_mime, 'image/png') AS profile_photo_mime
+            FROM employee_users eu
+            JOIN users u ON u.id = eu.user_id
+            LEFT JOIN gps_allocations_per_user g ON g.user_id = eu.user_id AND COALESCE(g.is_active, TRUE) = TRUE
+            LEFT JOIN areas a ON a.id = g.area_id
+            WHERE eu.franchise_user_id = :franchise_user_id
+              AND COALESCE(eu.is_active, TRUE) = TRUE
+              AND COALESCE(u.is_active, TRUE) = TRUE
+            ORDER BY eu.id DESC
+        """), {"franchise_user_id": franchise_id}).mappings().all()
+            return [_public_staff_dict(row) for row in rows]
         manager_row = (
             _active_manager_profile(db, current_user.id)
             if "FranchiseUser" not in names
@@ -1671,7 +1756,15 @@ def create_employee(payload: CreateEmployeeRequest, current_user: User = Depends
 def _staff_scope_filter(db: Session, current_user: User, table: str, staff_id: int):
     if table not in {"manager_users", "employee_users"}:
         raise HTTPException(status_code=400, detail="Invalid staff type")
-    if _is_superuser(db, current_user):
+    current_franchise_id = None if _is_superuser(db, current_user) else (
+        _franchise_profile_id(db, current_user.id) if "FranchiseUser" in set(_roles(db, current_user)) else None
+    )
+    if _is_superuser(db, current_user) or current_franchise_id is not None:
+        scope_sql = ""
+        params = {"staff_id": staff_id}
+        if current_franchise_id is not None:
+            scope_sql = "AND s.franchise_user_id = :franchise_user_id"
+            params["franchise_user_id"] = current_franchise_id
         row = db.execute(text(f"""
             SELECT s.*, u.email AS login_email, u.username AS username,
                    u.full_name AS login_full_name, u.is_active AS login_active,
@@ -1680,7 +1773,8 @@ def _staff_scope_filter(db: Session, current_user: User, table: str, staff_id: i
             FROM {table} s
             JOIN users u ON u.id = s.user_id
             WHERE s.id = :staff_id
-        """), {"staff_id": staff_id}).mappings().first()
+              {scope_sql}
+        """), params).mappings().first()
     else:
         role_names = set(_roles(db, current_user))
         manager = (
@@ -1792,7 +1886,7 @@ def get_employee(employee_id: int, current_user: User = Depends(get_current_user
 
 @router.put("/managers/{manager_id}")
 def update_manager(manager_id: int, payload: UpdateManagerRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    _require_superuser(db, current_user)
+    _require_staff_manager(db, current_user)
     _ensure_office_hours_columns(db)
     row = _staff_scope_filter(db, current_user, "manager_users", manager_id)
     values = _preserve_blank_identity_values({k: v for k, v in payload.model_dump(exclude_unset=True).items() if v is not None})
@@ -1854,7 +1948,7 @@ def update_manager(manager_id: int, payload: UpdateManagerRequest, current_user:
 
 @router.put("/employees/{employee_id}")
 def update_employee(employee_id: int, payload: UpdateEmployeeRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    _require_superuser(db, current_user)
+    _require_staff_manager(db, current_user)
     _ensure_office_hours_columns(db)
     row = _staff_scope_filter(db, current_user, "employee_users", employee_id)
     values = _preserve_blank_identity_values({k: v for k, v in payload.model_dump(exclude_unset=True).items() if v is not None})
@@ -1922,7 +2016,7 @@ def update_employee(employee_id: int, payload: UpdateEmployeeRequest, current_us
 
 @router.delete("/managers/{manager_id}")
 def delete_manager(manager_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    _require_superuser(db, current_user)
+    _require_staff_manager(db, current_user)
     row = _staff_scope_filter(db, current_user, "manager_users", manager_id)
     now = datetime.utcnow()
     related_deleted = _delete_manager_related_records(db, manager_id, row["user_id"])
@@ -1935,7 +2029,7 @@ def delete_manager(manager_id: int, current_user: User = Depends(get_current_use
 
 @router.delete("/employees/{employee_id}")
 def delete_employee(employee_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    _require_superuser(db, current_user)
+    _require_staff_manager(db, current_user)
     row = _staff_scope_filter(db, current_user, "employee_users", employee_id)
     now = datetime.utcnow()
     related_deleted = _delete_employee_related_records(db, employee_id, row["user_id"])
@@ -1959,7 +2053,7 @@ def delete_employee_post(employee_id: int, current_user: User = Depends(get_curr
 
 @router.post("/managers/{manager_id}/reset-password")
 def reset_manager_password(manager_id: int, payload: ResetPasswordRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    _require_superuser(db, current_user)
+    _require_staff_manager(db, current_user)
     row = _staff_scope_filter(db, current_user, "manager_users", manager_id)
     now = datetime.utcnow()
     db.execute(text("UPDATE users SET password_hash = :password_hash, updated_at = :now WHERE id = :user_id"), {
@@ -1974,7 +2068,7 @@ def reset_manager_password(manager_id: int, payload: ResetPasswordRequest, curre
 
 @router.post("/employees/{employee_id}/reset-password")
 def reset_employee_password(employee_id: int, payload: ResetPasswordRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    _require_superuser(db, current_user)
+    _require_staff_manager(db, current_user)
     row = _staff_scope_filter(db, current_user, "employee_users", employee_id)
     now = datetime.utcnow()
     db.execute(text("UPDATE users SET password_hash = :password_hash, updated_at = :now WHERE id = :user_id"), {

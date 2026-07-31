@@ -29,6 +29,7 @@ function OverviewMetricRail({ metrics = {}, lists = {}, suggestions = [], notifi
         <StatBlock title="Open issues" value={totalIssues} subtitle="Needs review" tone={totalIssues ? 'danger' : 'success'} onClick={() => onNavigate?.('approvals')} />
         <StatBlock title="Completed" value={goodCount} subtitle="Signed in and out" tone="success" onClick={() => onNavigate?.('history')} />
         <span className="overview-metric-row-break" aria-hidden="true" />
+        <StatBlock title="Staff setup" value="Add" subtitle="Managers and employees" onClick={() => onNavigate?.('staff')} />
         <StatBlock title="Active staff" value={metrics.total_staff || 0} subtitle="In current scope" onClick={() => onNavigate?.('staff')} />
         <StatBlock title="Attendance" value={totalIssues} subtitle="Arrival and exception cards" tone={totalIssues ? 'warning' : ''} onClick={() => onOpenCard?.('attendance')} />
         <StatBlock title="Attendance arrivals" value={metrics.late || (lists.late || []).length} subtitle="Late arrivals today" tone={metrics.late ? 'warning' : ''} onClick={() => onOpenCard?.('late-arrivals')} />

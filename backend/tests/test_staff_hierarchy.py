@@ -9,6 +9,7 @@ from app.api.franchise_staff import (
     _ensure_active_office_assignment,
     _ensure_manager_assignment,
     _ensure_staff_integrity,
+    _require_staff_manager,
     _require_superuser,
     _create_user,
     _ensure_email_available,
@@ -199,6 +200,23 @@ def test_superuser_passes_staff_mutation_guard(monkeypatch):
 
     monkeypatch.setattr(franchise_staff, "_is_superuser", lambda db, user: True)
     assert _require_superuser(object(), object()) is None
+
+
+def test_franchise_user_passes_staff_manager_guard(monkeypatch):
+    from app.api import franchise_staff
+
+    monkeypatch.setattr(franchise_staff, "_roles", lambda db, user: ["FranchiseUser"])
+    monkeypatch.setattr(franchise_staff, "_franchise_profile_id", lambda db, user_id: 12)
+
+    assert _require_staff_manager(object(), type("User", (), {"id": 99})()) == 12
+
+
+def test_staff_manager_guard_rejects_other_roles(monkeypatch):
+    from app.api import franchise_staff
+
+    monkeypatch.setattr(franchise_staff, "_roles", lambda db, user: ["EmployeeUser"])
+    with pytest.raises(HTTPException, match="SuperUser or FranchiseUser"):
+        _require_staff_manager(object(), object())
 
 
 class SequenceResult:
