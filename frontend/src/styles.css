@@ -2,6 +2,22 @@
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color: #2e2936;
   background: #f4f5f8;
+  --martins-font: Inter, "Segoe UI", Roboto, Arial, sans-serif;
+  --martins-bg: #f4f6f8;
+  --martins-surface: #ffffff;
+  --martins-surface-soft: #f8fafc;
+  --martins-sidebar: #2f3640;
+  --martins-sidebar-strong: #242a32;
+  --martins-primary: #8b6f47;
+  --martins-primary-strong: #6f5737;
+  --martins-accent: #4f7f8f;
+  --martins-text: #18202a;
+  --martins-muted: #64707d;
+  --martins-border: #dce2e8;
+  --martins-success: #20795a;
+  --martins-danger: #b43b47;
+  --martins-radius: 8px;
+  --martins-shadow: 0 10px 26px rgba(24, 32, 42, 0.08);
   --bg: #f4f5f8;
   --panel: rgba(255, 255, 255, 0.62);
   --panel-strong: rgba(255, 255, 255, 0.84);
@@ -2390,4 +2406,137 @@ input[type="date"]::-webkit-date-and-time-value,
   .qr-camera-preview,.live-qr-scanner video { object-fit:contain !important; transform:none !important; }
   button:hover,.glass-button:hover,.tab-button:hover,.metric-card.metric-link:hover,.commission-employee-row:hover { transform:none !important; }
   .attendance-alert-popup { padding:20px; border-radius:22px; }
+}
+
+/* Shared Martins UI theme for all modules */
+:root {
+  --bg: var(--martins-bg);
+  --panel: var(--martins-surface);
+  --panel-strong: var(--martins-surface);
+  --panel-2: var(--martins-surface-soft);
+  --text: var(--martins-text);
+  --muted: var(--martins-muted);
+  --line: var(--martins-border);
+  --border: var(--martins-border);
+  --primary: var(--martins-primary);
+  --primary-strong: var(--martins-primary-strong);
+  --lilac: var(--martins-primary);
+  --lilac-strong: var(--martins-primary-strong);
+  --shadow: var(--martins-shadow);
+}
+
+html,
+body {
+  font-family: var(--martins-font) !important;
+  background: var(--martins-bg) !important;
+  color: var(--martins-text);
+  letter-spacing: 0;
+}
+
+body::before {
+  display: none !important;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  color: var(--martins-text);
+  letter-spacing: 0 !important;
+  font-weight: 800;
+}
+
+a {
+  color: var(--martins-primary-strong);
+}
+
+.app-shell {
+  background: var(--martins-bg) !important;
+}
+
+.sidebar {
+  background: var(--martins-sidebar) !important;
+  color: #fff !important;
+  border-radius: 0 !important;
+  box-shadow: 4px 0 18px rgba(24, 32, 42, 0.16) !important;
+}
+
+.sidebar a,
+.tab-button {
+  border-radius: var(--martins-radius) !important;
+}
+
+.tab-button.active,
+.tab-button:hover {
+  background: rgba(255, 255, 255, 0.14) !important;
+  color: #fff !important;
+  transform: none !important;
+}
+
+.glass-card,
+.card,
+.topbar,
+.form-card,
+.status-panel,
+.today-card,
+.approval-item,
+.decision-box,
+.map-card,
+.install-card,
+.hero-panel,
+.section-header,
+.staff-card,
+.staff-list-card {
+  background: var(--martins-surface) !important;
+  border: 1px solid var(--martins-border) !important;
+  border-radius: var(--martins-radius) !important;
+  box-shadow: var(--martins-shadow) !important;
+  backdrop-filter: none !important;
+}
+
+button,
+.glass-button,
+.tab-button,
+input[type="submit"] {
+  border-radius: var(--martins-radius) !important;
+  font-weight: 800;
+  box-shadow: none !important;
+}
+
+button,
+.glass-button,
+button[type="submit"],
+input[type="submit"] {
+  background: var(--martins-primary) !important;
+  border-color: var(--martins-primary) !important;
+  color: #fff !important;
+}
+
+button:hover,
+.glass-button:hover {
+  background: var(--martins-primary-strong) !important;
+  border-color: var(--martins-primary-strong) !important;
+  transform: none !important;
+}
+
+input,
+select,
+textarea {
+  border: 1px solid var(--martins-border) !important;
+  border-radius: var(--martins-radius) !important;
+  background: #fff !important;
+  color: var(--martins-text) !important;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--martins-primary) !important;
+  box-shadow: 0 0 0 3px rgba(139, 111, 71, 0.18) !important;
+  outline: none !important;
+}
+
+th {
+  background: var(--martins-surface-soft) !important;
+  color: var(--martins-muted) !important;
 }
