@@ -137,12 +137,12 @@ export default function LoginPage({ onLogin, loading, error }) {
       <Card title={mode === 'login' ? '' : 'Register New Franchise'} className={mode === 'login' ? 'form-card login-card login-card-compact' : 'form-card wide-form login-card'}>
         <div className="martins-login-header">
           <strong>Martins Login</strong>
-          <span>Attendance</span>
+          <span>Attendance Register</span>
         </div>
         <div className="martins-auth-brand">
           <img className="login-logo" src="/logo.png" alt="Martins logo" />
           <strong>Martins System</strong>
-          <span>Attendance</span>
+          <span>Attendance Register</span>
         </div>
 
         {resetToken ? (
