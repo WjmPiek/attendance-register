@@ -133,8 +133,8 @@ export default function LoginPage({ onLogin, loading, error }) {
   }
 
   return (
-    <div className="center-page login-page-bg">
-      <Card title={mode === 'login' ? '' : 'Register New Franchise'} className={mode === 'login' ? 'form-card login-card login-card-compact' : 'form-card wide-form login-card'}>
+    <div className="center-page login-page-bg professional-login-page">
+      <Card title={mode === 'login' ? '' : 'Register New Franchise'} className={mode === 'login' ? 'form-card login-card login-card-compact professional-login-card' : 'form-card wide-form login-card professional-login-card professional-register-card'}>
         <div className="martins-login-header">
           <strong>Martins Login</strong>
           <span>Attendance Register</span>
@@ -164,16 +164,14 @@ export default function LoginPage({ onLogin, loading, error }) {
               </label>
               <div className="login-form-actions">
                 <button type="submit" disabled={loading}>{loading ? 'Logging in...' : 'Login'}</button>
+              </div>
+              <div className="professional-login-links">
                 <button type="button" className="link-button forgot-link" disabled={forgotLoading} onClick={submitForgotPassword}>{forgotLoading ? 'Checking...' : 'Forgot password?'}</button>
+                <button type="button" className="link-button register-link" onClick={() => setMode('register')}>Register account</button>
               </div>
               {forgotMessage ? <p className="muted small">{forgotMessage}</p> : null}
               {error ? <p className="error">{error}</p> : null}
             </form>
-
-            <div className="login-register-bottom">
-              <span className="muted small">Need franchise access?</span>
-              <button type="button" className="secondary" onClick={() => setMode('register')}>Register New Franchise</button>
-            </div>
           </>
         ) : (
           <form onSubmit={submitRegistration}>

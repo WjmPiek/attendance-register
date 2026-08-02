@@ -1,0 +1,329 @@
+/* Reusable Martins professional login system */
+:root {
+  --login-bg: #f7f8fb;
+  --login-primary: #6B4AA0;
+  --login-primary-dark: #583b88;
+  --login-accent: #8f73bd;
+  --login-text: #18202a;
+  --login-muted: #64707d;
+  --login-border: #dce2e8;
+  --login-card: #ffffff;
+  --login-shadow: 0 18px 42px rgba(24, 32, 42, 0.1);
+}
+
+body {
+  font-family: Arial, Helvetica, sans-serif !important;
+  font-weight: 400 !important;
+  color: var(--login-text) !important;
+  background: var(--login-bg) !important;
+}
+
+body::before {
+  display: none !important;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+label,
+button,
+.tab-button,
+.sidebar-tabs button,
+.martins-login-header,
+.martins-auth-brand,
+.professional-login-card .link-button {
+  font-family: Arial, Helvetica, sans-serif !important;
+  font-weight: 700 !important;
+}
+
+.professional-login-page,
+.center-page.login-page-bg {
+  min-height: 100vh !important;
+  width: 100% !important;
+  padding: 24px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background: var(--login-bg) !important;
+}
+
+.professional-login-card,
+.center-page.login-page-bg .login-card-compact {
+  width: min(430px, calc(100vw - 32px)) !important;
+  max-width: 430px !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  display: block !important;
+  background: var(--login-card) !important;
+  border: 1px solid var(--login-border) !important;
+  border-radius: 12px !important;
+  box-shadow: var(--login-shadow) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.professional-register-card,
+.center-page.login-page-bg .wide-form.login-card {
+  width: min(960px, calc(100vw - 32px)) !important;
+  max-width: 960px !important;
+  padding: 28px !important;
+}
+
+.professional-register-card > h3,
+.center-page.login-page-bg .wide-form.login-card > h3 {
+  margin: 0 0 22px !important;
+  color: var(--login-text) !important;
+  font-size: 1.35rem !important;
+}
+
+.professional-register-card .martins-login-header,
+.professional-register-card .martins-auth-brand,
+.center-page.login-page-bg .wide-form.login-card .martins-login-header,
+.center-page.login-page-bg .wide-form.login-card .martins-auth-brand {
+  display: none !important;
+}
+
+.martins-login-header {
+  display: none !important;
+}
+
+.professional-login-card .martins-auth-brand,
+.center-page.login-page-bg .login-card-compact .martins-auth-brand {
+  min-height: auto !important;
+  padding: 34px 32px 22px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  text-align: center !important;
+  background: #ffffff !important;
+  border-bottom: 1px solid var(--login-border) !important;
+}
+
+.professional-login-card .login-logo,
+.professional-login-card .martins-auth-brand img,
+.center-page.login-page-bg .login-card-compact .login-logo,
+.center-page.login-page-bg .login-card-compact .martins-auth-brand img {
+  display: block !important;
+  width: min(220px, 78%) !important;
+  height: auto !important;
+  max-width: 220px !important;
+  max-height: 110px !important;
+  margin: 0 auto 8px !important;
+  object-fit: contain !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+.professional-login-card .martins-auth-brand strong,
+.center-page.login-page-bg .login-card-compact .martins-auth-brand strong {
+  color: var(--login-text) !important;
+  font-size: 1.3rem !important;
+  line-height: 1.2 !important;
+}
+
+.professional-login-card .martins-auth-brand span,
+.center-page.login-page-bg .login-card-compact .martins-auth-brand span {
+  color: var(--login-muted) !important;
+  font-size: 0.9rem !important;
+}
+
+.professional-login-card .login-form,
+.professional-login-card form.login-form,
+.center-page.login-page-bg .login-card-compact .login-form,
+.center-page.login-page-bg .login-card-compact form.login-form {
+  padding: 28px 32px 30px !important;
+  margin: 0 !important;
+  display: grid !important;
+  gap: 16px !important;
+  background: #ffffff !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+.professional-login-card label,
+.center-page.login-page-bg .login-card label {
+  margin: 0 !important;
+  display: grid !important;
+  gap: 8px !important;
+  color: var(--login-text) !important;
+  font-size: 0.92rem !important;
+  line-height: 1.2 !important;
+}
+
+.professional-login-card input,
+.center-page.login-page-bg .login-card input,
+.professional-register-card input,
+.professional-register-card select,
+.professional-register-card textarea {
+  width: 100% !important;
+  min-height: 44px !important;
+  padding: 11px 12px !important;
+  color: var(--login-text) !important;
+  background: #ffffff !important;
+  border: 1px solid var(--login-border) !important;
+  border-radius: 6px !important;
+  box-shadow: none !important;
+  font-family: Arial, Helvetica, sans-serif !important;
+  font-weight: 400 !important;
+}
+
+.professional-login-card input:focus,
+.center-page.login-page-bg .login-card input:focus,
+.professional-register-card input:focus,
+.professional-register-card select:focus,
+.professional-register-card textarea:focus {
+  border-color: var(--login-primary) !important;
+  box-shadow: 0 0 0 3px rgba(107, 74, 160, 0.18) !important;
+  outline: none !important;
+}
+
+.professional-login-card .password-input-row,
+.center-page.login-page-bg .login-card-compact .password-input-row {
+  display: flex !important;
+  align-items: stretch !important;
+  gap: 8px !important;
+}
+
+.professional-login-card .password-input-row input,
+.center-page.login-page-bg .login-card-compact .password-input-row input {
+  min-width: 0 !important;
+  flex: 1 1 auto !important;
+}
+
+.professional-login-card button,
+.center-page.login-page-bg .login-card button,
+.professional-register-card button {
+  min-height: 44px !important;
+  border-radius: 8px !important;
+  border: 1px solid var(--login-primary) !important;
+  background: var(--login-primary) !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+  font-family: Arial, Helvetica, sans-serif !important;
+  font-weight: 700 !important;
+}
+
+.professional-login-card button:hover,
+.center-page.login-page-bg .login-card button:hover,
+.professional-register-card button:hover {
+  background: var(--login-primary-dark) !important;
+  border-color: var(--login-primary-dark) !important;
+  transform: none !important;
+}
+
+.professional-login-card button:disabled,
+.center-page.login-page-bg .login-card button:disabled,
+.professional-register-card button:disabled {
+  opacity: 0.72 !important;
+  cursor: not-allowed !important;
+}
+
+.professional-login-card .password-toggle,
+.center-page.login-page-bg .login-card-compact .password-toggle {
+  flex: 0 0 auto !important;
+  padding: 0 14px !important;
+  background: #ffffff !important;
+  border-color: var(--login-border) !important;
+  color: var(--login-primary) !important;
+}
+
+.professional-login-card .login-form-actions,
+.center-page.login-page-bg .login-card-compact .login-form-actions {
+  display: block !important;
+  margin: 2px 0 0 !important;
+}
+
+.professional-login-card .login-form-actions button[type="submit"],
+.center-page.login-page-bg .login-card-compact .login-form-actions button[type="submit"] {
+  width: 100% !important;
+  border-radius: 8px !important;
+}
+
+.professional-login-links,
+.center-page.login-page-bg .login-register-bottom {
+  display: flex !important;
+  justify-content: space-between !important;
+  gap: 14px !important;
+  flex-wrap: wrap !important;
+  padding-top: 2px !important;
+}
+
+.professional-login-card .professional-login-links .link-button,
+.center-page.login-page-bg .login-card-compact .forgot-link,
+.center-page.login-page-bg .login-register-bottom .secondary {
+  min-height: auto !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  color: var(--login-primary) !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  line-height: 1.35 !important;
+}
+
+.professional-login-card .professional-login-links .link-button:hover,
+.center-page.login-page-bg .login-card-compact .forgot-link:hover,
+.center-page.login-page-bg .login-register-bottom .secondary:hover {
+  color: var(--login-primary-dark) !important;
+  text-decoration: underline !important;
+}
+
+.professional-login-card .muted,
+.professional-login-card .small,
+.center-page.login-page-bg .login-card .muted,
+.center-page.login-page-bg .login-card .small {
+  color: var(--login-muted) !important;
+  font-weight: 400 !important;
+}
+
+.professional-login-card .error,
+.center-page.login-page-bg .login-card .error,
+.professional-register-card .error {
+  color: #b43b47 !important;
+  font-weight: 700 !important;
+}
+
+.professional-register-card .success {
+  color: #20795a !important;
+  font-weight: 700 !important;
+}
+
+@media (max-width: 640px) {
+  .professional-login-page {
+    padding: 16px !important;
+  }
+
+  .professional-login-card {
+    width: 100% !important;
+  }
+
+  .professional-login-card .martins-auth-brand {
+    padding: 28px 24px 18px !important;
+  }
+
+  .professional-login-card .login-form,
+  .professional-login-card form.login-form {
+    padding: 24px !important;
+  }
+
+  .professional-login-card .password-input-row {
+    flex-direction: column !important;
+  }
+
+  .professional-login-card .password-toggle,
+  .professional-login-links .link-button {
+    width: 100% !important;
+  }
+
+  .professional-login-links {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+  }
+}
