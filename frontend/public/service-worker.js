@@ -1,9 +1,11 @@
-const CACHE_NAME = 'attendance-pwa-v2';
+const CACHE_NAME = 'attendance-pwa-v3';
 const APP_SHELL = [
   '/',
   '/index.html',
   '/manifest.webmanifest',
   '/favicon.ico',
+  '/logo.png',
+  '/icon-180.png',
   '/icon-192.png',
   '/icon-512.png'
 ];
