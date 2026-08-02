@@ -1,7 +1,7 @@
 {
-  "name": "ATTENDANCE",
-  "short_name": "ATTENDANCE",
-  "description": "ATTENDANCE",
+  "name": "Martins System",
+  "short_name": "Martins",
+  "description": "Martins System attendance module",
   "id": "/",
   "start_url": "/?source=pwa",
   "scope": "/",
@@ -12,48 +12,12 @@
   ],
   "orientation": "portrait-primary",
   "background_color": "#00000000",
-  "theme_color": "#9b6bd3",
+  "theme_color": "#8b6f47",
   "categories": [
     "business",
     "productivity"
   ],
   "icons": [
-    {
-      "src": "/icon-72.png",
-      "sizes": "72x72",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/icon-96.png",
-      "sizes": "96x96",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/icon-128.png",
-      "sizes": "128x128",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/icon-144.png",
-      "sizes": "144x144",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/icon-152.png",
-      "sizes": "152x152",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/icon-180.png",
-      "sizes": "180x180",
-      "type": "image/png",
-      "purpose": "any"
-    },
     {
       "src": "/icon-192.png",
       "sizes": "192x192",
@@ -61,20 +25,8 @@
       "purpose": "any maskable"
     },
     {
-      "src": "/icon-384.png",
-      "sizes": "384x384",
-      "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
       "src": "/icon-512.png",
       "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "/icon-1024.png",
-      "sizes": "1024x1024",
       "type": "image/png",
       "purpose": "any maskable"
     }

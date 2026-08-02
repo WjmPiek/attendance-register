@@ -2540,3 +2540,47 @@ th {
   background: var(--martins-surface-soft) !important;
   color: var(--martins-muted) !important;
 }
+
+.brand-block,
+.brand-mini,
+.login-brand-copy {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  text-align: center !important;
+  gap: 8px !important;
+}
+
+.brand-block img,
+.brand-mini img,
+.login-logo {
+  width: 118px !important;
+  height: 64px !important;
+  max-height: 64px !important;
+  object-fit: contain !important;
+}
+
+.brand-block strong,
+.brand-mini strong,
+.login-brand-copy strong {
+  display: block !important;
+  width: 100%;
+  font-size: 18px !important;
+  line-height: 1.15 !important;
+  font-weight: 900 !important;
+}
+
+.brand-block span,
+.brand-mini span,
+.login-brand-copy span {
+  display: block !important;
+  color: var(--martins-muted) !important;
+  font-size: 12px !important;
+  line-height: 1.2 !important;
+  text-transform: none !important;
+}
+
+.sidebar .brand-block span,
+.sidebar .brand-block strong {
+  color: #fff !important;
+}

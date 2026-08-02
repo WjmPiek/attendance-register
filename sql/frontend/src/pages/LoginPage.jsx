@@ -40,7 +40,7 @@ export default function LoginPage({ onLogin, loading, error }) {
 
   const submitLogin = (event) => {
     event.preventDefault()
-    onLogin(email, password)
+    onLogin(email.trim(), password)
   }
 
   useEffect(() => {
@@ -136,6 +136,10 @@ export default function LoginPage({ onLogin, loading, error }) {
     <div className="center-page login-page-bg">
       <Card title={mode === 'login' ? '' : 'Register New Franchise'} className={mode === 'login' ? 'form-card login-card login-card-compact' : 'form-card wide-form login-card'}>
         <img className="login-logo" src="/logo.png" alt="Martins logo" />
+        <div className="login-brand-copy">
+          <strong>Martins System</strong>
+          <span>{mode === 'register' ? 'Attendance' : 'Attendance'}</span>
+        </div>
 
         {resetToken ? (
           <form className="login-form" onSubmit={async (event) => { event.preventDefault(); try { const data = await resetForgottenPassword(resetToken, resetPassword); setResetMessage(data.message || 'Password changed.'); window.history.replaceState({}, '', window.location.pathname); } catch (err) { setResetMessage(err.message || 'Reset failed.'); } }}>
@@ -149,10 +153,10 @@ export default function LoginPage({ onLogin, loading, error }) {
           <>
             <form className="login-form" onSubmit={submitLogin}>
               <label>Email or username
-                <input value={email} onChange={(event) => setEmail(event.target.value)} type="text" autoComplete="username" required />
+                <input value={email} onChange={(event) => setEmail(event.target.value)} type="text" autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} required />
               </label>
               <label>Password
-                <div className="password-input-row"><input value={password} onChange={(event) => setPassword(event.target.value)} type={showPassword ? 'text' : 'password'} required /><button type="button" className="glass-button password-toggle" onClick={() => setShowPassword((v) => !v)}>{showPassword ? 'Hide' : 'Show'}</button></div>
+                <div className="password-input-row"><input value={password} onChange={(event) => setPassword(event.target.value)} type={showPassword ? 'text' : 'password'} autoComplete="current-password" required /><button type="button" className="glass-button password-toggle" onClick={() => setShowPassword((v) => !v)}>{showPassword ? 'Hide' : 'Show'}</button></div>
               </label>
               <div className="login-form-actions">
                 <button type="submit" disabled={loading}>{loading ? 'Logging in...' : 'Login'}</button>

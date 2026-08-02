@@ -136,6 +136,10 @@ export default function LoginPage({ onLogin, loading, error }) {
     <div className="center-page login-page-bg">
       <Card title={mode === 'login' ? '' : 'Register New Franchise'} className={mode === 'login' ? 'form-card login-card login-card-compact' : 'form-card wide-form login-card'}>
         <img className="login-logo" src="/logo.png" alt="Martins logo" />
+        <div className="login-brand-copy">
+          <strong>Martins System</strong>
+          <span>{mode === 'register' ? 'Attendance' : 'Attendance'}</span>
+        </div>
 
         {resetToken ? (
           <form className="login-form" onSubmit={async (event) => { event.preventDefault(); try { const data = await resetForgottenPassword(resetToken, resetPassword); setResetMessage(data.message || 'Password changed.'); window.history.replaceState({}, '', window.location.pathname); } catch (err) { setResetMessage(err.message || 'Reset failed.'); } }}>

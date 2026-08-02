@@ -163,8 +163,8 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
         <div className="brand-block">
           <img src="/logo.png" alt="Martins logo" />
           <div>
-            <strong>Attendance</strong>
-            <span>Register Platform</span>
+            <strong>Martins System</strong>
+            <span>Attendance</span>
           </div>
         </div>
         <nav className={showMobileStaffMenuOnly ? 'sidebar-tabs mobile-card-menu-grid' : 'sidebar-tabs'} aria-label="Main sections">
@@ -184,8 +184,8 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
             <div className="brand-block">
               <img src="/logo.png" alt="Martins logo" />
               <div>
-                <strong>Attendance</strong>
-                <span>Register Platform</span>
+                <strong>Martins System</strong>
+                <span>Attendance</span>
               </div>
             </div>
             <nav className="main-page-tab-buttons" aria-label="Main sections">

@@ -1,7 +1,7 @@
 {
-  "name": "ATTENDANCE",
-  "short_name": "ATTENDANCE",
-  "description": "ATTENDANCE",
+  "name": "Martins System",
+  "short_name": "Martins",
+  "description": "Martins System attendance module",
   "id": "/",
   "start_url": "/?source=pwa",
   "scope": "/",
@@ -12,7 +12,7 @@
   ],
   "orientation": "portrait-primary",
   "background_color": "#00000000",
-  "theme_color": "#9b6bd3",
+  "theme_color": "#8b6f47",
   "categories": [
     "business",
     "productivity"
