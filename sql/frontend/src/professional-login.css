@@ -295,6 +295,56 @@ button,
   font-weight: 700 !important;
 }
 
+/* Keep dashboard/module cards light; purple is reserved for real actions and tabs. */
+.overview-card-menu-grid .overview-drill-card,
+.overview-metric-rail .metric-card,
+.overview-dashboard-pro .metric-card,
+.dashboard-metrics .metric-card,
+.hero-metrics > div,
+.today-grid > div,
+.summary-grid > div,
+.notification-card,
+.suggestion-item,
+.notification-row {
+  background: #ffffff !important;
+  color: var(--login-text) !important;
+  border: 1px solid var(--login-border) !important;
+  box-shadow: 0 10px 24px rgba(24, 32, 42, 0.07) !important;
+}
+
+.overview-card-menu-grid .overview-drill-card:hover,
+.overview-metric-rail .metric-card:hover,
+.overview-dashboard-pro .metric-card:hover,
+.dashboard-metrics .metric-card:hover {
+  background: #f8fafc !important;
+  border-color: rgba(107, 74, 160, 0.28) !important;
+  transform: translateY(-1px) !important;
+}
+
+.overview-card-menu-grid .overview-drill-card span,
+.overview-card-menu-grid .overview-drill-card strong,
+.overview-metric-rail .metric-card span,
+.overview-metric-rail .metric-card strong,
+.overview-dashboard-pro .metric-card span,
+.overview-dashboard-pro .metric-card strong,
+.dashboard-metrics .metric-card span,
+.dashboard-metrics .metric-card strong,
+.hero-metrics strong,
+.today-grid strong,
+.summary-grid strong {
+  color: var(--login-primary) !important;
+}
+
+.overview-card-menu-grid .overview-drill-card small,
+.overview-metric-rail .metric-card small,
+.overview-dashboard-pro .metric-card small,
+.dashboard-metrics .metric-card small,
+.hero-metrics span,
+.today-grid span,
+.summary-grid span {
+  color: var(--login-muted) !important;
+}
+
 @media (max-width: 640px) {
   .professional-login-page {
     padding: 16px !important;
