@@ -257,8 +257,10 @@ button,
 
 .professional-login-card .professional-login-links .link-button,
 .center-page.login-page-bg .login-card-compact .forgot-link,
+.center-page.login-page-bg .login-card-compact .register-link,
 .center-page.login-page-bg .login-register-bottom .secondary {
   min-height: auto !important;
+  width: auto !important;
   padding: 0 !important;
   border: 0 !important;
   background: transparent !important;
@@ -270,9 +272,26 @@ button,
 
 .professional-login-card .professional-login-links .link-button:hover,
 .center-page.login-page-bg .login-card-compact .forgot-link:hover,
+.center-page.login-page-bg .login-card-compact .register-link:hover,
 .center-page.login-page-bg .login-register-bottom .secondary:hover {
+  background: transparent !important;
+  border-color: transparent !important;
   color: var(--login-primary-dark) !important;
   text-decoration: underline !important;
+  transform: none !important;
+}
+
+.professional-login-card .forgot-link,
+.professional-login-card .register-link,
+.center-page.login-page-bg .login-card-compact .forgot-link,
+.center-page.login-page-bg .login-card-compact .register-link {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex: 0 0 auto !important;
+  box-shadow: none !important;
+  text-align: left !important;
+  white-space: nowrap !important;
 }
 
 .professional-login-card .muted,
@@ -367,13 +386,19 @@ button,
     flex-direction: column !important;
   }
 
-  .professional-login-card .password-toggle,
-  .professional-login-links .link-button {
+  .professional-login-card .password-toggle {
     width: 100% !important;
   }
 
+  .professional-login-links .link-button,
+  .center-page.login-page-bg .login-card-compact .forgot-link,
+  .center-page.login-page-bg .login-card-compact .register-link {
+    width: auto !important;
+  }
+
   .professional-login-links {
-    flex-direction: column !important;
-    align-items: flex-start !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: space-between !important;
   }
 }
