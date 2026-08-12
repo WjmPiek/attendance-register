@@ -4,6 +4,7 @@ import {
   resetStaffPassword,
   uploadIrp5Document,
   getOfficeQrCodes,
+  downloadOfficeQrPdf,
   uploadStaffIdPhoto,
   downloadStaffIdCards,
   updateOfficeLocation,
@@ -618,6 +619,17 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
     }
   }
 
+  const printOfficeQr = async (office) => {
+    try {
+      const blob = await downloadOfficeQrPdf(office.id)
+      const url = URL.createObjectURL(blob)
+      window.open(url, '_blank', 'noopener,noreferrer')
+      window.setTimeout(() => URL.revokeObjectURL(url), 60000)
+    } catch (error) {
+      setErr(error.message || 'Unable to open the office QR code PDF')
+    }
+  }
+
   const startEditOffice = (office) => {
     setEditingOffice({
       id: office.id,
@@ -1071,10 +1083,11 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
           <p className="muted">Only managers and franchise users can view or issue these codes. Give the code directly to the employee who calls you. It works once and is replaced immediately after use; unused codes expire after 20 minutes.</p>
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Office</th><th>Four-digit code</th><th>Linked business / assigned address</th><th>Assigned staff</th><th>Radius</th><th>Action</th></tr></thead>
+              <thead><tr><th>Office</th><th>Scannable QR code</th><th>Four-digit code</th><th>Linked business / assigned address</th><th>Assigned staff</th><th>Radius</th><th>Action</th></tr></thead>
               <tbody>
                 {officeQrs.map((office) => <tr key={office.id}>
                   <td>{(office.name || `Office #${office.id}`).split(' [', 1)[0]}</td>
+                  <td>{office.qr_image_url ? <img className="office-attendance-qr" src={office.qr_image_url} alt={`Attendance QR code for ${office.name || 'office'}`} /> : <span className="muted">QR unavailable</span>}</td>
                   <td>
                     <strong>{office.can_issue_code ? (office.qr_payload || 'Generating…') : 'Hidden'}</strong>
                     <div className="muted small">
@@ -1086,6 +1099,7 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
                   <td>{office.allowed_radius_m || 100} m</td>
                   <td>
                     {office.can_issue_code ? <button type="button" onClick={() => issueOfficeCode(office)}>Issue new code</button> : null}
+                    {office.qr_image_url ? <button type="button" className="secondary-action" onClick={() => printOfficeQr(office)}>Print QR</button> : null}
 
                     <button type="button" onClick={() => {
                       setSelectedOffice(office)
@@ -1096,7 +1110,7 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
                     <button type="button" className="danger" onClick={() => removeOffice(office)}>Delete</button>
                   </td>
                 </tr>)}
-                {!officeQrs.length ? <tr><td colSpan="6" className="muted">No linked addresses found. Save the franchise business address or assign an office address to staff.</td></tr> : null}
+                {!officeQrs.length ? <tr><td colSpan="7" className="muted">No linked addresses found. Save the franchise business address or assign an office address to staff.</td></tr> : null}
               </tbody>
             </table>
           </div>

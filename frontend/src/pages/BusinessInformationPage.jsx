@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   getMyBusinessInformation,
   getOfficeQrCodes,
+  downloadOfficeQrPdf,
   regenerateOfficeQr,
   updateMyBusinessInformation,
   updateOfficeDetails,
@@ -119,6 +120,18 @@ export default function BusinessInformationPage() {
       await load()
     } catch (err) { setError(err.message || 'Unable to generate a new QR code') }
     finally { setRegenerating(false) }
+  }
+
+  const printOfficeQr = async () => {
+    if (!office) return
+    try {
+      const blob = await downloadOfficeQrPdf(office.id)
+      const url = URL.createObjectURL(blob)
+      window.open(url, '_blank', 'noopener,noreferrer')
+      window.setTimeout(() => URL.revokeObjectURL(url), 60000)
+    } catch (err) {
+      setError(err.message || 'Unable to open the Head Office QR code PDF')
+    }
   }
 
 
@@ -258,7 +271,9 @@ export default function BusinessInformationPage() {
       <section className="form-card business-qr-card">
         <div><p className="eyebrow">Attendance code</p><h2>Head Office Attendance Code</h2><p className="muted">Only a manager or franchise user should give this code to an employee. It is replaced after one successful attendance action and expires after 20 minutes if unused.</p></div>
         {office ? <div className="business-qr-actions">
+          {office.qr_image_url ? <img className="office-attendance-qr" src={office.qr_image_url} alt="Head Office attendance QR code" /> : null}
           <button type="button" onClick={generateNewQr} disabled={regenerating}>{regenerating ? 'Issuing...' : 'Issue new single-use code'}</button>
+          {office.qr_image_url ? <button type="button" className="glass-button" onClick={printOfficeQr}>Print QR code</button> : null}
           <p className="muted small">Current code: <strong>{office.qr_payload}</strong> · expires {office.qr_valid_until ? new Date(office.qr_valid_until).toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' }) : 'within 20 minutes'}. Issuing a new code invalidates the previous one immediately.</p>
         </div> : <p className="muted">No Head Office attendance code is available until the business address is saved.</p>}
       </section>

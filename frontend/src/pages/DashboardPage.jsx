@@ -10,6 +10,7 @@ import LeavePage from './LeavePage'
 import PayrollPage from './PayrollPage'
 import CommissionPage from './CommissionPage'
 import BusinessInformationPage from './BusinessInformationPage'
+import MyProfilePage from './MyProfilePage'
 import DigitalIdCard from '../components/DigitalIdCard'
 import { getNotifications, markNotificationRead } from '../api/client'
 import { formatJohannesburgDateTime } from '../utils/dateTime'
@@ -103,7 +104,8 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
     { id: 'attendance', label: 'Mobile Sign In', visible: isSignCapable },
     { id: 'employee-card', label: 'Employee Card', visible: isEmployee || isManagerUser },
     { id: 'history', label: 'History', visible: isSignCapable || isApprovalCapable },
-    { id: 'staff', label: isSuperUser || isFranchiseUser ? 'HR Staff' : (isManagerUser ? 'My Staff' : 'My Profile'), visible: isSuperUser || isFranchiseUser || isManagerUser || isEmployee },
+    { id: 'staff', label: isSuperUser || isFranchiseUser ? 'HR Staff' : 'My Staff', visible: isSuperUser || isFranchiseUser || isManagerUser },
+    { id: 'profile', label: 'My Profile', visible: isStaffSelfService },
     { id: 'business', label: 'Business Information', visible: isFranchiseUser },
     { id: 'franchises', label: 'Franchise Approvals', visible: isSuperUser },
   ].filter((tab) => tab.visible), [isSignCapable, isApprovalCapable, isSuperUser, isFranchiseUser, isEmployee, isManagerUser, isFinanceEmployee, isStaffSelfService, canManagePayroll, canUsePayroll])
@@ -111,7 +113,7 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
   const mobileStaffTabs = useMemo(() => [
     { id: 'attendance', label: 'Mobile Sign In', visible: isSignCapable },
     { id: 'staff', label: 'My Staff', visible: isManagerUser },
-    { id: 'staff', label: 'My Profile', visible: isEmployee },
+    { id: 'profile', label: 'My Profile', visible: isStaffSelfService },
     { id: 'employee-card', label: 'Employee Card', visible: isEmployee || isManagerUser },
     { id: 'history', label: 'History', visible: isSignCapable || isApprovalCapable },
   ].filter((tab) => tab.visible), [isSignCapable, isApprovalCapable, isEmployee, isManagerUser, canUsePayroll, isStaffSelfService])
@@ -119,6 +121,7 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
   const tabs = isMobileLayout && isStaffSelfService && !canManagePayroll ? mobileStaffTabs : fullTabs
   const availableTabIds = useMemo(() => new Set([
     ...tabs.map((tab) => tab.id),
+    isStaffSelfService ? 'profile' : null,
     isApprovalCapable ? 'approvals' : null,
     (isEmployee || isManagerUser || isFranchiseUser || isSuperUser) ? 'leave' : null,
     (isFranchiseUser || isManagerUser || isEmployee || isSuperUser) ? 'commission' : null,
@@ -210,6 +213,7 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
         {activeTab === 'history' && (isSignCapable || isApprovalCapable) ? <AttendanceHistoryPage me={me} /> : null}
         {activeTab === 'approvals' && (isSuperUser || isFranchiseUser || isManagerUser) ? <AttendanceApprovalPage me={me} /> : null}
         {activeTab === 'staff' && (isSuperUser || isFranchiseUser || isManagerUser || isEmployee) ? <FranchiseStaffPage me={me} onNavigate={openTab} /> : null}
+        {activeTab === 'profile' && isStaffSelfService ? <MyProfilePage me={me} /> : null}
         {activeTab === 'business' && isFranchiseUser ? <BusinessInformationPage /> : null}
         {activeTab === 'franchises' && isSuperUser ? <FranchiseRegistrationApprovalPage me={me} /> : null}
         {activeTab === 'leave' ? <LeavePage me={me} /> : null}

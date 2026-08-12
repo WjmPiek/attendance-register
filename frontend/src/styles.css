@@ -1472,6 +1472,63 @@ h3 { font-size: 1.25rem; }
   white-space:nowrap!important;
   text-overflow:ellipsis!important;}
 
+.office-attendance-qr{
+  display:block;
+  width:132px;
+  height:132px;
+  object-fit:contain;
+  padding:4px;
+  border:1px solid #d9c8f4;
+  border-radius:8px;
+  background:#fff;
+}
+
+.profile-sub-tabs{
+  margin-bottom:18px;
+  flex-wrap:wrap;
+}
+
+.profile-detail-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(210px,1fr));
+  gap:14px;
+}
+
+.profile-detail-grid>div{
+  display:flex;
+  flex-direction:column;
+  gap:5px;
+  padding:14px;
+  border:1px solid rgba(109,40,217,.16);
+  border-radius:10px;
+  background:#faf8ff;
+}
+
+.profile-detail-grid small{color:#6b6475;}
+
+/* Keep long names inside the printable card and away from the QR code. */
+.staff-id-main{
+  grid-template-columns:132px minmax(0,1fr) 132px!important;
+  gap:12px!important;
+  align-items:center!important;
+  min-width:0!important;
+}
+
+.staff-id-photo{width:132px!important;height:190px!important;}
+.staff-id-person{overflow:hidden!important;}
+.staff-id-person strong{
+  margin-top:0!important;
+  display:block!important;
+  max-width:100%!important;
+  font-size:clamp(20px,3.2vw,30px)!important;
+  line-height:1.08!important;
+  overflow-wrap:anywhere!important;
+  word-break:normal!important;
+}
+.staff-id-role{width:100%!important;padding:8px 10px!important;box-sizing:border-box!important;}
+.staff-id-qr{width:132px!important;height:132px!important;}
+.staff-id-qr img{width:100%!important;height:100%!important;}
+
 .staff-id-card,.detail-panel .staff-id-card{
   width:min(620px,100%)!important;}
 

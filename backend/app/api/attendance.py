@@ -126,6 +126,19 @@ def _qr_scan_url(token: str) -> str:
     return f"{base}/?tab=attendance&office_qr={quote(payload, safe='')}"
 
 
+def _qr_png_data_url(value: str) -> str | None:
+    """Return a self-contained QR image for the franchise/manager office-code view."""
+    try:
+        import qrcode
+
+        image = qrcode.make(value)
+        output = io.BytesIO()
+        image.save(output, format='PNG')
+        return 'data:image/png;base64,' + base64.b64encode(output.getvalue()).decode('ascii')
+    except Exception:
+        return None
+
+
 def _token_hash(token: str | None) -> str | None:
     if not token:
         return None
@@ -1799,6 +1812,7 @@ def list_office_qr_codes(
     result = []
     for raw in rows:
         row = _office_qr_row(db, int(raw['id']))
+        scan_url = _qr_scan_url(row['qr_token'])
         result.append({
             'id': row['id'], 'name': row.get('name'), 'code': row.get('code'),
             'address': _office_address(row),
@@ -1809,7 +1823,8 @@ def list_office_qr_codes(
             'is_archived': bool(row.get('is_archived')),
             'archived_at': row.get('archived_at').isoformat() if row.get('archived_at') else None,
             'qr_payload': _qr_payload(row['qr_token']) if roles.intersection({'FranchiseUser', 'ManagerUser'}) else None,
-            'scan_url': _qr_scan_url(row['qr_token']) if roles.intersection({'FranchiseUser', 'ManagerUser'}) else None,
+            'scan_url': scan_url if roles.intersection({'FranchiseUser', 'ManagerUser'}) else None,
+            'qr_image_url': _qr_png_data_url(scan_url) if roles.intersection({'FranchiseUser', 'ManagerUser'}) else None,
             'qr_valid_week': None,
             'qr_valid_until': row.get('qr_valid_until').isoformat() if row.get('qr_valid_until') else None,
             'code_single_use': True,

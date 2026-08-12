@@ -76,6 +76,7 @@ export default function MobileAttendancePage({ me, onDone }) {
   const [scanError, setScanError] = useState('')
   const [manualEntryAvailable, setManualEntryAvailable] = useState(false)
   const [scanRestart, setScanRestart] = useState(0)
+  const [scannerStarted, setScannerStarted] = useState(false)
   const [gpsEvidence, setGpsEvidence] = useState(null)
   const [gpsError, setGpsError] = useState('')
   const [photoPreview, setPhotoPreview] = useState('')
@@ -212,7 +213,7 @@ export default function MobileAttendancePage({ me, onDone }) {
   }
 
   useEffect(() => {
-    if (step !== 2 || manualEntry) return undefined
+    if (step !== 2 || manualEntry || !scannerStarted) return undefined
     let cancelled = false
     let stream = null
     let frameId = null
@@ -290,12 +291,12 @@ export default function MobileAttendancePage({ me, onDone }) {
 
     startScanner()
     return stopScanner
-  }, [step, manualEntry, scanRestart])
+  }, [step, manualEntry, scanRestart, scannerStarted])
 
   const selectAction = (action) => {
     setSelectedAction(action)
     setStep(2)
-    setMessage('GPS capture started in the background. Hold the office QR code inside the camera frame.')
+    setMessage('GPS capture started in the background. Tap Scan QR code when you are ready to open the camera.')
     setError('')
     setScanError('')
     setManualEntryAvailable(false)
@@ -305,6 +306,7 @@ export default function MobileAttendancePage({ me, onDone }) {
     setPhotoPreview('')
     setPhotoReady(false)
     setManualEntry(false)
+    setScannerStarted(false)
     beginBackgroundGps()
   }
 
@@ -345,6 +347,7 @@ export default function MobileAttendancePage({ me, onDone }) {
     setGpsError('')
     setManualEntry(false)
     setManualEntryAvailable(false)
+    setScannerStarted(false)
   }
 
   const saveAttendance = async () => {
@@ -421,24 +424,31 @@ export default function MobileAttendancePage({ me, onDone }) {
           <div className="detail-header">
             <div>
               <h3>Step 2 — Scan the office QR code</h3>
-              <p className="muted small">The next step opens automatically as soon as the QR code is detected and registered.</p>
+              <p className="muted small">Tap the scan button to open the camera, then hold the office QR code inside the frame.</p>
             </div>
             <button type="button" className="glass-button" onClick={resetFlow}>Cancel</button>
           </div>
 
+          {!manualEntry && !scannerStarted ? <button type="button" className="primary-action" onClick={() => {
+            setScanError('')
+            setMessage('Opening the camera. Hold the office QR code inside the frame.')
+            setScannerStarted(true)
+          }}>Scan QR code</button> : null}
+
           {!manualEntry ? <button type="button" className="glass-button manual-qr-open-button manual-qr-open-button-top" onClick={() => {
             scannerStopRef.current()
+            setScannerStarted(false)
             setScanError('')
             setMessage('Enter the four-digit office code, then tap Save QR code and continue.')
             setManualEntry(true)
           }}>{manualEntryAvailable ? 'Scan and save QR code manually' : 'Enter four-digit office code'}</button> : null}
 
-          {!manualEntry ? (
+          {!manualEntry && scannerStarted ? (
             <div className="live-qr-scanner">
               <video ref={scannerVideoRef} aria-label="Live office QR scanner" playsInline muted autoPlay disablePictureInPicture />
               <strong>{scanning ? 'Hold the QR code steady in view' : 'Starting camera...'}</strong>
             </div>
-          ) : (
+          ) : manualEntry ? (
             <div className="manual-qr-save-panel">
               <p className="muted small">If this browser cannot scan the QR code automatically, ask your manager or franchise user for the four-digit office code. Enter it here, then save it to continue.</p>
               <label>
@@ -455,7 +465,7 @@ export default function MobileAttendancePage({ me, onDone }) {
               </label>
               <button type="button" className="primary-action" onClick={verifyManualQr} disabled={qrValue.length !== 4}>Save QR code and continue</button>
             </div>
-          )}
+          ) : null}
           {scanError ? <p className="error qr-scan-error">{scanError}</p> : null}
         </section>
       ) : null}
