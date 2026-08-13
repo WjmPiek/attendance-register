@@ -1,0 +1,60 @@
+{
+  "name": "Martins System",
+  "short_name": "Martins",
+  "description": "Martins System attendance module",
+  "id": "/",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": [
+    "standalone",
+    "minimal-ui"
+  ],
+  "orientation": "portrait-primary",
+  "background_color": "#f7f8fb",
+  "theme_color": "#6B4AA0",
+  "categories": [
+    "business",
+    "productivity"
+  ],
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Mobile Sign In",
+      "short_name": "Sign In",
+      "url": "/?tab=attendance",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Payslips",
+      "short_name": "Payslips",
+      "url": "/?tab=payslips",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    }
+  ]
+}

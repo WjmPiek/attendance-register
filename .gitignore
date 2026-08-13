@@ -1,38 +1,51 @@
-# Environment files
-backend/.env
-frontend/.env
+# Secrets and local config
 .env
+.env.*
+!.env.example
 
 # Python
 __pycache__/
-*.pyc
+*.py[cod]
+*.pyo
 .pytest_cache/
+.mypy_cache/
+.venv/
 venv/
 
-# Databases
+# Local databases and generated data
+instance/
 *.db
 *.sqlite
 *.sqlite3
+*.backup
+*.bak
 
-# Node
-node_modules/
-
-# Frontend build
-dist/
-frontend/dist/
-frontend/node_modules/
-
-# OS
+# Logs and temporary files
+*.log
+*.tmp
 .DS_Store
 Thumbs.db
 
-# Local patch/report scratch files
-APPLY_*.py
-apply_patch.py
-patch_*.py
-*_CHECKLIST.md
-*_REPORT.md
-*completion-report.txt
-*flow-report.txt
-frontend_build.log
-Adjust ID Card Alignment.docx
+# Generated exports/import scratch
+exports/
+uploads/tmp/
+.env
+.env.*
+!.env.example
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+instance/
+*.db
+*.sqlite
+*.sqlite3
+*.dump
+*.backup
+*.bak
+*.zip
+*.log
+uploads/
+exports/
+
+frontend/node_modules/
