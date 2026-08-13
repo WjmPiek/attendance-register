@@ -143,14 +143,19 @@ def test_office_code_expires_after_twenty_minutes():
     assert attendance._office_code_expiry(issued_at) == datetime(2026, 7, 27, 12, 20)
 
 
-def test_successful_attendance_consumes_office_code():
+def test_successful_attendance_does_not_consume_timed_fallback_code():
     sign_in_source = inspect.getsource(attendance.sign_in)
     sign_out_source = inspect.getsource(attendance.sign_out)
-    consume_source = inspect.getsource(attendance._consume_office_code)
-    assert "_consume_office_code" in sign_in_source
-    assert "_consume_office_code" in sign_out_source
-    assert "qr_last_used_at" in consume_source
-    assert "qr_expires_at > :now" in consume_source
+    assert "_consume_office_code" not in sign_in_source
+    assert "_consume_office_code" not in sign_out_source
+
+
+def test_permanent_office_qr_is_stable_and_rejects_tampering():
+    payload = attendance._permanent_office_qr_payload(42)
+    assert attendance._permanent_office_id(payload) == 42
+    assert attendance._permanent_office_qr_payload(42) == payload
+    replacement = "0" if payload[-1] != "0" else "1"
+    assert attendance._permanent_office_id(payload[:-1] + replacement) is None
 
 
 def test_gps_distance_is_bound_to_entered_code_office():

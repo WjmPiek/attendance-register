@@ -6,6 +6,7 @@ import math
 import zipfile
 import secrets
 import hashlib
+import hmac
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Optional
@@ -103,6 +104,8 @@ def _extract_qr_token(qr_value: str | None) -> str | None:
     value = str(qr_value).strip()
     if not value:
         return None
+    from urllib.parse import unquote
+    value = unquote(value)
     for prefix in ['ARP-OFFICE:', 'OFFICE:', 'office:']:
         if value.startswith(prefix):
             return value.split(':', 1)[1].strip()
@@ -117,6 +120,27 @@ def _qr_payload(token: str) -> str:
     return str(token)
 
 
+def _permanent_office_qr_payload(area_id: int) -> str:
+    """Signed, permanent QR payload for one physical office address."""
+    office_id = int(area_id)
+    message = f'office:{office_id}'.encode('utf-8')
+    secret = str(settings.JWT_SECRET_KEY).encode('utf-8')
+    signature = hmac.new(secret, message, hashlib.sha256).hexdigest()[:32]
+    return f'ARP-PERMANENT:{office_id}:{signature}'
+
+
+def _permanent_office_id(qr_value: str | None) -> int | None:
+    value = _extract_qr_token(qr_value)
+    if not value or not value.startswith('ARP-PERMANENT:'):
+        return None
+    parts = value.split(':')
+    if len(parts) != 3 or not parts[1].isdigit():
+        return None
+    area_id = int(parts[1])
+    expected = _permanent_office_qr_payload(area_id).split(':', 2)[2]
+    return area_id if hmac.compare_digest(parts[2], expected) else None
+
+
 def _qr_scan_url(token: str) -> str:
     base = str(getattr(settings, 'FRONTEND_URL', '') or '').strip().rstrip('/')
     payload = _qr_payload(token)
@@ -127,7 +151,7 @@ def _qr_scan_url(token: str) -> str:
 
 
 def _qr_png_data_url(value: str) -> str | None:
-    """Return a self-contained QR image for the franchise/manager office-code view."""
+    """Return a self-contained QR image for the permanent office-address view."""
     try:
         import qrcode
 
@@ -392,10 +416,9 @@ def _validate_office_qr_for_user(db: Session, user_id: int, qr_value: str | None
     """Validate that scanned QR belongs to the user's assigned GPS office/area."""
     _ensure_office_qr_schema(db)
     token = _extract_qr_token(qr_value)
+    permanent_area_id = _permanent_office_id(qr_value)
     if not token:
-        raise HTTPException(status_code=400, detail='The four-digit office code is required before sign in or out')
-    if len(token) != 4 or not token.isdigit():
-        raise HTTPException(status_code=400, detail='Enter the four-digit office code')
+        raise HTTPException(status_code=400, detail='Scan the permanent office QR or enter the current four-digit office code')
     _sync_user_address_allocation(db, user_id)
     allocation = db.execute(text("""
         SELECT area_id
@@ -409,9 +432,15 @@ def _validate_office_qr_for_user(db: Session, user_id: int, qr_value: str | None
     area = _office_qr_row(db, int(allocation['area_id']))
     if area.get('qr_enabled') is False:
         raise HTTPException(status_code=400, detail='This office attendance code is disabled')
+    if permanent_area_id is not None:
+        if int(permanent_area_id) != int(area['id']):
+            raise HTTPException(status_code=400, detail='This QR code is not linked to your assigned office address')
+        return area, _permanent_office_qr_payload(int(area['id'])), False
+    if len(token) != 4 or not token.isdigit():
+        raise HTTPException(status_code=400, detail='Scan the permanent office QR or enter the current four-digit office code')
     if token != str(area.get('qr_token') or ''):
-        raise HTTPException(status_code=400, detail='This office code is invalid, expired or already used. Call your manager or franchise user for a new code.')
-    return area, token
+        raise HTTPException(status_code=400, detail='This office code is invalid or expired. Call your manager or franchise user for the current code.')
+    return area, token, True
 
 
 def _get_last_event(db: Session, user_id: int):
@@ -788,7 +817,7 @@ def _validate_rules(db: Session, user: User, payload: AttendanceActionRequest, i
     if payload.work_location_type == 'on_road' and not payload.employee_note:
         raise HTTPException(status_code=400, detail='Employee note is required when signing on the road')
     if (payload.work_location_type or 'office') == 'office' and not payload.qr_value:
-        raise HTTPException(status_code=400, detail='Call your manager or franchise user for a single-use office code before recording office attendance')
+        raise HTTPException(status_code=400, detail='Scan the permanent office QR or ask your manager or franchise user for the current four-digit fallback code')
 
 
 def _payload_accuracy(payload: AttendanceActionRequest):
@@ -1812,7 +1841,8 @@ def list_office_qr_codes(
     result = []
     for raw in rows:
         row = _office_qr_row(db, int(raw['id']))
-        scan_url = _qr_scan_url(row['qr_token'])
+        permanent_payload = _permanent_office_qr_payload(int(row['id']))
+        scan_url = _qr_scan_url(permanent_payload)
         result.append({
             'id': row['id'], 'name': row.get('name'), 'code': row.get('code'),
             'address': _office_address(row),
@@ -1825,9 +1855,10 @@ def list_office_qr_codes(
             'qr_payload': _qr_payload(row['qr_token']) if roles.intersection({'FranchiseUser', 'ManagerUser'}) else None,
             'scan_url': scan_url if roles.intersection({'FranchiseUser', 'ManagerUser'}) else None,
             'qr_image_url': _qr_png_data_url(scan_url) if roles.intersection({'FranchiseUser', 'ManagerUser'}) else None,
+            'permanent_qr_payload': permanent_payload if roles.intersection({'FranchiseUser', 'ManagerUser'}) else None,
             'qr_valid_week': None,
             'qr_valid_until': row.get('qr_valid_until').isoformat() if row.get('qr_valid_until') else None,
-            'code_single_use': True,
+            'code_single_use': False,
             'code_valid_minutes': 20,
             'can_issue_code': bool(roles.intersection({'FranchiseUser', 'ManagerUser'})),
             'franchise_user_id': row.get('franchise_user_id'),
@@ -1838,7 +1869,7 @@ def list_office_qr_codes(
 
 @router.post('/office-qr/validate')
 def validate_office_qr(payload: OfficeQrValidateRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    area, token = _validate_office_qr_for_user(db, current_user.id, payload.qr_value)
+    area, token, is_timed_code = _validate_office_qr_for_user(db, current_user.id, payload.qr_value)
     return {
         'valid': True,
         'area_id': area['id'],
@@ -1851,6 +1882,7 @@ def validate_office_qr(payload: OfficeQrValidateRequest, current_user: User = De
         'allowed_radius_m': int(area.get('allowed_radius_m') or 100),
         'qr_valid_week': area.get('qr_valid_week'),
         'qr_valid_until': area.get('qr_valid_until').isoformat() if area.get('qr_valid_until') else None,
+        'is_timed_code': is_timed_code,
     }
 
 
@@ -1881,7 +1913,7 @@ def print_office_qr_pdf(area_id: int, current_user: User = Depends(get_current_u
     address = _office_address(area) or 'Address not captured'
     office_name = str(area.get('name') or 'Office').split(' [', 1)[0].strip()
     office_code = str(area['qr_token'])
-    scan_url = _qr_scan_url(office_code)
+    scan_url = _qr_scan_url(_permanent_office_qr_payload(int(area['id'])))
     qr_code = qr.QrCodeWidget(scan_url)
     bounds = qr_code.getBounds()
     width = bounds[2] - bounds[0]
@@ -1911,9 +1943,9 @@ def print_office_qr_pdf(area_id: int, current_user: User = Depends(get_current_u
     validity = area.get('qr_valid_until')
     validity_text = format_sa_datetime(validity) if validity else '20 minutes after issue'
     footer = Table([
-        [Paragraph(f'<b>ENTER CODE {office_code} OR SCAN TO SIGN IN OR SIGN OUT</b>', instruction_style)],
+        [Paragraph(f'<b>SCAN THIS PERMANENT QR TO SIGN IN OR SIGN OUT</b>', instruction_style)],
         [Paragraph('Use your registered staff login. The code works only for staff assigned to this office and physically inside its configured GPS radius.', center_style)],
-        [Paragraph(f'This single-use code is valid until {validity_text}. It is replaced immediately after use or after 20 minutes.', center_style)],
+        [Paragraph(f'If scanning is unavailable, enter fallback code {office_code}. The fallback code is valid until {validity_text}. The printed QR does not expire.', center_style)],
         [Paragraph('GPS location, signature and automatic photo evidence are required to complete attendance.', center_style)],
     ], colWidths=[180*mm])
     footer.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2ecff')),('BOX',(0,0),(-1,-1),1,colors.HexColor('#ded2f8')),('ALIGN',(0,0),(-1,-1),'CENTER'),('VALIGN',(0,0),(-1,-1),'MIDDLE'),('TOPPADDING',(0,0),(-1,-1),2.5*mm),('BOTTOMPADDING',(0,0),(-1,-1),2.5*mm),('LEFTPADDING',(0,0),(-1,-1),5*mm),('RIGHTPADDING',(0,0),(-1,-1),5*mm)]))
@@ -1942,7 +1974,7 @@ def regenerate_office_qr(area_id: int, current_user: User = Depends(get_current_
     db.commit()
     updated = _office_qr_row(db, area_id)
     return {
-        'message': 'A new single-use office code was generated. The previous code is now invalid.',
+        'message': 'A new time-limited four-digit fallback code was generated. The permanent printed QR is unchanged.',
         'office': updated,
         'valid_until': valid_until.isoformat(),
     }
@@ -2140,7 +2172,7 @@ def sign_in(payload: AttendanceActionRequest, current_user: User = Depends(get_c
     qr_area = None
     qr_token = None
     if (payload.work_location_type or 'office') == 'office':
-        qr_area, qr_token = _validate_office_qr_for_user(db, current_user.id, payload.qr_value)
+        qr_area, qr_token, _ = _validate_office_qr_for_user(db, current_user.id, payload.qr_value)
     last = _get_last_event(db, current_user.id)
     if last and last.action == 'sign_in':
         raise HTTPException(status_code=400, detail='Already signed in')
@@ -2169,8 +2201,6 @@ def sign_in(payload: AttendanceActionRequest, current_user: User = Depends(get_c
     photo, photo_mime, photo_filename = _photo_data_url_to_image(payload.photo_value, 'sign_in', current_user.id)
     event = AttendanceEvent(user_id=current_user.id, action='sign_in', latitude=str(payload.latitude) if payload.latitude is not None else None, longitude=str(payload.longitude) if payload.longitude is not None else None, accuracy_meters=str(accuracy) if accuracy is not None else None, device_info=payload.device_info, signature_value=payload.signature_value, signature_image=signature_image, signature_image_mime=signature_mime, signature_image_filename=signature_filename, attendance_photo=photo, attendance_photo_mime=photo_mime, attendance_photo_filename=photo_filename, photo_status='captured', source='mobile_qr' if qr_area else 'mobile_gps', qr_area_id=(int(qr_area['id']) if qr_area else None), qr_office_name=(qr_area.get('name') if qr_area else None), qr_token_hash=_token_hash(qr_token), distance_from_site_m=distance, gps_status=gps_status, is_late=is_late, late_minutes=late_minutes, missing_sign_out=False, attendance_status=attendance_status, approval_status=approval_status, work_location_type=work_location_type, employee_note=payload.employee_note, signature_required=True, signature_status=signature_status)
     db.add(event)
-    if qr_area and qr_token:
-        _consume_office_code(db, int(qr_area['id']), qr_token)
     db.commit()
     db.refresh(event)
     _notify_franchise_attendance_event(db, event, 'sign in')
@@ -2184,7 +2214,7 @@ def sign_out(payload: AttendanceActionRequest, current_user: User = Depends(get_
     qr_area = None
     qr_token = None
     if (payload.work_location_type or 'office') == 'office':
-        qr_area, qr_token = _validate_office_qr_for_user(db, current_user.id, payload.qr_value)
+        qr_area, qr_token, _ = _validate_office_qr_for_user(db, current_user.id, payload.qr_value)
     last = _get_last_event(db, current_user.id)
     if not last or last.action != 'sign_in':
         raise HTTPException(status_code=400, detail='Must sign in before signing out')
@@ -2213,8 +2243,6 @@ def sign_out(payload: AttendanceActionRequest, current_user: User = Depends(get_
     photo, photo_mime, photo_filename = _photo_data_url_to_image(payload.photo_value, 'sign_out', current_user.id)
     event = AttendanceEvent(user_id=current_user.id, action='sign_out', latitude=str(payload.latitude) if payload.latitude is not None else None, longitude=str(payload.longitude) if payload.longitude is not None else None, accuracy_meters=str(accuracy) if accuracy is not None else None, device_info=payload.device_info, signature_value=payload.signature_value, signature_image=signature_image, signature_image_mime=signature_mime, signature_image_filename=signature_filename, attendance_photo=photo, attendance_photo_mime=photo_mime, attendance_photo_filename=photo_filename, photo_status='captured', source='mobile_qr' if qr_area else 'mobile_gps', qr_area_id=(int(qr_area['id']) if qr_area else None), qr_office_name=(qr_area.get('name') if qr_area else None), qr_token_hash=_token_hash(qr_token), distance_from_site_m=distance, gps_status=gps_status, left_early=left_early, early_leave_minutes=early_minutes, missing_sign_out=False, attendance_status=attendance_status, approval_status=approval_status, work_location_type=work_location_type, employee_note=payload.employee_note, signature_required=True, signature_status=signature_status)
     db.add(event)
-    if qr_area and qr_token:
-        _consume_office_code(db, int(qr_area['id']), qr_token)
     db.commit()
     db.refresh(event)
     _notify_franchise_attendance_event(db, event, 'sign out')

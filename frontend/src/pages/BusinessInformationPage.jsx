@@ -109,23 +109,23 @@ export default function BusinessInformationPage() {
     setGpsConfirmed(false)
   }, [])
 
-  const generateNewQr = async () => {
-    if (!office) return
-    const confirmed = window.confirm('Issue a new single-use code now? The current code will immediately stop working.')
+  const generateNewQr = async (targetOffice = office) => {
+    if (!targetOffice) return
+    const confirmed = window.confirm('Issue a new four-digit fallback code now? The current fallback code will immediately stop working. The permanent printed QR will not change.')
     if (!confirmed) return
     setRegenerating(true); setError(''); setMessage('')
     try {
-      await regenerateOfficeQr(office.id)
-      setMessage('New single-use Head Office code issued. It expires after 20 minutes or immediately after one successful use.')
+      await regenerateOfficeQr(targetOffice.id)
+      setMessage('New four-digit fallback code issued. It expires after 20 minutes. The permanent office QR is unchanged.')
       await load()
     } catch (err) { setError(err.message || 'Unable to generate a new QR code') }
     finally { setRegenerating(false) }
   }
 
-  const printOfficeQr = async () => {
-    if (!office) return
+  const printOfficeQr = async (targetOffice = office) => {
+    if (!targetOffice) return
     try {
-      const blob = await downloadOfficeQrPdf(office.id)
+      const blob = await downloadOfficeQrPdf(targetOffice.id)
       const url = URL.createObjectURL(blob)
       window.open(url, '_blank', 'noopener,noreferrer')
       window.setTimeout(() => URL.revokeObjectURL(url), 60000)
@@ -206,7 +206,7 @@ export default function BusinessInformationPage() {
   return (
     <div className="business-information-page">
       <section className="form-card business-info-hero">
-        <div><p className="eyebrow">Franchise profile</p><h1>Business Information</h1><p className="muted">Manage the business profile, Head Office GPS and controlled single-use attendance codes. This page is visible only to the franchise user.</p></div>
+        <div><p className="eyebrow">Franchise profile</p><h1>Business Information</h1><p className="muted">Manage the business profile, office GPS locations, permanent reception QR codes and timed four-digit fallback codes. This page is visible only to the franchise user.</p></div>
         {mapUrl ? <a className="glass-button" href={mapUrl} target="_blank" rel="noreferrer">Open address in Google Maps</a> : null}
       </section>
 
@@ -247,7 +247,7 @@ export default function BusinessInformationPage() {
       </section>
 
       <section className="form-card business-map-card">
-        <div><h2>Head Office GPS and attendance radius</h2><p className="muted">Employees call their manager or franchise user to receive a single-use attendance code for this office.</p><strong>{form.office_address || 'No business address saved yet.'}</strong></div>
+        <div><h2>Head Office GPS and attendance radius</h2><p className="muted">Employees scan the permanent reception QR. If they cannot scan it, they can ask their manager or franchise user for the current timed four-digit code.</p><strong>{form.office_address || 'No business address saved yet.'}</strong></div>
         {office && !editingGps && office.latitude != null && office.longitude != null ? (
           <div className="status-panel">
             <p className="success"><strong>Head Office GPS is saved.</strong></p>
@@ -269,13 +269,19 @@ export default function BusinessInformationPage() {
 
 
       <section className="form-card business-qr-card">
-        <div><p className="eyebrow">Attendance code</p><h2>Head Office Attendance Code</h2><p className="muted">Only a manager or franchise user should give this code to an employee. It is replaced after one successful attendance action and expires after 20 minutes if unused.</p></div>
-        {office ? <div className="business-qr-actions">
-          {office.qr_image_url ? <img className="office-attendance-qr" src={office.qr_image_url} alt="Head Office attendance QR code" /> : null}
-          <button type="button" onClick={generateNewQr} disabled={regenerating}>{regenerating ? 'Issuing...' : 'Issue new single-use code'}</button>
-          {office.qr_image_url ? <button type="button" className="glass-button" onClick={printOfficeQr}>Print QR code</button> : null}
-          <p className="muted small">Current code: <strong>{office.qr_payload}</strong> · expires {office.qr_valid_until ? new Date(office.qr_valid_until).toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' }) : 'within 20 minutes'}. Issuing a new code invalidates the previous one immediately.</p>
-        </div> : <p className="muted">No Head Office attendance code is available until the business address is saved.</p>}
+        <div><p className="eyebrow">Office attendance QR codes</p><h2>Permanent Office QR Codes</h2><p className="muted">Print and place the QR for each address at reception. These QR codes are permanently linked to their office addresses and do not expire. The separate four-digit fallback code expires after 20 minutes.</p></div>
+        {allOffices.length ? <div className="office-qr-list">
+          {allOffices.map((item) => <article className="office-qr-item" key={`office-qr-${item.id}`}>
+            <div><h3>{item.name || 'Office'}</h3><p className="muted small">{item.address || 'Address not captured'}</p></div>
+            {item.qr_image_url ? <img className="office-attendance-qr" src={item.qr_image_url} alt={`Permanent attendance QR code for ${item.name || 'office'}`} /> : <p className="error">QR image unavailable</p>}
+            <p className="success small"><strong>Permanent QR:</strong> does not expire</p>
+            <p className="muted small">Current four-digit fallback: <strong>{item.qr_payload || 'Unavailable'}</strong> · expires {item.qr_valid_until ? new Date(item.qr_valid_until).toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' }) : 'within 20 minutes'}.</p>
+            <div className="button-row">
+              {item.qr_image_url ? <button type="button" className="glass-button" onClick={() => printOfficeQr(item)}>Print permanent QR</button> : null}
+              <button type="button" onClick={() => generateNewQr(item)} disabled={regenerating}>{regenerating ? 'Issuing...' : 'Issue new fallback code'}</button>
+            </div>
+          </article>)}
+        </div> : <p className="muted">No office attendance QR is available until an office address is saved.</p>}
       </section>
       {deleteDialog ? <div className="modal-backdrop"><section className="form-card office-delete-modal"><h2>Staff linked to this address</h2><p className="muted">Every linked employee, agent and manager must receive a replacement address before this address is archived. No historical records will be deleted.</p><div className="linked-staff-list">{deleteDialog.items?.length ? deleteDialog.items.map((item) => <div className="linked-staff-row" key={`${item.staff_type}-${item.staff_id}`}><strong>{item.full_name || item.employee_number}</strong><span>{item.staff_type} · {item.employee_number || 'No employee number'}</span></div>) : <p>No active staff are linked to this office.</p>}</div>{deleteDialog.count > 0 ? <label>Replacement registered address<select value={replacementAreaId} onChange={(e) => setReplacementAreaId(e.target.value)}><option value="">Select an active franchise address</option>{allOffices.filter((item) => !item.is_archived && Number(item.id) !== Number(office?.id)).map((item) => <option key={item.id} value={item.id}>{item.name || 'Business'} — {item.address}</option>)}</select></label> : null}<div className="button-row"><button type="button" className="danger-button" onClick={confirmDeleteOffice} disabled={saving}>{saving ? 'Updating...' : 'Update staff and archive address'}</button><button type="button" className="glass-button" onClick={() => setDeleteDialog(null)} disabled={saving}>Cancel</button></div></section></div> : null}
     </div>

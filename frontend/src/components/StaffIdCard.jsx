@@ -24,6 +24,8 @@ export function buildStaffIdCardData(item = {}) {
 
 export default function StaffIdCard({ item, className = '' }) {
   const card = buildStaffIdCardData(item)
+  const nameLength = `${card.firstName} ${card.surname}`.trim().length
+  const nameSizeClass = nameLength > 34 ? 'staff-id-name very-long' : (nameLength > 24 ? 'staff-id-name long' : 'staff-id-name')
   return (
     <div className={`staff-id-card ${className}`.trim()}>
       <div className="staff-id-header">
@@ -37,8 +39,10 @@ export default function StaffIdCard({ item, className = '' }) {
           {card.photoUrl ? <img src={card.photoUrl} alt="Staff" /> : <span>ID PHOTO</span>}
         </div>
         <div className="staff-id-person">
-          <strong>{card.firstName}</strong>
-          {card.surname ? <strong>{card.surname}</strong> : null}
+          <div className={nameSizeClass} title={`${card.firstName} ${card.surname}`.trim()}>
+            <strong>{card.firstName}</strong>
+            {card.surname ? <strong>{card.surname}</strong> : null}
+          </div>
           <span className="staff-id-role">■ {card.role}</span>
           <span className="staff-id-franchise">■ Franchise: {card.franchise}</span>
         </div>

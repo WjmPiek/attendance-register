@@ -1010,6 +1010,8 @@ def _build_id_cards_pdf(staff_rows: list[dict], current_user: User) -> bytes:
     styles.add(ParagraphStyle(name='PdfStaffTitle', parent=styles['Normal'], fontSize=11.5, leading=11.5, textColor=purple, spaceAfter=0))
     styles.add(ParagraphStyle(name='PdfStaffSub', parent=styles['Normal'], fontSize=4.8, leading=5.2, textColor=purple, spaceAfter=0))
     styles.add(ParagraphStyle(name='PdfStaffName', parent=styles['Normal'], fontSize=9.8, leading=10.4, textColor=text_color, spaceAfter=0))
+    styles.add(ParagraphStyle(name='PdfStaffNameLong', parent=styles['PdfStaffName'], fontSize=7.4, leading=8.0))
+    styles.add(ParagraphStyle(name='PdfStaffNameVeryLong', parent=styles['PdfStaffName'], fontSize=5.4, leading=6.0))
     styles.add(ParagraphStyle(name='PdfStaffRole', parent=styles['Normal'], fontSize=5.6, leading=5.8, textColor=white, alignment=1, spaceAfter=0))
     styles.add(ParagraphStyle(name='PdfStaffFranchise', parent=styles['Normal'], fontSize=5.8, leading=6.3, textColor=muted, spaceAfter=0))
     styles.add(ParagraphStyle(name='PdfStaffMetaLabel', parent=styles['Normal'], fontSize=4.8, leading=5.0, textColor=muted, alignment=1, spaceAfter=0))
@@ -1056,6 +1058,8 @@ def _build_id_cards_pdf(staff_rows: list[dict], current_user: User) -> bytes:
     def card(row):
         first_name = str(row.get('name') or '').strip() or f"User #{row.get('user_id')}"
         surname = str(row.get('surname') or '').strip()
+        longest_name_part = max(len(first_name), len(surname))
+        name_style = styles['PdfStaffNameVeryLong'] if longest_name_part > 24 else (styles['PdfStaffNameLong'] if longest_name_part > 16 else styles['PdfStaffName'])
         role_label = str(row.get('role_label') or row.get('staff_type') or 'Staff')
         franchise_name = row.get('franchise_name') or row.get('business_name') or 'Franchise'
         user_id = row.get('user_id') or row.get('staff_id') or ''
@@ -1096,8 +1100,8 @@ def _build_id_cards_pdf(staff_rows: list[dict], current_user: User) -> bytes:
             ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
         ]))
         info = Table([
-            [Paragraph(f'<b>{escape(_fit_text(first_name, 20))}</b>', styles['PdfStaffName'])],
-            [Paragraph(f'<b>{escape(_fit_text(surname, 20))}</b>', styles['PdfStaffName']) if surname else Paragraph('', styles['PdfStaffName'])],
+            [Paragraph(f'<b>{escape(_fit_text(first_name, 30))}</b>', name_style)],
+            [Paragraph(f'<b>{escape(_fit_text(surname, 30))}</b>', name_style) if surname else Paragraph('', name_style)],
             [role_badge],
             [Paragraph(f'Franchise: {escape(_fit_text(str(franchise_name), 32))}', styles['PdfStaffFranchise'])],
         ], colWidths=[38*mm], rowHeights=[5.2*mm, 5.2*mm, 6.3*mm, 6.0*mm])
