@@ -2836,6 +2836,114 @@ body.auth-body,
   .martins-login-card, .auth-wrap > .auth-card, .center-page .login-card, .main--auth .content > .card, .container .card.shadow { margin: 18px auto !important; }
 }
 
+/* Martins System desktop shell: retain the same left navigation and account header as the hub. */
+@media (min-width: 981px) {
+  .main-site-page-shell {
+    grid-template-columns: 290px minmax(0, 1fr) !important;
+    gap: 0 !important;
+    padding: 0 !important;
+    align-items: stretch !important;
+  }
+
+  .main-site-page-shell > .sidebar {
+    display: flex !important;
+    position: sticky !important;
+    top: 0 !important;
+    width: 290px !important;
+    height: 100vh !important;
+    padding: 18px 14px 30px !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    overflow-y: auto !important;
+  }
+
+  .main-site-page-shell .content-panel {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 30px 36px !important;
+  }
+
+  .main-site-page-shell .sidebar .brand-block {
+    min-height: 128px !important;
+    margin: 0 2px 16px !important;
+    padding: 14px 12px !important;
+    flex-direction: column !important;
+    justify-content: center !important;
+    text-align: center !important;
+    background: rgba(255,255,255,.10) !important;
+    border: 1px solid rgba(255,255,255,.14) !important;
+    border-radius: 14px !important;
+  }
+
+  .main-site-page-shell .sidebar .brand-block img {
+    width: 150px !important;
+    height: 66px !important;
+    object-fit: contain !important;
+  }
+
+  .main-site-page-shell .sidebar-tabs {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+  }
+
+  .main-site-page-shell .sidebar .tab-button {
+    min-height: 52px !important;
+    justify-content: flex-start !important;
+    padding: 11px 14px !important;
+    background: rgba(255,255,255,.08) !important;
+    color: #fff !important;
+    border-radius: 12px !important;
+  }
+}
+
+.martins-app-topbar {
+  min-height: 84px;
+  margin: 0 -30px 28px;
+  padding: 12px 30px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  background: #fff;
+  border-bottom: 1px solid #dce2e8;
+  box-shadow: 0 4px 18px rgba(24,32,42,.05);
+}
+
+.martins-app-topbar-brand,
+.martins-app-topbar-account {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.martins-app-topbar-brand {
+  color: #18202a;
+  text-decoration: none;
+  font-size: 22px;
+}
+
+.martins-app-topbar-brand img {
+  width: 112px;
+  height: 52px;
+  object-fit: contain;
+}
+
+.martins-app-topbar-account { color: #64707d; }
+.martins-app-topbar-account > strong { color: #18202a; }
+.martins-app-topbar-account > small {
+  padding: 4px 9px;
+  color: #6B4AA0;
+  background: #f1ecf7;
+  border-radius: 999px;
+  font-weight: 700;
+}
+
+@media (max-width: 980px) {
+  .martins-app-topbar { display: none; }
+}
+
 .sidebar,
 .app-sidebar,
 .executive-sidebar {

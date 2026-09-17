@@ -183,23 +183,18 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
 
       {!showMobileStaffMenuOnly ? <main className="page content-panel">
         {showMainSiteTopMenu ? (
-          <div className="main-page-tab-bar glass-card">
-            <div className="brand-block">
+          <header className="martins-app-topbar">
+            <a className="martins-app-topbar-brand" href="https://martinssystem.co.za/">
               <img src="/logo.png" alt="Martins logo" />
-              <div>
-                <strong>Martins System</strong>
-                <span>Attendance Register</span>
-              </div>
+              <strong>Martins System</strong>
+            </a>
+            <div className="martins-app-topbar-account">
+              <span>Logged in as</span>
+              <strong>{me.full_name || me.email || 'User'}</strong>
+              <small>{me.roles?.join(', ') || 'Attendance User'}</small>
+              <button className="logout-button glass-button" onClick={onLogout}>Logout</button>
             </div>
-            <nav className="main-page-tab-buttons" aria-label="Main sections">
-              {tabs.map((tab) => (
-                <button key={`${tab.id}-${tab.label}-top`} type="button" className={activeTab === tab.id ? 'page-card-button active' : 'page-card-button'} onClick={() => openTab(tab.id)}>
-                  <span>{tab.label}</span>
-                </button>
-              ))}
-            </nav>
-            <button className="logout-button glass-button" onClick={onLogout}>Logout</button>
-          </div>
+          </header>
         ) : null}
         {showMobileStaffContentOnly ? (
           <div className="mobile-page-header glass-card">
