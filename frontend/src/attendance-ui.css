@@ -1,0 +1,77 @@
+/* Shared Martins visual scale, loaded after legacy Attendance styles. */
+:root{--martins-bg:#f6f7fb;--martins-primary:#6b4ba0;--martins-text:#211b30;--martins-muted:#758195;--martins-border:#e1e6ef;--ui-card-pad:22px;--ui-inner-pad:16px;--ui-radius:17px;--ui-gap-lg:18px}
+body{background:#f6f7fb!important;font:14px/1.5 Arial,Helvetica,sans-serif!important;color:#211b30!important}
+body::before{display:none!important}
+.app-shell h1{font-size:36px!important;letter-spacing:-.8px!important}
+.app-shell h2{font-size:24px!important;letter-spacing:-.3px!important}
+.app-shell h3{font-size:20px!important}
+.app-shell h1,.app-shell h2,.app-shell h3{font-weight:800!important;line-height:1.2!important}
+.app-shell p{font-size:14px!important;line-height:1.5!important}
+.app-shell .muted,.app-shell .small{color:#758195!important}
+.app-shell .card,.app-shell .form-card,.app-shell .glass-card,.app-shell .hero-panel,.app-shell .status-panel,.app-shell .today-card,.app-shell .map-card,.app-shell .install-card,.app-shell .overview-hero-panel{
+ background:#fff!important;border:1px solid #e1e6ef!important;border-radius:17px!important;box-shadow:0 12px 30px rgba(24,32,42,.06)!important;backdrop-filter:none!important;padding:22px!important;min-width:0
+}
+.app-shell button{font-size:12px!important;font-weight:700!important;min-height:44px!important;border-radius:10px!important;padding:10px 17px!important}
+.app-shell .glass-button{background:#fff!important;color:#6b4ba0!important;border:1px solid #e1e6ef!important;box-shadow:none!important}
+.app-shell .danger-button{background:#b43b47!important;color:#fff!important;border-color:#b43b47!important}
+.app-shell input:not([type=checkbox]):not([type=radio]),.app-shell select,.app-shell textarea{font:14px/1.5 Arial,Helvetica,sans-serif!important;min-height:46px!important;border:1px solid #e1e6ef!important;border-radius:8px!important;padding:11px 14px!important;max-width:100%;min-width:0}
+.app-shell label{font-size:12px!important}
+.app-shell table{font-size:12px!important}
+.app-shell th{font-size:10px!important;text-transform:uppercase;letter-spacing:.25px;background:#f0f2f6!important;color:#6f788a!important}
+.app-shell th,.app-shell td{padding:13px 12px!important;border-color:#e1e6ef!important}
+.app-shell .table-wrap{overflow:auto!important;max-width:100%;padding:0!important;border:1px solid #e1e6ef!important;border-radius:15px!important}
+.app-shell .metric-card,.app-shell .stat-card{background:#fff!important;border:1px solid #e1e6ef!important;border-radius:17px!important;box-shadow:0 12px 30px rgba(24,32,42,.06)!important;padding:22px!important}
+.app-shell .metric-card strong,.app-shell .stat-card strong{font-size:25px!important;font-weight:800!important}
+.app-shell .metric-card span,.app-shell .stat-card span{font-size:11px!important;font-weight:700!important}
+.app-shell .metric-card small,.app-shell .stat-card small{font-size:12px!important}
+.main-site-page-shell{grid-template-columns:280px minmax(0,1fr)!important;gap:0!important;padding:0!important}
+.main-site-page-shell > .sidebar{display:flex!important;position:sticky!important;top:0!important;width:280px!important;height:100dvh!important;padding:20px 16px!important;border:0!important;border-radius:0!important;overflow-y:auto!important;background:#6b4ba0!important;color:#fff!important}
+.main-site-page-shell .content-panel{width:100%!important;max-width:none!important;margin:0!important;padding:0 28px 28px!important;min-width:0}
+.main-site-page-shell .sidebar .brand-block{display:flex!important;flex-direction:column!important;justify-content:center!important;text-align:center!important;background:transparent!important;border:0!important;padding:10px!important;margin:0 0 20px!important;gap:8px!important}
+.main-site-page-shell .sidebar .brand-block img{width:150px!important;height:68px!important;object-fit:contain!important;background:transparent!important;box-shadow:none!important;border-radius:0!important;padding:0!important}
+.main-site-page-shell .sidebar .brand-block strong{font-size:13px!important;color:#fff!important}
+.main-site-page-shell .sidebar .brand-block span{font-size:11px!important;color:#e4d9f1!important}
+.main-site-page-shell .sidebar-tabs{display:grid!important;grid-template-columns:1fr!important;gap:10px!important}
+.main-site-page-shell .sidebar .tab-button{background:rgba(255,255,255,.14)!important;color:#fff!important;border:0!important;min-height:54px!important;border-radius:11px!important;text-align:left!important;justify-content:flex-start!important;padding:12px 16px!important;font-size:13px!important}
+.main-site-page-shell .sidebar .tab-button.active{background:#fff!important;color:#6b4ba0!important}
+.main-site-page-shell .sidebar .tab-button:hover{background:#8b70b5!important;color:#fff!important}
+.main-site-page-shell .sidebar .logout-button{background:rgba(255,255,255,.14)!important;color:#fff!important}
+.martins-app-topbar{display:flex!important;flex-wrap:wrap!important;min-height:82px!important;margin:0 -28px 26px!important;padding:12px 28px!important;background:#fff!important;border-bottom:1px solid #e1e6ef!important}
+.martins-app-topbar-brand{font-size:23px!important;font-weight:800!important;color:#211b30!important}
+.martins-app-topbar-account{font-size:12px!important;flex-wrap:wrap!important;background:#fbf9ff!important;border:1px solid #eadff3!important;border-radius:14px!important;padding:7px 10px 7px 14px!important}
+.attendance-menu-toggle,.attendance-menu-backdrop{display:none!important}
+.app-shell :focus-visible{outline:3px solid #a58ac9!important;outline-offset:3px!important}
+@media(max-width:980px){
+ .main-site-page-shell{grid-template-columns:minmax(0,1fr)!important}
+ .main-site-page-shell > .sidebar{position:fixed!important;left:0!important;top:0!important;z-index:1001!important;width:min(280px,85vw)!important;transform:translateX(-100%);visibility:hidden}
+ .main-site-page-shell.attendance-menu-open > .sidebar{transform:translateX(0);visibility:visible}
+ .main-site-page-shell .content-panel{padding:0 16px 20px!important}
+ .martins-app-topbar{margin:0 -16px 20px!important;padding:12px 16px!important;gap:12px!important}
+ .app-shell .attendance-menu-toggle{display:inline-flex!important;align-items:center!important;background:#6b4ba0!important;color:#fff!important}
+ .attendance-menu-open .attendance-menu-backdrop{display:block!important;position:fixed!important;inset:0!important;z-index:1000!important;background:rgba(20,16,28,.42)!important;border:0!important;border-radius:0!important;width:100%!important;height:100%!important}
+ .app-shell h1{font-size:28px!important}
+}
+@media(max-width:550px){
+ .app-shell .card,.app-shell .form-card,.app-shell .glass-card,.app-shell .hero-panel,.app-shell .status-panel,.app-shell .today-card,.app-shell .overview-hero-panel{padding:16px!important}
+ .app-shell input:not([type=checkbox]):not([type=radio]),.app-shell select,.app-shell textarea{font-size:16px!important}
+ .martins-app-topbar-brand{font-size:20px!important;gap:8px!important}
+ .martins-app-topbar-brand img{width:95px!important}
+ .martins-app-topbar-account{width:100%!important;gap:8px!important}
+}
+@media print{.attendance-menu-toggle,.attendance-menu-backdrop,.main-site-page-shell > .sidebar{display:none!important}.main-site-page-shell{display:block!important}}
+
+/* Give the overview the same heading-and-card rhythm as the other modules. */
+.app-shell .overview-hero-panel{grid-template-columns:minmax(0,1fr)!important;gap:24px!important}
+.app-shell .overview-hero-copy h2{font-size:36px!important}
+.app-shell .overview-metric-rail{gap:18px!important}
+.app-shell .overview-metric-row-break{display:none!important}
+.app-shell .metric-card strong{color:#211b30!important}
+.martins-app-topbar-account .logout-button{width:auto!important;margin:0!important}
+@media(max-width:980px){.app-shell .overview-hero-copy h2{font-size:28px!important}}
+
+/* Preserve readable employee self-service navigation on phones. */
+.app-shell .sidebar.mobile-card-menu{background:#6b4ba0!important;color:#fff!important}
+.mobile-staff-menu-shell .tab-button{background:#fff!important;color:#211b30!important;border:1px solid #e1e6ef!important}
+.mobile-staff-menu-shell .tab-button span{color:#211b30!important}
+.mobile-staff-menu-shell .tab-button small{color:#6b4ba0!important}
+.mobile-staff-menu-shell .brand-block strong,.mobile-staff-menu-shell .brand-block span{color:#fff!important}
