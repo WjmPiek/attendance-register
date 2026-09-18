@@ -74,6 +74,17 @@ function AttendanceExceptionPopup({ me, onNavigate }) {
 }
 
 export default function DashboardPage({ me, roles, entities, onLogout }) {
+  const [menuOpen, setMenuOpen] = useState(false)
+  useEffect(() => {
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape' && menuOpen) {
+        setMenuOpen(false)
+        document.getElementById('attendance-menu-toggle')?.focus()
+      }
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [menuOpen])
   const isSuperUser = me.roles.includes('SuperUser')
   const isFranchiseUser = me.roles.includes('FranchiseUser')
   const isManagerUser = me.roles.includes('ManagerUser')
@@ -142,6 +153,7 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
     }
   }, [isMobileLayout, isStaffSelfService, canManagePayroll, activeTab])
   const openTab = (tabId) => {
+    setMenuOpen(false)
     setActiveTab(tabId)
     const url = new URL(window.location.href)
     url.searchParams.set('tab', tabId)
@@ -160,9 +172,10 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
   const showMainSiteTopMenu = !showMobileStaffMenuOnly && !showMobileStaffContentOnly
 
   return (
-    <div className={showMobileStaffMenuOnly ? 'app-shell mobile-staff-menu-shell' : (showMobileStaffContentOnly ? 'app-shell mobile-staff-content-shell' : 'app-shell main-site-page-shell')}>
+    <div className={showMobileStaffMenuOnly ? 'app-shell mobile-staff-menu-shell' : (showMobileStaffContentOnly ? 'app-shell mobile-staff-content-shell' : `app-shell main-site-page-shell${menuOpen ? ' attendance-menu-open' : ''}`)}>
+      {showMainSiteTopMenu && menuOpen ? <button type="button" className="attendance-menu-backdrop" aria-label="Close menu" onClick={() => setMenuOpen(false)} /> : null}
       <AttendanceExceptionPopup me={me} onNavigate={openTab} />
-      {!showMobileStaffContentOnly ? <aside className={showMobileStaffMenuOnly ? 'sidebar glass-card mobile-card-menu' : 'sidebar glass-card'}>
+      {!showMobileStaffContentOnly ? <aside id="attendance-sidebar" className={showMobileStaffMenuOnly ? 'sidebar glass-card mobile-card-menu' : 'sidebar glass-card'}>
         <div className="brand-block">
           <img src="/logo.png" alt="Martins logo" />
           <div>
@@ -184,6 +197,7 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
       {!showMobileStaffMenuOnly ? <main className="page content-panel">
         {showMainSiteTopMenu ? (
           <header className="martins-app-topbar">
+            <button id="attendance-menu-toggle" type="button" className="attendance-menu-toggle" aria-controls="attendance-sidebar" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}>Menu</button>
             <a className="martins-app-topbar-brand" href="https://martinssystem.co.za/">
               <img src="/logo.png" alt="Martins logo" />
               <strong>Martins System</strong>
