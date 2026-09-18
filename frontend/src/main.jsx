@@ -5,6 +5,7 @@ import './styles.css'
 import './styles_spacing_fix.css'
 import './professional-login.css'
 import './attendance-ui.css'
+import './module-shell.css'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
