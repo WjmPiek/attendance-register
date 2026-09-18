@@ -1,4 +1,4 @@
-const CACHE_NAME = 'attendance-pwa-v5';
+const CACHE_NAME = 'attendance-pwa-v5-brand-20260918';
 const APP_SHELL = [
   '/',
   '/index.html',
