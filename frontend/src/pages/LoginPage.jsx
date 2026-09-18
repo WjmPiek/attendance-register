@@ -140,8 +140,8 @@ export default function LoginPage({ onLogin, loading, error }) {
           <span>Attendance Register</span>
         </div>
         <div className="martins-auth-brand">
-          <img className="login-logo" src="/logo.png" alt="Martins logo" />
-          <strong>Martins System</strong>
+          <img className="login-logo" src="/logo.png" alt="Martin's Funerals logo" />
+          <strong>Martin's Funerals</strong>
           <span>Attendance Register</span>
         </div>
 
