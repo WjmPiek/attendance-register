@@ -172,15 +172,15 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
   const showMainSiteTopMenu = !showMobileStaffMenuOnly && !showMobileStaffContentOnly
 
   return (
-    <div className={showMobileStaffMenuOnly ? 'app-shell mobile-staff-menu-shell' : (showMobileStaffContentOnly ? 'app-shell mobile-staff-content-shell' : `app-shell main-site-page-shell${menuOpen ? ' attendance-menu-open' : ''}`)}>
+    <div className={showMobileStaffMenuOnly ? 'app-shell mobile-staff-menu-shell' : (showMobileStaffContentOnly ? 'app-shell mobile-staff-content-shell' : `app-shell main-site-page-shell ms-shell${menuOpen ? ' attendance-menu-open' : ''}`)}>
       {showMainSiteTopMenu && menuOpen ? <button type="button" className="attendance-menu-backdrop" aria-label="Close menu" onClick={() => setMenuOpen(false)} /> : null}
       <AttendanceExceptionPopup me={me} onNavigate={openTab} />
-      {!showMobileStaffContentOnly ? <aside id="attendance-sidebar" className={showMobileStaffMenuOnly ? 'sidebar glass-card mobile-card-menu' : 'sidebar glass-card'}>
-        <div className="brand-block">
+      {!showMobileStaffContentOnly ? <aside id="attendance-sidebar" className={showMobileStaffMenuOnly ? 'sidebar glass-card mobile-card-menu' : 'sidebar glass-card ms-sidebar'}>
+        <div className="brand-block ms-brand">
           <img src="/logo.png" alt="Martins logo" />
-          <div>
-            <strong>Martins System</strong>
-            <span>Attendance Register</span>
+          <div className="ms-brand-copy">
+            <strong className="ms-brand-title">Martin's Funerals</strong>
+            <span className="ms-brand-module">Attendance Register</span>
           </div>
         </div>
         <nav className={showMobileStaffMenuOnly ? 'sidebar-tabs mobile-card-menu-grid' : 'sidebar-tabs'} aria-label="Main sections">
@@ -194,13 +194,13 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
         <button className="logout-button glass-button" onClick={onLogout}>Logout</button>
       </aside> : null}
 
-      {!showMobileStaffMenuOnly ? <main className="page content-panel">
+      {!showMobileStaffMenuOnly ? <main className="page content-panel ms-main">
         {showMainSiteTopMenu ? (
-          <header className="martins-app-topbar">
+          <header className="martins-app-topbar ms-topbar">
             <button id="attendance-menu-toggle" type="button" className="attendance-menu-toggle" aria-controls="attendance-sidebar" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}>Menu</button>
-            <a className="martins-app-topbar-brand" href="https://martinssystem.co.za/">
+            <a className="martins-app-topbar-brand ms-topbar-brand" href="https://martinssystem.co.za/">
               <img src="/logo.png" alt="Martins logo" />
-              <strong>Martins System</strong>
+              <strong>Martin's Funerals System</strong>
             </a>
             <div className="martins-app-topbar-account">
               <span>Logged in as</span>
