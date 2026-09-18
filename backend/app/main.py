@@ -3,7 +3,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import auth, users, roles, meta, attendance, franchise, franchise_staff, franchise_dashboard, user_management, alerts, irp5, leave, payroll, audit, commission
+from app.api import auth, users, roles, meta, attendance, franchise, franchise_staff, franchise_dashboard, user_management, alerts, irp5, leave, payroll, audit, commission, martins_launch
 from app import models  # noqa: F401
 from app.db.session import engine
 from app.services.seed import seed_initial_data
@@ -102,6 +102,7 @@ def on_startup() -> None:
 
 
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+app.include_router(martins_launch.router, prefix="/api/auth", tags=["auth"])
 app.include_router(users.router, prefix="/api/users", tags=["users"])
 app.include_router(roles.router, prefix="/api/roles", tags=["roles"])
 app.include_router(meta.router, prefix="/api/meta", tags=["meta"])
