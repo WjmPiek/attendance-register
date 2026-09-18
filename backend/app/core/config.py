@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     FRONTEND_URL: str = "http://localhost:5173"
+    ATTENDANCE_LAUNCH_SECRET: str = ""
+    MARTINS_MAIN_APP_URL: str = "https://www.martinssystem.co.za"
 
     SMTP_HOST: str | None = None
     SMTP_PORT: int = 587
