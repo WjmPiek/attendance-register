@@ -30,3 +30,15 @@ html body .ms-sidebar.ms-sidebar{scrollbar-width:thin!important;scrollbar-color:
 html body .ms-sidebar,html body .ms-sidebar *{content-visibility:visible!important;animation:none!important;transition:none!important}
 html body .ms-sidebar .ms-brand img{contain:none!important}
 @media(min-width:981px){html body .ms-sidebar.ms-sidebar{max-width:260px!important;flex:0 0 260px!important}}
+
+
+/* Mobile drawers own their scroll area; gestures must not scroll the page behind. */
+@media(max-width:980px){
+ html body :is(.app-sidebar.ms-sidebar,.executive-sidebar.ms-sidebar,.sidebar--reference.ms-sidebar,.main-site-page-shell>.ms-sidebar,.app-menu.ms-sidebar[open]){height:100vh!important;height:100dvh!important;max-height:100dvh!important;min-height:0!important;overflow-y:auto!important;overflow-x:hidden!important;overscroll-behavior-y:contain!important;touch-action:pan-y!important;-webkit-overflow-scrolling:touch;scroll-padding-bottom:24px;padding-bottom:max(18px,env(safe-area-inset-bottom))!important}
+ html body .ms-sidebar>*{flex-shrink:0!important}
+ html body .app-menu.ms-sidebar[open]>.menu-panel{position:static!important;inset:auto!important;transform:none!important;height:auto!important;max-height:none!important;overflow:visible!important;display:block!important}
+ html body .app-menu.ms-sidebar[open]>.menu-toggle{position:sticky!important;top:0!important;left:auto!important;z-index:2!important}
+ html:has(.app-menu.ms-sidebar[open],.app-sidebar.ms-sidebar.show,.sidebar--reference.ms-sidebar.is-open,.attendance-menu-open,.claims-nav-open),
+ html body:has(.app-menu.ms-sidebar[open],.app-sidebar.ms-sidebar.show,.sidebar--reference.ms-sidebar.is-open,.attendance-menu-open),
+ html body.claims-nav-open,html body.sidebar-drawer-open{overflow:hidden!important;overscroll-behavior:none!important;touch-action:pan-y!important}
+}
