@@ -56,6 +56,9 @@ def martins_launch(payload: MartinsLaunchRequest, db: Session = Depends(get_db))
         .first()
     )
     is_admin = bool(handoff.get("is_admin"))
+    if not is_admin:
+        from app.core.module_license import require_email_license
+        require_email_license(str(handoff["email"]))
     franchises = [str(item).strip() for item in handoff.get("franchises", []) if str(item).strip()]
     if not is_admin and not franchises:
         raise HTTPException(
