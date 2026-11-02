@@ -37,6 +37,7 @@ def receipt(**changes):
 
 def configure(db, registered=True):
     db.execute(text('INSERT INTO receipt_commission_settings VALUES(2,0,:registered,:number,15,2,1,NOW())'), {'registered':registered,'number':'4000000000' if registered else None})
+    db.execute(text('UPDATE attendance_branches SET vat_number=:number WHERE franchise_user_id=2'), {'number':'4000000000' if registered else None})
     for uid in (11,12):
         set_enabled_types(db,2,uid,['removals','invoice_commission'],1)
     db.execute(text("UPDATE employee_commission_options SET rate=3 WHERE employee_user_id=12 AND commission_type='invoice_commission'"))
@@ -315,3 +316,10 @@ def test_three_branches_only_registered_branch_excludes_vat(database):
         assert invoices[name]['base_amount']=='23580.61'
         assert invoices[name]['amount']=='471.61'
     assert api.settle(payload,OWNER,database)['created']==9
+
+
+def test_group_branch_with_blank_vat_number_never_silently_inherits_registered_status(database):
+    configure(database)
+    database.execute(text('UPDATE attendance_branches SET vat_number=NULL WHERE id=101'));database.commit()
+    _,q=calculate(database,stage_both(database))
+    assert all(r['state']=='blocked' for r in q['items'] if r.get('category')=='invoice_commission')

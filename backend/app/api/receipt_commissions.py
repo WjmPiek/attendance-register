@@ -99,7 +99,9 @@ def receipt_settings(db, fid, branch_id=0):
         if not branch:
             raise HTTPException(403, 'Branch is outside this holder group.')
         recorded_number = str(branch.get('vat_number') or '').strip()
-        if recorded_number and (not bool(default.get('vat_registered')) or recorded_number != str(default.get('vat_number') or '').strip()):
+        conflicting_number = recorded_number and (not bool(default.get('vat_registered')) or recorded_number != str(default.get('vat_number') or '').strip())
+        unconfirmed_group_vendor = len(branches(db, fid)) > 1 and bool(default.get('vat_registered')) and not recorded_number
+        if conflicting_number or unconfirmed_group_vendor:
             return {**default, 'vat_registered': None, 'vat_number': recorded_number, 'branch_id': branch_id}
         return {**default, 'branch_id': branch_id}
     franchise = franchise_record(db, fid)
