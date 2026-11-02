@@ -11,8 +11,9 @@ import PayrollPage from './PayrollPage'
 import CommissionPage from './CommissionPage'
 import BusinessPage from './BusinessPage'
 import MyProfilePage from './MyProfilePage'
+import UploadProofPage from './UploadProofPage'
 import DigitalIdCard from '../components/DigitalIdCard'
-import { getNotifications, markNotificationRead } from '../api/client'
+import { getNotifications, markNotificationRead, apiRequest } from '../api/client'
 import { formatJohannesburgDateTime } from '../utils/dateTime'
 
 function AttendanceExceptionPopup({ me, onNavigate }) {
@@ -89,6 +90,8 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
   const isFranchiseUser = me.roles.includes('FranchiseUser')
   const isManagerUser = me.roles.includes('ManagerUser')
   const isEmployee = me.roles.includes('EmployeeUser')
+  const [canImportProof, setCanImportProof] = useState(false)
+  useEffect(() => { apiRequest('/receipt-commissions/access').then(data => setCanImportProof(data.can_import)).catch(() => setCanImportProof(false)) }, [me.id])
   const isFinanceEmployee = (me.employee_role || '').trim().toLowerCase().includes('finance')
   const isStaffSelfService = isEmployee || isManagerUser
   const canManagePayroll = isSuperUser || isFranchiseUser || isFinanceEmployee
@@ -115,19 +118,21 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
     { id: 'attendance', label: 'Mobile Sign In', visible: isSignCapable },
     { id: 'employee-card', label: 'Employee Card', visible: isEmployee || isManagerUser },
     { id: 'history', label: 'History', visible: isSignCapable || isApprovalCapable },
-    { id: 'staff', label: isSuperUser || isFranchiseUser ? 'HR Staff' : 'My Staff', visible: isSuperUser || isFranchiseUser || isManagerUser },
+    { id: 'staff', label: isSuperUser || isFranchiseUser ? 'HR Staff' : isEmployee && canImportProof ? 'Upload proof' : 'My Staff', visible: isSuperUser || isFranchiseUser || isManagerUser || canImportProof },
+    { id: 'commission', label: isStaffSelfService ? 'My Commissions' : 'Commission Claims', visible: isStaffSelfService || isFranchiseUser || isSuperUser },
     { id: 'profile', label: 'My Profile', visible: isStaffSelfService },
     { id: 'business', label: 'Business', visible: isFranchiseUser },
     { id: 'franchises', label: 'Franchise Approvals', visible: isSuperUser },
-  ].filter((tab) => tab.visible), [isSignCapable, isApprovalCapable, isSuperUser, isFranchiseUser, isEmployee, isManagerUser, isFinanceEmployee, isStaffSelfService, canManagePayroll, canUsePayroll])
+  ].filter((tab) => tab.visible), [isSignCapable, isApprovalCapable, isSuperUser, isFranchiseUser, isEmployee, isManagerUser, isFinanceEmployee, isStaffSelfService, canManagePayroll, canUsePayroll, canImportProof])
 
   const mobileStaffTabs = useMemo(() => [
     { id: 'attendance', label: 'Mobile Sign In', visible: isSignCapable },
-    { id: 'staff', label: 'My Staff', visible: isManagerUser },
+    { id: 'staff', label: isManagerUser ? 'My Staff' : 'Upload proof', visible: isManagerUser || canImportProof },
+    { id: 'commission', label: 'My Commissions', visible: isStaffSelfService },
     { id: 'profile', label: 'My Profile', visible: isStaffSelfService },
     { id: 'employee-card', label: 'Employee Card', visible: isEmployee || isManagerUser },
     { id: 'history', label: 'History', visible: isSignCapable || isApprovalCapable },
-  ].filter((tab) => tab.visible), [isSignCapable, isApprovalCapable, isEmployee, isManagerUser, canUsePayroll, isStaffSelfService])
+  ].filter((tab) => tab.visible), [isSignCapable, isApprovalCapable, isEmployee, isManagerUser, canUsePayroll, isStaffSelfService, canImportProof])
 
   const tabs = isMobileLayout && isStaffSelfService && !canManagePayroll ? mobileStaffTabs : fullTabs
   const availableTabIds = useMemo(() => new Set([
@@ -138,7 +143,7 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
     (isFranchiseUser || isManagerUser || isEmployee || isSuperUser) ? 'commission' : null,
     canUsePayroll ? 'payroll' : null,
     (isStaffSelfService || isFranchiseUser || isSuperUser) ? 'irp5' : null,
-  ].filter(Boolean)), [tabs, isApprovalCapable, isEmployee, isManagerUser, isFranchiseUser, isSuperUser, canUsePayroll, isStaffSelfService])
+  ].filter(Boolean)), [tabs, isApprovalCapable, isEmployee, isManagerUser, isFranchiseUser, isSuperUser, canUsePayroll, isStaffSelfService, canImportProof])
   const queryParams = new URLSearchParams(window.location.search)
   const defaultTab = queryParams.get('office_qr') ? 'attendance' : (queryParams.get('tab') || 'home')
   const shouldStartOnMobileMenu = isMobileLayout && isStaffSelfService && !canManagePayroll && !queryParams.get('tab') && !queryParams.get('office_qr')
@@ -232,7 +237,7 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
         {activeTab === 'employee-card' && (isEmployee || isManagerUser) ? <DigitalIdCard /> : null}
         {activeTab === 'history' && (isSignCapable || isApprovalCapable) ? <AttendanceHistoryPage me={me} /> : null}
         {activeTab === 'approvals' && (isSuperUser || isFranchiseUser || isManagerUser) ? <AttendanceApprovalPage me={me} /> : null}
-        {activeTab === 'staff' && (isSuperUser || isFranchiseUser || isManagerUser || isEmployee) ? <FranchiseStaffPage me={me} onNavigate={openTab} /> : null}
+        {activeTab === 'staff' && (isSuperUser || isFranchiseUser || isManagerUser || isEmployee) ? (isEmployee && !isManagerUser && !isFranchiseUser && !isSuperUser ? <UploadProofPage /> : <FranchiseStaffPage me={me} onNavigate={openTab} />) : null}
         {activeTab === 'profile' && isStaffSelfService ? <MyProfilePage me={me} /> : null}
         {activeTab === 'business' && isFranchiseUser ? <BusinessPage me={me} /> : null}
         {activeTab === 'franchises' && isSuperUser ? <FranchiseRegistrationApprovalPage me={me} /> : null}

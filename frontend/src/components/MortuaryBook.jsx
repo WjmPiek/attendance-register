@@ -1,3 +1,4 @@
+import ImportBranchScope from './ImportBranchScope'
 import { useEffect, useState } from 'react'
 import { apiRequest, uploadMortuaryBooks } from '../api/client'
 import './MortuaryBook.css'
@@ -5,6 +6,7 @@ import './MortuaryBook.css'
 const money = value => value === null || value === undefined ? 'Rate not configured' : `R ${Number(value).toFixed(2)}`
 
 export default function MortuaryBook({ franchiseId }) {
+  const [externalBranchId, setExternalBranchId] = useState('')
   const [settings, setSettings] = useState(null)
   const [files, setFiles] = useState([])
   const [preview, setPreview] = useState(null)
@@ -28,7 +30,7 @@ export default function MortuaryBook({ franchiseId }) {
   const upload = async e => {
     e.preventDefault(); setBusy(true); setError(''); setNotice(''); setPreview(null); setQuote(null); setResult(null); setConfirmed(false)
     try {
-      const data = await uploadMortuaryBooks(files, franchiseId)
+      const data = await uploadMortuaryBooks(files, franchiseId, externalBranchId)
       setPreview(data); setAllocations(data.allocations)
     } catch (e) { setError(e.message) } finally { setBusy(false) }
   }
@@ -57,6 +59,7 @@ export default function MortuaryBook({ franchiseId }) {
   }, {})) : []
 
   return <section className="mortuary-book">
+    <ImportBranchScope franchiseId={franchiseId} value={externalBranchId} onChange={value => { setExternalBranchId(value); setPreview(null) }}/>
     <div className="form-card">
       <h2>Mortuary Book</h2>
       <p>Import removal commissions from printed Mortuary Book PDFs. Review the employees, roles and fees before saving to their Work Hubs.</p>

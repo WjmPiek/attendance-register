@@ -48,7 +48,7 @@ class CommissionSetup(BaseModel):
     commission_branches: dict[int, CommissionBranchOptions] | None = None
     branch_id: int | None = None
     can_import_commissions: bool | None = None
-    commission_types: list[Literal['removals','invoice_commission','grave_service','full_funeral_service','cremation_service','church_service','joinings','overtime']] | None = None
+    commission_types: list[Literal['removals','invoice_commission','grave_service','full_funeral_service','cremation_service','church_service','joinings','overtime','service_other_branch']] | None = None
     receipt_commission_percentage: Decimal | None = Field(default=None, ge=0, le=100, decimal_places=4)
 
 

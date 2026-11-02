@@ -1,3 +1,4 @@
+import ImportBranchScope from './ImportBranchScope'
 import { useEffect, useState } from 'react'
 import { apiRequest, apiBlob, uploadMFInvoices } from '../api/client'
 import './MortuaryBook.css'
@@ -5,6 +6,7 @@ import './MortuaryBook.css'
 const money = value => `R ${Number(value || 0).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
 export default function MFInvoice({ franchiseId }) {
+  const [externalBranchId, setExternalBranchId] = useState('')
   const [files, setFiles] = useState([]), [preview, setPreview] = useState(null), [confirmed, setConfirmed] = useState(false)
   const [documents, setDocuments] = useState([]), [busy, setBusy] = useState(false)
   const [error, setError] = useState(''), [notice, setNotice] = useState('')
@@ -14,7 +16,7 @@ export default function MFInvoice({ franchiseId }) {
   const run = async action => { setBusy(true); setError(''); setNotice(''); try { await action() } catch (e) { setError(e.message) } finally { setBusy(false) } }
   const upload = event => {
     event.preventDefault()
-    run(async () => { setPreview(null); setConfirmed(false); setPreview(await uploadMFInvoices(files, franchiseId)) })
+    run(async () => { setPreview(null); setConfirmed(false); setPreview(await uploadMFInvoices(files, franchiseId, externalBranchId)) })
   }
   const save = () => run(async () => {
     const result = await apiRequest('/receipt-commissions/invoices/stage', { method: 'POST', body: JSON.stringify({ preview_token: preview.preview_token, confirmed_franchise: confirmed }) })
@@ -28,6 +30,7 @@ export default function MFInvoice({ franchiseId }) {
     window.setTimeout(() => URL.revokeObjectURL(url), 1000)
   })
   return <section className="mortuary-book">
+    <ImportBranchScope franchiseId={franchiseId} value={externalBranchId} onChange={value => { setExternalBranchId(value); setPreview(null) }}/>
     <header className="form-card"><h2>MF Invoice</h2><p>Import the original invoice showing the full service amount. All three document types must match the branch, deceased name and surname, and MF file number. Receipts must also reference this invoice number.</p><p className="muted">No commission is payable until the invoice is fully paid. The invoice commission is awarded once per employee. VAT is checked against the system branch record: a registered branch uses the amount before VAT; a confirmed non-VAT branch uses the full amount. Unclear invoice VAT details use the confirmed system status.</p></header>
     {error && <p role="alert" className="error-message">{error}</p>}{notice && <p role="status" className="success-message">{notice}</p>}
     <form className="form-card" onSubmit={upload}><h3>1. Select invoice PDFs</h3><label>MF Invoice PDFs<input type="file" multiple required accept=".pdf,application/pdf" disabled={busy} onChange={e => { setFiles(Array.from(e.target.files)); setPreview(null); setConfirmed(false) }}/></label><p className="muted">Up to 30 searchable PDFs, 10 MB per PDF and 50 MB per batch. Original PDFs are retained for download.</p><button className="primary-button" disabled={busy || !files.length}>Read MF Invoices</button></form>

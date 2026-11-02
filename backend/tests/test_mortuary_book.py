@@ -78,7 +78,7 @@ def test_business_hours_and_public_holidays(day, at, expected):
     assert price_removal(r, 'driver', policy())['band'] == expected
 
 
-def test_employee_hours_closed_days_role_rates_and_extra_holiday():
+def test_employee_hours_closed_days_role_rates_and_standard_calendar():
     p = policy()
     p['week'][0] = {'start': '09:00', 'end': '15:00'}
     r = dict(record(), date_in='2026-11-02', time_in='08:30')
@@ -86,7 +86,7 @@ def test_employee_hours_closed_days_role_rates_and_extra_holiday():
     assert price_removal(r, 'assistant', p)['amount'] == '150.00'
     r['time_in'] = '10:00'
     assert price_removal(r, 'driver', p)['amount'] == '100.00'
-    assert price_removal(r, 'driver', p, ['2026-11-02'])['band'] == 'out'
+    assert price_removal(r, 'driver', p, ['2026-11-02'])['band'] == 'in'
     p['week'][0] = None
     assert price_removal(r, 'driver', p)['band'] == 'out'
 
@@ -161,6 +161,7 @@ def database(monkeypatch):
             db.execute(text(schema))
         schemas_files = 'CREATE TABLE commission_document_files(franchise_user_id INT,source_hash TEXT,filename TEXT,file_content BLOB,uploaded_by_user_id INT,created_at TEXT DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(franchise_user_id,source_hash))'
         db.execute(text(schemas_files))
+        db.execute(text('CREATE TABLE external_commission_branches(branch_id INT PRIMARY KEY,franchise_user_id INT,branch_key TEXT,created_by_user_id INT,created_at TEXT DEFAULT CURRENT_TIMESTAMP,UNIQUE(franchise_user_id,branch_key))'))
         for column in ('mortuary_document_id INT', 'receipt_document_id INT', 'invoice_document_id INT', 'source_metadata TEXT', 'invoice_value_before_tax NUMERIC', 'hours NUMERIC', 'hourly_rate NUMERIC', 'earning_branch_id INT', 'review_notes TEXT', 'updated_at TEXT'):
             db.execute(text('ALTER TABLE commission_entries ADD COLUMN ' + column))
         db.execute(text("CREATE UNIQUE INDEX uq_receipt_award ON commission_entries(receipt_document_id,employee_user_id) WHERE commission_type='invoice_commission' AND receipt_document_id IS NOT NULL"))

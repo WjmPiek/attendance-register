@@ -10,7 +10,7 @@ from pypdf import PdfReader
 
 
 RATE_KEYS = ('driver_in', 'driver_out', 'assistant_in', 'assistant_out',
-             'driver_sunday_holiday', 'assistant_sunday_holiday', 'driver_other_branch', 'assistant_other_branch')
+             'driver_sunday_holiday', 'assistant_sunday_holiday', 'driver_other_branch', 'assistant_other_branch') + tuple(f'{role}_{item}' for role in ('driver', 'assistant') for item in ('grave_service','full_funeral_service','cremation_service','church_service','joinings','overtime','invoice_commission'))
 DEFAULT_WEEK = [{'start': '08:00', 'end': '17:00'} for _ in range(5)] + [{'start': '08:00', 'end': '13:00'}]
 
 
@@ -120,7 +120,7 @@ def public_holidays(year):
 def price_removal(record, role, policy, extra_holidays=(), other_branch=False, staff_hours=None):
     day = date.fromisoformat(record['date_in'])
     at = time.fromisoformat(record['time_in'])
-    holiday = day in public_holidays(day.year) or day.isoformat() in extra_holidays
+    holiday = day in public_holidays(day.year)
     business = False
     if day.weekday() != 6 and not holiday:
         from app.services.staff_hours import work_window

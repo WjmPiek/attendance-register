@@ -59,17 +59,19 @@ def manual_setup(db):
 
 def payload():
     return commission.EntryIn(employee_user_id=11, commission_type='grave_service', service_date='2026-11-02',
-                              reference='TEST-1315', earning_branch_id=101)
+                              reference='TEST-1315', earning_branch_id=101, claim_deceased='Example Person')
 
 
 def test_owner_cannot_bypass_proof_with_manual_approved_entry(database):
     manual_setup(database)
-    with pytest.raises(HTTPException, match='compulsory'):
-        commission.create_entry(payload(), OWNER, database)
-    assert database.execute(text('SELECT COUNT(*) FROM commission_entries')).scalar() == 0
+    entry = commission.create_entry(payload(), OWNER, database)
+    assert entry['status'] == 'pending' and not entry['documents_valid']
+    saved = database.execute(text('SELECT * FROM commission_entries')).mappings().one()
+    assert not payment_eligibility(database, saved)['payment_eligible']
     quote_and_import(database, import_payload())
     stage_receipt(database, people=())
-    entry = commission.create_entry(payload(), OWNER, database)
+    assert payment_eligibility(database, saved)['payment_eligible']
+    commission.review(entry['id'], commission.ReviewIn(**payload().model_dump(), status='approved'), OWNER, database)
     saved = database.execute(text('SELECT * FROM commission_entries WHERE id=:id'), {'id': entry['id']}).mappings().one()
     assert saved['status'] == 'approved' and saved['mortuary_document_id'] and saved['receipt_document_id']
     assert payment_eligibility(database, saved)['payment_eligible']

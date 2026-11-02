@@ -74,7 +74,7 @@ def test_new_fees_reach_matched_awards_once_and_reject_stale_schedule_quotes(dat
     payload, quote = calculate(database, docs['document_ids'])
     removal_rows = {r['employee_user_id']: r for r in quote['items'] if r.get('category') == 'removals'}
     assert removal_rows[11]['amount'] == '500.00' and removal_rows[11]['additional_fee'] == '0.00'
-    assert removal_rows[12]['amount'] == '325.00' and removal_rows[12]['additional_fee'] == '25.00'
+    assert removal_rows[12]['amount'] == '300.00' and removal_rows[12]['additional_fee'] == '0.00'
     assert receipts.settle(payload, OWNER, database)['created'] == 4
     again, _ = calculate(database, docs['document_ids'])
     assert receipts.settle(again, OWNER, database)['created'] == 0

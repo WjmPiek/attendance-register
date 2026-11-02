@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from app.services.mortuary import normalise
 
 class CommissionBranchOptions(BaseModel):
-    enabled_types: list[str] = Field(default_factory=list, max_length=8)
+    enabled_types: list[str] = Field(default_factory=list, max_length=9)
     receipt_percentage: Decimal | None = Field(default=None, ge=0, le=100, decimal_places=4)
 
 
@@ -22,6 +22,7 @@ COMMISSION_LABELS = {
     'grave_service': 'Grave Service', 'full_funeral_service': 'Full Funeral Service',
     'cremation_service': 'Cremation Service', 'church_service': 'Church Service',
     'joinings': 'Joinings', 'overtime': 'Overtime',
+    'service_other_branch': 'Service for Other Branch (additional fee)',
 }
 
 
@@ -185,7 +186,9 @@ def require_manual_eligibility(db, participant, category, branch_id=None):
     if category in {'removals', 'invoice_commission'}:
         raise HTTPException(400, 'Use the matched Mortuary Book and MF File Receipt imports for this commission category.')
     branch_id = branch_id or home['branch_id']
-    if not enabled_for_branch(db,participant['franchise_user_id'],participant['user_id'],category,branch_id):
+    from app.services.external_commissions import permission_branch
+    scope_branch = permission_branch(db, participant['franchise_user_id'], participant['user_id'], branch_id)
+    if not enabled_for_branch(db,participant['franchise_user_id'],participant['user_id'],category,scope_branch):
         raise HTTPException(403,'This commission is not enabled for this employee at the selected branch.')
     return branch_id
 
@@ -198,6 +201,9 @@ def resolve_commission_vat(db, fid, branch_id, invoice):
     inherited = next((r for r in settings if r['branch_id'] == 0), None)
     recorded_number = str((branch or {}).get('vat_number') or '').strip()
     registered, number, source = None, None, None
+    from app.services.external_commissions import is_external
+    if is_external(db, fid, branch_id):
+        inherited = None
     configuration = direct or inherited
     if recorded_number:
         if not re.fullmatch(r'\d{10}', recorded_number):
@@ -278,11 +284,21 @@ def require_payment_proof(db, fid, branch_id, reference, book_id=None, receipt_i
         raise HTTPException(400, f'Invoice not fully paid: received R {paid:,.2f} of R {total:,.2f}. No commission is payable until the balance is settled.')
     return {'mortuary_document_id': book['id'], 'receipt_document_id': included[0], 'invoice_document_id': invoice['id'],
             'invoice_total': str(total), 'total_received': str(paid), 'invoice_number': invoice_data['invoice_number'],
-            'receipt_document_ids': included, **tax}
+            'receipt_document_ids': included, 'deceased': invoice_data['deceased'], **tax}
 
 
 def payment_eligibility(db, row):
     try:
+        meta = json.loads(row.get('source_metadata') or '{}')
+        if row.get('status') == 'pending' and meta.get('claim_deceased'):
+            from app.api.commission import EntryIn
+            from app.services.service_claims import calculate_claim
+            values = {key: row[key] for key in EntryIn.model_fields if key in row}
+            values.update(claim_deceased=meta['claim_deceased'], commission_role=meta.get('commission_role', 'driver'))
+            quote = calculate_claim(db, None, EntryIn(**values), {'user_id': row['employee_user_id'], 'franchise_user_id': row['franchise_user_id']}, exclude_id=row['id'])
+            return {'payment_eligible': quote['documents_valid'], 'payment_block_reason': quote['notice'], 'expected_amount': quote['amount'],
+                    'expected_additional_fee': quote['additional_fee']['amount'] if quote['additional_fee'] else '0',
+                    'expected_invoice_id': quote['proof'].get('invoice_document_id')}
         require_payment_proof(db, row['franchise_user_id'], row.get('earning_branch_id'), row['reference'],
                               row.get('mortuary_document_id'), row.get('receipt_document_id'), row.get('invoice_document_id'))
         return {'payment_eligible': True, 'payment_block_reason': None}
