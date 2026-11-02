@@ -131,6 +131,7 @@ def send_smtp_email(recipient_email: str | None, subject: str, message: str) -> 
     if not _valid_email(cfg.smtp_from_email):
         return "pending", None, "SMTP_FROM_EMAIL is missing or invalid.", diagnostics
 
+    delivery_started = False
     try:
         email = EmailMessage()
         email["From"] = formataddr((cfg.smtp_from_name, cfg.smtp_from_email or cfg.smtp_username or ""))
@@ -140,6 +141,7 @@ def send_smtp_email(recipient_email: str | None, subject: str, message: str) -> 
         if cfg.smtp_use_ssl:
             with smtplib.SMTP_SSL(cfg.smtp_host, cfg.smtp_port, timeout=cfg.smtp_timeout_seconds, context=ssl.create_default_context()) as smtp:
                 smtp.login(cfg.smtp_username, cfg.smtp_password)
+                delivery_started = True
                 smtp.send_message(email)
         else:
             with smtplib.SMTP(cfg.smtp_host, cfg.smtp_port, timeout=cfg.smtp_timeout_seconds) as smtp:
@@ -148,9 +150,11 @@ def send_smtp_email(recipient_email: str | None, subject: str, message: str) -> 
                     smtp.starttls(context=ssl.create_default_context())
                     smtp.ehlo()
                 smtp.login(cfg.smtp_username, cfg.smtp_password)
+                delivery_started = True
                 smtp.send_message(email)
         return "sent", now_sa_naive(), None, diagnostics
     except smtplib.SMTPAuthenticationError as exc:
         return "failed", None, "SMTP authentication failed. For Microsoft 365, verify the mailbox credentials and enable authenticated SMTP for this mailbox. " + str(exc), diagnostics
     except Exception as exc:
+        diagnostics["delivery_uncertain"] = delivery_started
         return "failed", None, str(exc)[:1000], diagnostics

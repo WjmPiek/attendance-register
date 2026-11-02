@@ -891,7 +891,7 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
         <nav className="staff-page-navigation" aria-label="HR Staff navigation"><button type="button" className="glass-button" onClick={() => setActiveSubTab('menu')}>← HR Staff</button><span>{staffPages.find(page => page.id === activeSubTab)?.title || 'Staff ID Card'}</span></nav>}
 
       {activeSubTab === 'proof' && canManageStaff && <DocumentUploaders franchiseId={isSuperUser ? selectedFranchiseId : ''}/>}
-      {activeSubTab === 'proof' && (canManageStaff || canImportDocuments) && <section className="form-card"><h2>Upload proof</h2><p>Import all three documents for the same branch, deceased and MF number. The invoice must be fully paid before approving any commission.</p><div className="staff-proof-links">{staffPages.filter(page => ['invoices', 'receipts', 'mortuary'].includes(page.id)).map(page => <div className="staff-proof-card" key={page.id}><strong>{page.title}</strong><button type="button" className="link-button" onClick={() => setActiveSubTab(page.id)}>Import file →</button></div>)}</div></section>}
+      {activeSubTab === 'proof' && (canManageStaff || canImportDocuments) && <section className="form-card"><h2>Upload proof</h2><p>Import all three documents for the same branch, deceased and MF number. Qualifying commissions approve automatically once the invoice is fully paid.</p><div className="staff-proof-links">{staffPages.filter(page => ['invoices', 'receipts', 'mortuary'].includes(page.id)).map(page => <div className="staff-proof-card" key={page.id}><strong>{page.title}</strong><button type="button" className="link-button" onClick={() => setActiveSubTab(page.id)}>Import file →</button></div>)}</div></section>}
       {activeSubTab === 'branches' && canManageStaff && <BranchCommissionHub route={staffRoute} onNavigate={navigateStaff} branchId={viewBranchId} onBranchChange={changeStaffBranch} key={selectedFranchiseId || 'own'} franchiseId={isSuperUser ? selectedFranchiseId : ''} />}
       {activeSubTab === 'invoices' && (canManageStaff || canImportDocuments) && <MFInvoice key={selectedFranchiseId || 'own'} franchiseId={isSuperUser ? selectedFranchiseId : ''} />}
       {activeSubTab === 'receipts' && (canManageStaff || canImportDocuments) && <MFFileReceipt key={selectedFranchiseId || 'own'} franchiseId={isSuperUser ? selectedFranchiseId : ''} canManage={canManageStaff} />}
@@ -997,7 +997,7 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
       ) : null}
 
       {msg ? <p className="success">{msg}</p> : null}
-      {err ? <p className="error">Staff data could not load: {err}. Check the backend service and refresh.</p> : null}
+      {err ? <p className="error">{err}</p> : null}
 
       {activeSubTab === 'card' && createdCard ? (
         <section className="form-card newly-created-id-page">

@@ -6,7 +6,7 @@ import json
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, EmailStr
 from typing import Literal
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -17,6 +17,72 @@ from app.models.core import User
 
 router = APIRouter()
 COMMISSION_TYPES = {"removals","grave_service","full_funeral_service","cremation_service","church_service","invoice_commission","joinings","overtime","service_other_branch"}
+
+
+class DeliverySettingsIn(BaseModel):
+    franchise_user_id: int | None = None
+    recipient_email: EmailStr | None = None
+    month_key: str = Field(pattern=r'^\d{4}-\d{2}$')
+    period_start: date
+    period_end: date
+    send_on: datetime
+
+
+def delivery_scope(db, user, fid):
+    roles, _, _, _, _ = _profile(db, user)
+    if not {'FranchiseUser', 'SuperUser'} & roles:
+        raise HTTPException(403, 'Only the franchise holder can nominate finance recipients or change monthly dates.')
+    selected = _franchise_scope(db, user, fid)
+    if not selected:
+        raise HTTPException(400, 'Select a franchise holder.')
+    return selected
+
+
+@router.get('/delivery-settings')
+def delivery_settings(month: str | None = None, franchise_user_id: int | None = None, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    from app.services.commission_automation import default_report
+    from app.services.email_service import get_email_config
+    fid = delivery_scope(db, current_user, franchise_user_id)
+    try:
+        defaults = default_report(datetime.strptime(month, '%Y-%m') if month else None)
+    except ValueError:
+        raise HTTPException(400, 'Select a valid report month.')
+    settings = db.execute(text('SELECT recipient_email FROM commission_delivery_settings WHERE franchise_user_id=:fid'), {'fid': fid}).mappings().first()
+    report = db.execute(text('SELECT * FROM commission_monthly_reports WHERE franchise_user_id=:fid AND month_key=:month'), {'fid': fid, 'month': defaults['month_key']}).mappings().first()
+    history = db.execute(text('''SELECT id,month_key,period_start,period_end,send_on,recipient_email,status,sent_at,error_message
+        FROM commission_monthly_reports WHERE franchise_user_id=:fid ORDER BY month_key DESC LIMIT 12'''), {'fid': fid}).mappings().all()
+    return {'recipient_email': settings['recipient_email'] if settings else None, 'report': dict(report) if report else defaults,
+            'history': [dict(row) for row in history], 'email_configured': get_email_config().configured}
+
+
+@router.put('/delivery-settings')
+def save_delivery_settings(payload: DeliverySettingsIn, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    from app.core.timezone import to_sa
+    fid = delivery_scope(db, current_user, payload.franchise_user_id)
+    try:
+        datetime.strptime(payload.month_key, '%Y-%m')
+    except ValueError:
+        raise HTTPException(400, 'Select a valid report month.')
+    send_on = to_sa(payload.send_on)
+    if payload.period_start > payload.period_end or send_on.date() < payload.period_end:
+        raise HTTPException(400, 'The cutoff must follow the start date, and the send date must be on or after the cutoff.')
+    db.execute(text('SELECT pg_advisory_xact_lock(:namespace,:fid)'), {'namespace': 15016, 'fid': fid})
+    status = db.execute(text('SELECT status FROM commission_monthly_reports WHERE franchise_user_id=:fid AND month_key=:month'), {'fid': fid, 'month': payload.month_key}).scalar()
+    if status in {'sent', 'sending', 'uncertain'}:
+        raise HTTPException(409, 'This report has already been sent or delivery needs checking. Its dates cannot be changed. Later approvals carry to the next unsent report.')
+    db.execute(text('''INSERT INTO commission_delivery_settings(franchise_user_id,recipient_email,updated_by_user_id)
+        VALUES(:fid,:email,:actor) ON CONFLICT(franchise_user_id) DO UPDATE SET recipient_email=EXCLUDED.recipient_email,
+        updated_by_user_id=EXCLUDED.updated_by_user_id,updated_at=NOW()'''), {'fid': fid, 'email': str(payload.recipient_email).lower() if payload.recipient_email else None, 'actor': current_user.id})
+    db.execute(text('''INSERT INTO commission_monthly_reports(franchise_user_id,month_key,period_start,period_end,send_on)
+        VALUES(:fid,:month,:first,:last,:send) ON CONFLICT(franchise_user_id,month_key) DO UPDATE SET
+        period_start=EXCLUDED.period_start,period_end=EXCLUDED.period_end,send_on=EXCLUDED.send_on,
+        status='scheduled',error_message=NULL,next_attempt_at=NULL'''),
+        {'fid': fid, 'month': payload.month_key, 'first': payload.period_start, 'last': payload.period_end, 'send': send_on})
+    from app.services.audit import write_audit_log
+    write_audit_log(db, actor_user_id=current_user.id, franchise_user_id=fid, action='commission_delivery_updated',
+                    entity_type='commission_delivery_settings', new_values=payload.model_dump(mode='json'))
+    db.commit()
+    return {'saved': True}
 
 class StructureIn(BaseModel):
     franchise_user_id: int | None = None
@@ -297,12 +363,12 @@ def create_entry(payload: EntryIn, current_user: User = Depends(get_current_user
     db.execute(text('SELECT pg_advisory_xact_lock(:namespace,:fid)'), {'namespace': 15015, 'fid': fid})
     from app.services.service_claims import calculate_claim, insert_surcharge
     quote = calculate_claim(db, current_user, payload, participant)
-    status = 'pending' if own or not quote['documents_valid'] else 'approved'
+    status = 'approved' if quote['documents_valid'] else 'pending'
     proof = quote['proof'] if quote['documents_valid'] else {}
     metadata = {**proof, 'claim_deceased': payload.claim_deceased, 'commission_role': payload.commission_role,
-                'claim_notice': quote['notice'], 'calculation_type': 'fixed', 'deceased': payload.claim_deceased}
+                'claim_notice': quote['notice'], 'calculation_type': 'fixed', 'deceased': payload.claim_deceased, 'automatic_approval': quote['documents_valid']}
     reviewed_at = datetime.now() if status == 'approved' else None
-    reviewed_by = current_user.id if status == 'approved' else None
+    reviewed_by = None
     row = db.execute(text("""INSERT INTO commission_entries(franchise_user_id,employee_user_id,commission_type,service_date,
         reference,quantity,applied_rate,calculated_amount,notes,branch_name,created_by_user_id,status,submitted_at,
         reviewed_at,reviewed_by_user_id,last_edited_by_user_id,earning_branch_id,mortuary_document_id,receipt_document_id,invoice_document_id,source_metadata)
@@ -311,14 +377,16 @@ def create_entry(payload: EntryIn, current_user: User = Depends(get_current_user
          'rate': Decimal(quote['rate']), 'notes': payload.notes, 'branch': quote['branch_name'], 'actor': current_user.id,
          'status': status, 'reviewed_at': reviewed_at, 'reviewed_by': reviewed_by, 'bid': quote['branch_id'],
          'book': proof.get('mortuary_document_id'), 'receipt': proof.get('receipt_document_id'), 'invoice': proof.get('invoice_document_id'), 'meta': json.dumps(metadata, default=str)}).mappings().first()
-    _audit(db, row['id'], 'service_claim_submitted' if status == 'pending' else 'service_claim_approved', current_user.id, new=dict(row))
+    _audit(db, row['id'], 'service_claim_submitted' if status == 'pending' else 'service_claim_auto_approved', current_user.id, new=dict(row))
     if status == 'pending':
         for recipient in _reviewer_ids(db, participant):
-            _notify(db, recipient, 'Service commission awaiting holder approval', f"{participant['full_name']} · {payload.commission_type} · MF {payload.reference}", row['id'], 'warning')
+            _notify(db, recipient, 'Service commission awaiting documents', f"{participant['full_name']} · {payload.commission_type} · MF {payload.reference}", row['id'], 'warning')
         if not quote['documents_valid']:
             notify_document_uploaders(db, fid, row['id'], payload.reference, quote['notice'])
-    elif quote['additional_fee']:
-        insert_surcharge(db, current_user, quote['additional_fee'])
+    else:
+        _notify(db, uid, 'Commission automatically approved', f"MF {payload.reference}: documents match and the invoice is fully paid.", row['id'], 'success')
+        if quote['additional_fee']:
+            insert_surcharge(db, current_user, quote['additional_fee'])
     db.commit()
     return {**dict(row), 'documents_valid': quote['documents_valid'], 'notice': quote['notice']}
 
@@ -411,7 +479,7 @@ def entry_detail(entry_id:int,current_user:User=Depends(get_current_user),db:Ses
     return dict(selected)
 
 
-def _review_service(entry_id, payload, user, db):
+def _review_service(entry_id, payload, user, db, automatic=False):
     roles, _, _, _, _ = _profile(db, user)
     if not {'FranchiseUser', 'SuperUser'} & roles:
         raise HTTPException(403, 'Only the franchise holder may approve or reject service claims.')
@@ -431,18 +499,18 @@ def _review_service(entry_id, payload, user, db):
             raise HTTPException(400, quote['notice'])
         proof = quote['proof']
         meta = {**proof, 'claim_deceased': payload.claim_deceased, 'commission_role': payload.commission_role,
-                'calculation_type': 'fixed', 'deceased': payload.claim_deceased}
+                'calculation_type': 'fixed', 'deceased': payload.claim_deceased, 'automatic_approval': automatic}
         updated = db.execute(text("""UPDATE commission_entries SET commission_type=:type,service_date=:day,reference=:ref,
             quantity=1,applied_rate=:rate,calculated_amount=:rate,notes=:notes,branch_name=:branch,earning_branch_id=:bid,
-            status='approved',review_notes=:note,reviewed_at=NOW(),reviewed_by_user_id=:actor,last_edited_by_user_id=:actor,updated_at=NOW(),
+            status='approved',review_notes=:note,reviewed_at=NOW(),reviewed_by_user_id=:reviewer,last_edited_by_user_id=:actor,updated_at=NOW(),
             mortuary_document_id=:book,receipt_document_id=:receipt,invoice_document_id=:invoice,source_metadata=:meta WHERE id=:id RETURNING *"""),
             {'type': payload.commission_type, 'day': payload.service_date, 'ref': payload.reference.strip(), 'rate': Decimal(quote['rate']),
              'notes': payload.notes, 'branch': quote['branch_name'], 'bid': quote['branch_id'], 'note': payload.review_notes,
-             'actor': user.id, 'book': proof['mortuary_document_id'], 'receipt': proof['receipt_document_id'], 'invoice': proof['invoice_document_id'], 'meta': json.dumps(meta, default=str), 'id': entry_id}).mappings().first()
-        _audit(db, entry_id, 'service_claim_approved', user.id, old=dict(old), new=dict(updated), note=payload.review_notes)
+             'actor': user.id, 'reviewer': None if automatic else user.id, 'book': proof['mortuary_document_id'], 'receipt': proof['receipt_document_id'], 'invoice': proof['invoice_document_id'], 'meta': json.dumps(meta, default=str), 'id': entry_id}).mappings().first()
+        _audit(db, entry_id, 'service_claim_auto_approved' if automatic else 'service_claim_approved', user.id, old=dict(old), new=dict(updated), note=payload.review_notes)
         if quote['additional_fee']:
             insert_surcharge(db, user, quote['additional_fee'])
-    _notify(db, int(old['employee_user_id']), 'Service claim reviewed', f'MF {payload.reference}: {payload.status}.', entry_id, 'success' if payload.status == 'approved' else 'warning')
+    _notify(db, int(old['employee_user_id']), 'Commission automatically approved' if automatic else 'Service claim reviewed', f'MF {payload.reference}: {payload.status}.', entry_id, 'success' if payload.status == 'approved' else 'warning')
     return dict(db.execute(text('SELECT * FROM commission_entries WHERE id=:id'), {'id': entry_id}).mappings().one())
 
 

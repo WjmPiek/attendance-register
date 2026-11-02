@@ -7,7 +7,7 @@ import json
 from pathlib import PurePath
 from typing import Literal
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import BackgroundTasks, APIRouter, Depends, File, HTTPException, UploadFile
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import text
@@ -252,7 +252,7 @@ def quote_digest(rows):
 
 
 @router.post('/import')
-def import_books(payload: ImportIn, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def import_books(payload: ImportIn, current_user: User = Depends(get_current_user), db: Session = Depends(get_db), background_tasks: BackgroundTasks = None):
     if not payload.confirmed_franchise:
         raise HTTPException(400, 'Confirm that every book belongs to the selected franchise.')
     try:
@@ -277,7 +277,10 @@ def import_books(payload: ImportIn, current_user: User = Depends(get_current_use
         from app.services.audit import write_audit_log
         write_audit_log(db, actor_user_id=current_user.id, franchise_user_id=fid, action='mortuary_books_staged', entity_type='commission_documents', new_values={'document_ids': ids})
         db.commit()
-        return {'created': 0, 'saved_books': len(ids) - duplicates, 'skipped_duplicates': duplicates, 'document_ids': ids, 'totals': {}, 'message': 'Books saved. Commission is blocked until matching MF File Receipts are present. Review matched commissions on the MF File Receipt tab.'}
+        if background_tasks is not None:
+            from app.services.commission_automation import reconcile_holder
+            background_tasks.add_task(reconcile_holder, fid)
+        return {'created': 0, 'saved_books': len(ids) - duplicates, 'skipped_duplicates': duplicates, 'document_ids': ids, 'totals': {}, 'message': 'Books saved. Commission validates and approves automatically when the matching MF Invoice and all payment receipts are present and the invoice is fully paid.'}
     except IntegrityError:
         db.rollback()
         raise HTTPException(409, 'An import changed at the same time. Refresh the preview before importing again.')

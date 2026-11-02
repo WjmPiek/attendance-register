@@ -5,7 +5,7 @@ from hashlib import sha256
 import json
 from pathlib import PurePath
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import BackgroundTasks, APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import Response
 from itsdangerous import BadSignature
 from pydantic import BaseModel, Field, model_validator
@@ -319,7 +319,7 @@ def preview_invoices(franchise_user_id: int | None = None, external_branch_id: i
 
 
 @router.post('/invoices/stage')
-def stage_invoices(payload: InvoiceStageIn, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def stage_invoices(payload: InvoiceStageIn, current_user: User = Depends(get_current_user), db: Session = Depends(get_db), background_tasks: BackgroundTasks = None):
     if not payload.confirmed_franchise:
         raise HTTPException(400, 'Confirm the invoice details and franchise first.')
     try:
@@ -339,6 +339,9 @@ def stage_invoices(payload: InvoiceStageIn, current_user: User = Depends(get_cur
             ids.append(doc_id); duplicates += duplicate
         write_audit_log(db, actor_user_id=current_user.id, franchise_user_id=fid, action='mf_invoices_staged', entity_type='commission_documents', new_values={'document_ids': ids})
         db.commit()
+        if background_tasks is not None:
+            from app.services.commission_automation import reconcile_holder
+            background_tasks.add_task(reconcile_holder, fid)
         return {'document_ids': ids, 'saved': len(ids) - duplicates, 'duplicates': duplicates}
     except Exception:
         db.rollback(); raise
@@ -384,7 +387,7 @@ def preview(franchise_user_id: int | None = None, external_branch_id: int | None
 
 
 @router.post('/stage')
-def stage(payload: StageIn, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def stage(payload: StageIn, current_user: User = Depends(get_current_user), db: Session = Depends(get_db), background_tasks: BackgroundTasks = None):
     if not payload.confirmed_franchise:
         raise HTTPException(400, 'Confirm the franchise and employee selections.')
     try:
@@ -413,6 +416,9 @@ def stage(payload: StageIn, current_user: User = Depends(get_current_user), db: 
             ids.append(doc_id); duplicates += duplicate
         write_audit_log(db, actor_user_id=current_user.id, franchise_user_id=fid, action='mf_receipts_staged', entity_type='commission_documents', new_values={'document_ids': ids})
         db.commit()
+        if background_tasks is not None:
+            from app.services.commission_automation import reconcile_holder
+            background_tasks.add_task(reconcile_holder, fid)
         return {'document_ids': ids, 'saved': len(ids) - duplicates, 'duplicates': duplicates}
     except Exception:
         db.rollback(); raise
@@ -571,6 +577,32 @@ def calculate(payload: CalculateIn, current_user: User = Depends(get_current_use
             'quote_token': signer().dumps({'kind': 'paired_commission_quote', 'user_id': current_user.id, 'fid': fid, 'ids': sorted(set(payload.document_ids)), 'digest': plan_digest(plan)})}
 
 
+
+
+def store_ready_plan(db, fid, current_user, plan, automatic=False):
+    ids = []
+    for item in plan:
+        if item['state'] != 'ready':
+            continue
+        from app.services.receipt_commissions import require_payment_proof
+        require_payment_proof(db, fid, item['earning_branch_id'], item['reference'], item['mortuary_document_id'], item['receipt_document_id'], item['invoice_document_id'])
+        item = {**item, 'automatic_approval': automatic}
+        reference = item['reference'] if item['category'] == 'removals' else f"{item['reference']} / Invoice {item['invoice_number']}"
+        notes = '\n'.join(f'{k}: {v}' for k, v in item.items() if k not in {'notes', 'state', 'reason'} and v is not None)
+        if item.get('notes'):
+            notes += '\n' + '\n'.join(f'{k}: {item["notes"].get(k, "-")}' for k in ('deceased', 'id_number', 'collected_at', 'driver_in', 'date_in', 'time_in'))
+        entry = db.execute(text('''INSERT INTO commission_entries(franchise_user_id,employee_user_id,commission_type,service_date,reference,quantity,
+            applied_rate,calculated_amount,invoice_value_before_tax,notes,branch_name,created_by_user_id,status,submitted_at,reviewed_at,
+            reviewed_by_user_id,last_edited_by_user_id,mortuary_document_id,receipt_document_id,invoice_document_id,source_metadata,earning_branch_id)
+            VALUES(:fid,:uid,:type,:day,:ref,1,:rate,:amount,:base,:notes,:branch,:actor,'approved',NOW(),NOW(),:reviewer,:actor,:book,:receipt,:invoice,:metadata,:earning_branch) RETURNING *'''),
+            {'fid': fid, 'uid': item['employee_user_id'], 'type': item['category'], 'day': date.fromisoformat(item['service_date']), 'ref': reference[:255],
+             'rate': Decimal(item['rate']), 'amount': Decimal(item['amount']), 'base': Decimal(item['base_amount']) if item.get('base_amount') is not None else None,
+             'notes': notes, 'branch': item['branch'], 'actor': current_user.id, 'reviewer': None if automatic else current_user.id, 'book': item['mortuary_document_id'], 'receipt': item['receipt_document_id'], 'invoice': item['invoice_document_id'], 'metadata': json.dumps(item, default=str),'earning_branch':item['earning_branch_id']}).mappings().first()
+        _audit(db, entry['id'], 'matched_documents_auto_approved' if automatic else 'matched_documents_commission', current_user.id, new=dict(entry))
+        _notify(db, item['employee_user_id'], 'Matched commission added', f"{COMMISSION_LABELS[item['category']]} · {reference}", entry['id'], 'success')
+        ids.append(entry['id'])
+    return ids
+
 @router.post('/settle')
 def settle(payload: CalculateIn, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     from app.api.commission import _profile
@@ -589,26 +621,7 @@ def settle(payload: CalculateIn, current_user: User = Depends(get_current_user),
         plan = calculate_plan(db, fid, payload.document_ids, current_user)
         if saved['digest'] != plan_digest(plan):
             raise HTTPException(409, 'Documents, employee eligibility or rates changed. Calculate again.')
-        ids = []
-        for item in plan:
-            if item['state'] != 'ready':
-                continue
-            from app.services.receipt_commissions import require_payment_proof
-            require_payment_proof(db, fid, item['earning_branch_id'], item['reference'], item['mortuary_document_id'], item['receipt_document_id'], item['invoice_document_id'])
-            reference = item['reference'] if item['category'] == 'removals' else f"{item['reference']} / Invoice {item['invoice_number']}"
-            notes = '\n'.join(f'{k}: {v}' for k, v in item.items() if k not in {'notes', 'state', 'reason'} and v is not None)
-            if item.get('notes'):
-                notes += '\n' + '\n'.join(f'{k}: {item["notes"].get(k, "-")}' for k in ('deceased', 'id_number', 'collected_at', 'driver_in', 'date_in', 'time_in'))
-            entry = db.execute(text('''INSERT INTO commission_entries(franchise_user_id,employee_user_id,commission_type,service_date,reference,quantity,
-                applied_rate,calculated_amount,invoice_value_before_tax,notes,branch_name,created_by_user_id,status,submitted_at,reviewed_at,
-                reviewed_by_user_id,last_edited_by_user_id,mortuary_document_id,receipt_document_id,invoice_document_id,source_metadata,earning_branch_id)
-                VALUES(:fid,:uid,:type,:day,:ref,1,:rate,:amount,:base,:notes,:branch,:actor,'approved',NOW(),NOW(),:actor,:actor,:book,:receipt,:invoice,:metadata,:earning_branch) RETURNING *'''),
-                {'fid': fid, 'uid': item['employee_user_id'], 'type': item['category'], 'day': date.fromisoformat(item['service_date']), 'ref': reference[:255],
-                 'rate': Decimal(item['rate']), 'amount': Decimal(item['amount']), 'base': Decimal(item['base_amount']) if item.get('base_amount') is not None else None,
-                 'notes': notes, 'branch': item['branch'], 'actor': current_user.id, 'book': item['mortuary_document_id'], 'receipt': item['receipt_document_id'], 'invoice': item['invoice_document_id'], 'metadata': json.dumps(item, default=str),'earning_branch':item['earning_branch_id']}).mappings().first()
-            _audit(db, entry['id'], 'matched_documents_commission', current_user.id, new=dict(entry))
-            _notify(db, item['employee_user_id'], 'Matched commission added', f"{COMMISSION_LABELS[item['category']]} · {reference}", entry['id'], 'success')
-            ids.append(entry['id'])
+        ids = store_ready_plan(db, fid, current_user, plan)
         db.commit()
         return {'created': len(ids), 'entry_ids': ids, 'blocked': sum(r['state'] == 'blocked' for r in plan)}
     except IntegrityError:

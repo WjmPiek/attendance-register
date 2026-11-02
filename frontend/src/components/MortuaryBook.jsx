@@ -94,7 +94,7 @@ export default function MortuaryBook({ franchiseId }) {
       <h4>Indicative fees per employee</h4>
       <div className="mortuary-rates">{totals.map(r => <div className="mortuary-total" key={r.name}><strong>{r.name}</strong><span>{r.quantity} removal(s)</span><strong>{r.missing ? 'Configure missing fees' : money(r.total)}</strong></div>)}</div>
       <p><strong>Indicative removal fees: {money(quote.total)}</strong></p><p>No commission is earned by saving a book. A matching MF Invoice, receipts covering the full invoice, and an enabled employee category are required.</p>
-      {quote.items.some(r => !r.duplicate && r.amount === null) && <p className="error-message">Fees can be configured before approving matched commissions. Saving a book does not earn commission.</p>}
+      {quote.items.some(r => !r.duplicate && r.amount === null) && <p className="error-message">The holder must configure missing fees before commissions can approve automatically. The matching invoice and receipts are also required.</p>}
       <label className="mortuary-confirm"><input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} disabled={busy}/>I confirm every book belongs to this franchise, the staff and roles are correct, and the books should be saved for matching with MF File Receipts.{preview.errors.length > 0 ? ' I have reviewed the pages that will be excluded.' : ''}</label>
       <button type="button" className="primary-button" disabled={busy || !confirmed} onClick={importBooks}>Save books for matching</button>
     </div>}

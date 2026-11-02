@@ -21,7 +21,7 @@ export default function MFInvoice({ franchiseId }) {
   const save = () => run(async () => {
     const result = await apiRequest('/receipt-commissions/invoices/stage', { method: 'POST', body: JSON.stringify({ preview_token: preview.preview_token, confirmed_franchise: confirmed }) })
     setPreview(null); setFiles([]); setConfirmed(false); await load()
-    setNotice(`${result.saved} invoices saved; ${result.duplicates} duplicates skipped. Import the matching Mortuary Book and all payment receipts, then review commissions under MF File Receipt.`)
+    setNotice(`${result.saved} invoices saved; ${result.duplicates} duplicates skipped. Qualifying commissions approve automatically once the matching Mortuary Book and all receipts are imported and the invoice is fully paid.`)
   })
   const download = document => run(async () => {
     const blob = await apiBlob(`/receipt-commissions/invoices/${document.id}/download${suffix}`)

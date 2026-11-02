@@ -303,14 +303,14 @@ def _preserve_blank_identity_values(values: dict) -> dict:
     return cleaned
 
 
-def _ensure_user_exists(db: Session, user_id: int) -> None:
+def _ensure_user_exists(db: Session, user_id: int, require_active: bool = True) -> None:
     row = db.execute(text("""
         SELECT id
         FROM users
         WHERE id = :user_id
-          AND COALESCE(is_active, TRUE) = TRUE
+          AND (:require_active = FALSE OR COALESCE(is_active, TRUE) = TRUE)
         LIMIT 1
-    """), {"user_id": user_id}).mappings().first()
+    """), {"user_id": user_id, "require_active": require_active}).mappings().first()
     if not row:
         raise HTTPException(status_code=400, detail="Staff member must be linked to an active user account")
 
@@ -364,9 +364,10 @@ def _ensure_staff_integrity(
     office_area_id: int | None = None,
     manager_user_id: int | None = None,
     require_office_assignment: bool = False,
+    require_active_user: bool = True,
 ) -> None:
     role_name = "ManagerUser" if staff_type == "manager" else "EmployeeUser"
-    _ensure_user_exists(db, user_id)
+    _ensure_user_exists(db, user_id, require_active=require_active_user)
     _ensure_user_role(db, user_id, role_name)
     _ensure_franchise_exists(db, franchise_user_id)
     if office_area_id is not None:
@@ -2010,7 +2011,8 @@ def update_manager(manager_id: int, payload: UpdateManagerRequest, current_user:
         user_id=row["user_id"],
         franchise_user_id=row["franchise_user_id"],
         office_area_id=values.get("office_area_id") if "office_area_id" in values else None,
-        require_office_assignment=True,
+        require_office_assignment=bool(values.get("is_active", row.get("is_active", True))),
+        require_active_user=bool(values.get("is_active", row.get("is_active", True))),
     )
     _save_staff_commissions(db, payload, row["franchise_user_id"], row["user_id"], current_user.id)
     write_audit_log(db, actor_user_id=current_user.id, action="update", entity_type="manager", entity_id=manager_id, franchise_user_id=row["franchise_user_id"], old_values=dict(row), new_values=values, note="Manager edited")
@@ -2081,7 +2083,8 @@ def update_employee(employee_id: int, payload: UpdateEmployeeRequest, current_us
         franchise_user_id=row["franchise_user_id"],
         office_area_id=values.get("office_area_id") if "office_area_id" in values else None,
         manager_user_id=values.get("manager_user_id", row.get("manager_user_id")),
-        require_office_assignment=True,
+        require_office_assignment=bool(values.get("is_active", row.get("is_active", True))),
+        require_active_user=bool(values.get("is_active", row.get("is_active", True))),
     )
     _save_staff_commissions(db, payload, row["franchise_user_id"], row["user_id"], current_user.id)
     write_audit_log(db, actor_user_id=current_user.id, action="update", entity_type="employee", entity_id=employee_id, franchise_user_id=row["franchise_user_id"], old_values=dict(row), new_values=values, note="Employee edited")
