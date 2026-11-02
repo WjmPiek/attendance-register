@@ -107,6 +107,8 @@ def test_manual_categories_require_the_selected_branch_and_store_it(database):
     assert require_manual_eligibility(database,person,'joinings',102)==102
     database.execute(text('CREATE TABLE commission_structures(id INTEGER PRIMARY KEY,franchise_user_id INT,commission_type TEXT,label TEXT,rate NUMERIC,overtime_multiplier NUMERIC,is_active BOOLEAN)'))
     database.execute(text("INSERT INTO commission_structures VALUES(1,2,'joinings','Joinings',25,NULL,TRUE)"));database.commit()
+    quote_and_import(database,import_payload([dict(record(),branch='EXAMPLE SOUTH',reference='JOIN-BRANCH')]))
+    stage_receipt(database,[dict(receipt(),branch='EXAMPLE SOUTH',reference='JOIN-BRANCH')],people=())
     saved=commission.create_entry(commission.EntryIn(employee_user_id=11,commission_type='joinings',service_date='2026-11-02',reference='JOIN-BRANCH',earning_branch_id=102),OWNER,database)
     assert saved['earning_branch_id']==102 and saved['branch_name']=='EXAMPLE SOUTH'
 

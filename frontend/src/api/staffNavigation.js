@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 
 export const staffPages = [
   { id: 'branches', title: 'All Branches & Commissions', description: 'Staff, commission permissions and reports for every linked branch.' },
+  { id: 'proof', title: 'Upload proof', description: 'Import the compulsory service and payment documents.' },
+  { id: 'invoices', title: 'MF Invoice', description: 'Import and download the original service invoice.' },
   { id: 'receipts', title: 'MF File Receipt', description: 'Import receipts and allocate eligible employee commissions.' },
   { id: 'mortuary', title: 'Mortuary Book', description: 'Import removal records and match drivers and assistants.' },
   { id: 'view', title: 'View Staff', description: 'View and manage your employees and managers.' },

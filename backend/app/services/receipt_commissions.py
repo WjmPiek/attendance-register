@@ -188,3 +188,103 @@ def require_manual_eligibility(db, participant, category, branch_id=None):
     if not enabled_for_branch(db,participant['franchise_user_id'],participant['user_id'],category,branch_id):
         raise HTTPException(403,'This commission is not enabled for this employee at the selected branch.')
     return branch_id
+
+
+def resolve_commission_vat(db, fid, branch_id, invoice):
+    """Cross-check printed VAT against the branch record; do not infer exempt from unknown."""
+    branch = db.execute(text('SELECT vat_number FROM attendance_branches WHERE id=:id AND franchise_user_id=:fid'), {'id': branch_id, 'fid': fid}).mappings().first()
+    settings = db.execute(text('SELECT * FROM receipt_commission_settings WHERE franchise_user_id=:fid AND branch_id IN (0,:branch) ORDER BY branch_id DESC'), {'fid': fid, 'branch': branch_id}).mappings().all()
+    direct = next((r for r in settings if r['branch_id'] == branch_id), None)
+    inherited = next((r for r in settings if r['branch_id'] == 0), None)
+    recorded_number = str((branch or {}).get('vat_number') or '').strip()
+    registered, number, source = None, None, None
+    configuration = direct or inherited
+    if recorded_number:
+        if not re.fullmatch(r'\d{10}', recorded_number):
+            raise HTTPException(400, 'The system branch VAT number is invalid. Correct its registration record before approval.')
+        registered, number, source = True, recorded_number, 'System branch VAT registration'
+    elif direct:
+        registered, number, source = bool(direct['vat_registered']), direct.get('vat_number'), 'Confirmed branch VAT settings'
+    elif inherited and not inherited['vat_registered']:
+        registered, source = False, 'Confirmed holder non-VAT settings'
+    valid_print = invoice.get('vat_issue') is None and isinstance(invoice.get('vat_registered'), bool) and invoice.get('commission_base') is not None
+    if registered is None:
+        if not valid_print:
+            raise HTTPException(400, 'Invoice VAT details are unclear and the system has no confirmed branch VAT status. Confirm it under Business → Configure Hours and Rates.')
+        registered, number, source = invoice['vat_registered'], invoice.get('vat_number'), 'Printed invoice VAT details'
+    total = Decimal(str(invoice['invoice_total']))
+    rate = Decimal(str(configuration['vat_rate'] if configuration else invoice.get('vat_rate') if valid_print and invoice['vat_registered'] else 15)) if registered else Decimal(0)
+    if registered and (not number or not re.fullmatch(r'\d{10}', str(number)) or not rate.is_finite() or not 0 <= rate <= 100):
+        raise HTTPException(400, 'Confirm a valid branch VAT registration number and VAT rate in the system.')
+    compatible = valid_print and invoice['vat_registered'] == registered and (not registered or str(invoice.get('vat_number')) == str(number)) and (not registered or Decimal(str(invoice.get('vat_rate', 0))) == rate)
+    base = Decimal(str(invoice['commission_base'])) if compatible else receipt_base(total, registered, rate)
+    if not base.is_finite() or base < 0 or base > total:
+        raise HTTPException(400, 'Invoice commission base is inconsistent with its total.')
+    return {'commission_base': str(base), 'vat_registered': registered, 'vat_number': number, 'vat_rate': str(rate),
+            'vat_source': source, 'vat_notice': None if compatible else 'Printed VAT details were resolved using the confirmed system branch VAT record.'}
+
+
+def require_payment_proof(db, fid, branch_id, reference, book_id=None, receipt_id=None, invoice_id=None):
+    """Require a fully paid invoice and exact identity across imported evidence."""
+    branch = db.execute(text('SELECT name FROM attendance_branches WHERE id=:id AND franchise_user_id=:fid'),
+                        {'id': branch_id, 'fid': fid}).scalar()
+    if not branch:
+        raise HTTPException(400, 'Select the commission branch before checking payment proof.')
+    reference = str(reference or '')
+    if book_id and receipt_id:
+        reference = reference.split(' / Receipt ', 1)[0].split(' / Invoice ', 1)[0]
+    docs = db.execute(text('''SELECT id,kind,source_data FROM commission_documents
+        WHERE franchise_user_id=:fid AND branch_key=:branch AND mf_key=:mf ORDER BY id'''),
+        {'fid': fid, 'branch': branch_key(branch), 'mf': mf_key(reference)}).mappings().all()
+    books = [d for d in docs if d['kind'] == 'mortuary' and (not book_id or d['id'] == book_id)]
+    invoices = [d for d in docs if d['kind'] == 'invoice' and (not invoice_id or d['id'] == invoice_id)]
+    receipts = [d for d in docs if d['kind'] == 'receipt']
+    if not books or not receipts or len(invoices) != 1:
+        raise HTTPException(400, 'Matching Mortuary Book, MF Invoice and MF File Receipts are compulsory before any commission can be approved for payment. Import all three for this branch and MF number.')
+    invoice = invoices[0]
+    invoice_data = json.loads(invoice['source_data'])
+    invoice_number = normalise(invoice_data.get('invoice_number'))
+    deceased = normalise(invoice_data.get('deceased'))
+    total = Decimal(str(invoice_data.get('invoice_total', '0')))
+    if not deceased or not invoice_number or not total.is_finite() or total <= 0:
+        raise HTTPException(400, 'Invoice must identify the deceased, invoice number and a positive total.')
+    tax = resolve_commission_vat(db, fid, branch_id, invoice_data)
+    book = books[0]
+    book_data = json.loads(book['source_data'])
+    if not normalise(book_data.get('deceased')) or normalise(book_data.get('deceased')) != deceased:
+        raise HTTPException(400, 'Deceased name and surname must match on the Mortuary Book, MF Invoice and every payment receipt.')
+    identities = {str(d.get('id_number')).strip() for d in (book_data, invoice_data) if d.get('id_number')}
+    paid, seen, included = Decimal(0), set(), []
+    for receipt in receipts:
+        data = json.loads(receipt['source_data'])
+        if normalise(data.get('invoice_number')) != invoice_number:
+            raise HTTPException(400, 'Receipt invoice number does not match the MF Invoice. Check the payment evidence.')
+        if not normalise(data.get('deceased')) or normalise(data.get('deceased')) != deceased:
+            raise HTTPException(400, 'Deceased name and surname must match on all three document types.')
+        if data.get('id_number'):
+            identities.add(str(data['id_number']).strip())
+        number = normalise(data.get('receipt_number'))
+        amount = Decimal(str(data.get('gross_received', '0')))
+        if not number or not amount.is_finite() or amount <= 0:
+            raise HTTPException(400, 'Each payment receipt must have its own receipt number and a positive amount received.')
+        if number in seen:
+            raise HTTPException(400, 'Repeated receipt numbers cannot count as additional payments.')
+        seen.add(number); included.append(receipt['id']); paid += amount
+    if len(identities) > 1:
+        raise HTTPException(400, 'MF matches but deceased ID numbers differ across the documents.')
+    if receipt_id and receipt_id not in included:
+        raise HTTPException(400, 'The linked receipt is outside this invoice payment evidence.')
+    if paid < total:
+        raise HTTPException(400, f'Invoice not fully paid: received R {paid:,.2f} of R {total:,.2f}. No commission is payable until the balance is settled.')
+    return {'mortuary_document_id': book['id'], 'receipt_document_id': included[0], 'invoice_document_id': invoice['id'],
+            'invoice_total': str(total), 'total_received': str(paid), 'invoice_number': invoice_data['invoice_number'],
+            'receipt_document_ids': included, **tax}
+
+
+def payment_eligibility(db, row):
+    try:
+        require_payment_proof(db, row['franchise_user_id'], row.get('earning_branch_id'), row['reference'],
+                              row.get('mortuary_document_id'), row.get('receipt_document_id'), row.get('invoice_document_id'))
+        return {'payment_eligible': True, 'payment_block_reason': None}
+    except HTTPException as exc:
+        return {'payment_eligible': False, 'payment_block_reason': exc.detail}

@@ -530,3 +530,12 @@ export async function uploadMFReceipts(files, franchiseId) {
   if (!response.ok) throw await parseApiError(response)
   return response.json()
 }
+
+export async function uploadMFInvoices(files, franchiseId) {
+  const form = new FormData()
+  files.forEach(file => form.append('files', file))
+  const suffix = franchiseId ? `?franchise_user_id=${encodeURIComponent(franchiseId)}` : ''
+  const response = await fetch(`${API_BASE_URL}/receipt-commissions/invoices/preview${suffix}`, { method: 'POST', headers: buildHeaders({}, false), body: form })
+  if (!response.ok) throw await parseApiError(response)
+  return response.json()
+}

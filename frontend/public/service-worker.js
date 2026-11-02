@@ -1,4 +1,4 @@
-const CACHE_NAME = 'attendance-pwa-v5-brand-20260918';
+const CACHE_NAME = 'attendance-pwa-v20-invoice-proof-20261102';
 const APP_SHELL = [
   '/',
   '/index.html',

@@ -69,3 +69,9 @@
 .staff-commission-detail > .form-card { width:100%; max-width:none; }
 .staff-pdf-page iframe { width:100%; min-height:680px; border:1px solid #ded6ea; border-radius:10px; }
 .staff-download-link { color:#673388; font-weight:700; }
+.staff-upload-proof { display:grid; grid-column:1 / -1; gap:12px; padding:18px; border:1px solid #ded6ea; border-radius:14px; background:#fff; min-width:0; }
+.staff-upload-proof p { margin:0; font-size:.875rem; }
+.staff-proof-links { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+.staff-proof-card { display:grid; gap:10px; padding:14px; border:1px solid #ded6ea; border-radius:10px; min-width:0; }
+.staff-proof-card .link-button { width:auto; justify-self:start; text-align:left; }
+@media(max-width:600px) { .staff-proof-links { grid-template-columns:minmax(0,1fr); } }

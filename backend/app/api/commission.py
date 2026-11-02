@@ -302,11 +302,18 @@ def create_entry(payload: EntryIn, current_user: User = Depends(get_current_user
     db.execute(text('SELECT pg_advisory_xact_lock(:namespace,:fid)'), {'namespace': 15015, 'fid': int(participant['franchise_user_id'])})
     _assert_not_duplicate(db, int(participant["franchise_user_id"]), int(participant_user_id), payload)
     rate, amount = _calculate(structure, payload)
+    proof = {}
+    if status == 'approved':
+        from app.services.receipt_commissions import require_payment_proof
+        proof = require_payment_proof(db, participant['franchise_user_id'], earning_branch, payload.reference)
     reviewed_at = datetime.now() if status == "approved" else None
     reviewed_by_user_id = current_user.id if status == "approved" else None
     row = db.execute(text("""INSERT INTO commission_entries(franchise_user_id,employee_user_id,commission_type,service_date,reference,quantity,invoice_value_before_tax,hours,hourly_rate,applied_rate,calculated_amount,notes,branch_name,created_by_user_id,status,submitted_at,reviewed_at,reviewed_by_user_id,last_edited_by_user_id,earning_branch_id)
       VALUES(:fid,:employee,:type,:date,:ref,:qty,:invoice,:hours,:hourly,:rate,:amount,:notes,:branch,:uid,:status,NOW(),:reviewed_at,:reviewed_by,:uid,:earning_branch) RETURNING *"""),
       {"fid":participant["franchise_user_id"],"employee":participant_user_id,"type":payload.commission_type,"date":payload.service_date,"ref":payload.reference.strip(),"qty":payload.quantity,"invoice":payload.invoice_value_before_tax,"hours":payload.hours,"hourly":payload.hourly_rate,"rate":rate,"amount":amount,"notes":payload.notes,"branch":payload.branch_name,"uid":current_user.id,"status":status,"reviewed_at":reviewed_at,"reviewed_by":reviewed_by_user_id,"earning_branch":earning_branch}).mappings().first()
+    if proof:
+        db.execute(text('UPDATE commission_entries SET mortuary_document_id=:mortuary_document_id,receipt_document_id=:receipt_document_id,invoice_document_id=:invoice_document_id WHERE id=:id'), {**proof, 'id': row['id']})
+    row = {**dict(row), **{key: proof[key] for key in ('mortuary_document_id', 'receipt_document_id', 'invoice_document_id') if key in proof}}
     _audit(db, row["id"], "submitted" if status == "pending" else "created_approved", current_user.id, new=dict(row))
     if status == "pending":
         for uid in _reviewer_ids(db, participant):
@@ -356,7 +363,7 @@ def _rows(db, user, employee_user_id=None, from_date=None, to_date=None, status=
         where.append("c.status=:status"); params["status"] = status
     if search:
         where.append("(LOWER(COALESCE(c.reference,'')) LIKE :q OR LOWER(u.full_name) LIKE :q OR LOWER(c.commission_type) LIKE :q)"); params["q"] = f"%{search.lower()}%"
-    return db.execute(text(f"""SELECT c.*,u.full_name employee_name,
+    rows = db.execute(text(f"""SELECT c.*,u.full_name employee_name,
       COALESCE(ep.employee_number,mp.employee_number) employee_number, rv.full_name reviewer_name,
       CASE WHEN mp.id IS NOT NULL THEN 'Manager' ELSE COALESCE(ep.employee_role,'Employee') END staff_role
       FROM commission_entries c JOIN users u ON u.id=c.employee_user_id
@@ -364,11 +371,13 @@ def _rows(db, user, employee_user_id=None, from_date=None, to_date=None, status=
       LEFT JOIN manager_users mp ON mp.user_id=c.employee_user_id
       LEFT JOIN users rv ON rv.id=c.reviewed_by_user_id
       WHERE {' AND '.join(where)} ORDER BY CASE WHEN c.status='pending' THEN 0 ELSE 1 END,c.service_date DESC,c.id DESC"""), params).mappings().all()
+    from app.services.receipt_commissions import payment_eligibility
+    return [{**dict(row), **payment_eligibility(db, row)} for row in rows]
 
 @router.get('/entries')
 def entries(employee_user_id:int|None=None,from_date:date|None=None,to_date:date|None=None,status:str|None=None,search:str|None=None,franchise_user_id:int|None=None,current_user:User=Depends(get_current_user),db:Session=Depends(get_db),earning_branch_id:int|None=None):
     rows = _rows(db,current_user,employee_user_id,from_date,to_date,status,search,franchise_user_id,earning_branch_id)
-    approved = [r for r in rows if r["status"] == "approved"]
+    approved = [r for r in rows if r["status"] == "approved" and r["payment_eligible"]]
     total = sum((Decimal(r["calculated_amount"] or 0) for r in approved), Decimal(0))
     overtime = sum((Decimal(r["calculated_amount"] or 0) for r in approved if r["commission_type"] == "overtime"), Decimal(0))
     counts = {x: sum(1 for r in rows if r["status"] == x) for x in ["pending","approved","rejected","cancelled"]}
@@ -405,6 +414,9 @@ def review(entry_id:int,payload:ReviewIn,current_user:User=Depends(get_current_u
     if payload.status == 'approved':
         from app.services.receipt_commissions import require_manual_eligibility
         earning_branch = require_manual_eligibility(db, participant, payload.commission_type, earning_branch)
+        from app.services.receipt_commissions import require_payment_proof
+        proof = require_payment_proof(db, participant['franchise_user_id'], earning_branch, payload.reference)
+        db.execute(text('UPDATE commission_entries SET mortuary_document_id=:mortuary_document_id,receipt_document_id=:receipt_document_id,invoice_document_id=:invoice_document_id WHERE id=:id'), {**proof, 'id': entry_id})
     db.execute(text('SELECT pg_advisory_xact_lock(:namespace,:fid)'), {'namespace': 15015, 'fid': int(old['franchise_user_id'])})
     _assert_not_duplicate(db, int(old["franchise_user_id"]), int(old["employee_user_id"]), payload, entry_id)
     structure = db.execute(text("SELECT * FROM commission_structures WHERE franchise_user_id=:fid AND commission_type=:type AND is_active=TRUE"),{"fid":participant["franchise_user_id"],"type":payload.commission_type}).mappings().first()
@@ -428,7 +440,10 @@ def bulk_review(payload:BulkReviewIn,current_user:User=Depends(get_current_user)
         _assert_review_allowed(db, current_user, row, participant)
         if payload.status == 'approved':
             from app.services.receipt_commissions import require_manual_eligibility
-            require_manual_eligibility(db, participant, row['commission_type'], row.get('earning_branch_id'))
+            branch = require_manual_eligibility(db, participant, row['commission_type'], row.get('earning_branch_id'))
+            from app.services.receipt_commissions import require_payment_proof
+            proof = require_payment_proof(db, participant['franchise_user_id'], branch, row['reference'])
+            db.execute(text('UPDATE commission_entries SET mortuary_document_id=:mortuary_document_id,receipt_document_id=:receipt_document_id,invoice_document_id=:invoice_document_id WHERE id=:id'), {**proof, 'id': eid})
         db.execute(text("UPDATE commission_entries SET status=:s,review_notes=:n,reviewed_at=NOW(),reviewed_by_user_id=:u,last_edited_by_user_id=:u,updated_at=NOW() WHERE id=:id"),{"s":payload.status,"n":payload.review_notes,"u":current_user.id,"id":eid})
         _audit(db,eid,f"bulk_{payload.status}",current_user.id,note=payload.review_notes)
         _notify(db,int(row["employee_user_id"]),"Commission approved" if payload.status=="approved" else "Commission rejected",f"Your commission reference {row['reference']} was {payload.status}.",eid,"success" if payload.status=="approved" else "danger")
@@ -478,9 +493,9 @@ def _pdf(rows,title):
     data=[["Date","Staff","Type","Reference","Status","Details","Amount"]];total=Decimal(0)
     for r in rows:
         amount=Decimal(r['calculated_amount'] or 0)
-        if r['status']=='approved': total+=amount
+        if r['status']=='approved' and r.get('payment_eligible'): total+=amount
         details=f"{r['hours']} hrs x R{r['hourly_rate']} x {r['applied_rate']}" if r['commission_type']=='overtime' else (f"Invoice R{r['invoice_value_before_tax']} @ {r['applied_rate']}%" if r['commission_type']=='invoice_commission' else f"Qty {r['quantity']} @ R{r['applied_rate']}")
-        data.append([str(r['service_date']),r.get('employee_name',''),r['commission_type'].replace('_',' ').title(),(r['reference'] or '') + (' / ' + r['branch_name'] if r.get('branch_name') else ''),r['status'].title(),details,f"R {amount:,.2f}"])
+        data.append([str(r['service_date']),r.get('employee_name',''),r['commission_type'].replace('_',' ').title(),(r['reference'] or '') + (' / ' + r['branch_name'] if r.get('branch_name') else ''),('Blocked: missing payment proof' if r['status']=='approved' and not r.get('payment_eligible') else r['status'].title()),details,f"R {amount:,.2f}"])
     data.append(["","","","","","APPROVED TOTAL",f"R {total:,.2f}"])
     table=Table(data,colWidths=[20*mm,31*mm,28*mm,27*mm,20*mm,42*mm,22*mm],repeatRows=1)
     table.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.HexColor('#e8edf3')),('GRID',(0,0),(-1,-1),.35,colors.grey),('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),('FONTNAME',(-2,-1),(-1,-1),'Helvetica-Bold'),('FONTSIZE',(0,0),(-1,-1),7),('VALIGN',(0,0),(-1,-1),'TOP'),('ALIGN',(-1,1),(-1,-1),'RIGHT')]))

@@ -6,6 +6,7 @@ import json
 from pathlib import PurePath
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import Response
 from itsdangerous import BadSignature
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import text
@@ -24,6 +25,8 @@ from app.services.receipt_commissions import (
     parse_receipt_pdf, receipt_base, set_enabled_types, branch_options, enabled_for_branch, save_branch_options, CommissionBranchOptions,
 )
 from app.services.audit import write_audit_log
+from app.services.mortuary import normalise
+from app.services.invoice_proof import parse_invoice_pdf
 
 from app.services.attendance_branches import import_scope, import_staff, import_participant, branches, assignment
 
@@ -171,13 +174,14 @@ def save_document(db, fid, kind, record, staff, actor):
     bk, mf = branch_key(record['branch']), mf_key(record['reference'])
     if not mf:
         raise HTTPException(400, 'MF number is missing.')
-    key = record['receipt_number'].strip().casefold() if kind == 'receipt' else mf
+    key = record['receipt_number'].strip().casefold() if kind == 'receipt' else normalise(record['invoice_number']) if kind == 'invoice' else mf
     old = db.execute(text('''SELECT * FROM commission_documents WHERE franchise_user_id=:fid AND kind=:kind AND branch_key=:branch
-        AND (document_key=:key OR (:kind='mortuary' AND mf_key=:mf)) LIMIT 1'''), {'fid': fid, 'kind': kind, 'branch': bk, 'key': key, 'mf': mf}).mappings().first()
+        AND (document_key=:key OR (:kind IN ('mortuary','invoice') AND mf_key=:mf)) LIMIT 1'''), {'fid': fid, 'kind': kind, 'branch': bk, 'key': key, 'mf': mf}).mappings().first()
     if old:
         data = json.loads(old['source_data'])
-        if old['mf_key'] != mf or (kind == 'receipt' and any(data.get(k) != record.get(k) for k in ('gross_received', 'service_date', 'id_number'))):
-            raise HTTPException(409, 'This receipt number was already imported with different details. It cannot be paid again.')
+        immutable = ('gross_received', 'service_date', 'id_number', 'deceased', 'invoice_number') if kind == 'receipt' else ('invoice_number', 'invoice_total', 'deceased', 'service_date', 'vat_number', 'vat_registered', 'commission_base') if kind == 'invoice' else ()
+        if old['mf_key'] != mf or any(data.get(k) != record.get(k) for k in immutable):
+            raise HTTPException(409, 'This document was already imported with different details. It cannot be replaced or paid again.')
         doc_id = old['id']
     else:
         doc_id = db.execute(text('''INSERT INTO commission_documents(franchise_user_id,kind,branch_key,mf_key,document_key,source_data,source_hash,created_by_user_id)
@@ -189,6 +193,86 @@ def save_document(db, fid, kind, record, staff, actor):
         db.execute(text('''INSERT INTO commission_document_staff(document_id,employee_user_id,removal_role)
             VALUES(:doc,:uid,:role) ON CONFLICT(document_id,employee_user_id) DO NOTHING'''), {'doc': doc_id, 'uid': uid, 'role': role})
     return doc_id, bool(old)
+
+
+class InvoiceStageIn(BaseModel):
+    preview_token: str = Field(max_length=2000000)
+    confirmed_franchise: bool = False
+
+
+@router.post('/invoices/preview')
+def preview_invoices(franchise_user_id: int | None = None, files: list[UploadFile] = File(...), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    fid = import_scope(db, current_user, franchise_user_id)
+    if not 1 <= len(files) <= 30:
+        raise HTTPException(400, 'Upload 1–30 MF Invoice PDFs per batch.')
+    records, errors, size = [], [], 0
+    try:
+        for upload in files:
+            name = PurePath((upload.filename or 'invoice.pdf').replace('\\', '/')).name[:255]
+            content = upload.file.read(10 * 1024 * 1024 + 1); size += len(content)
+            if len(content) > 10 * 1024 * 1024 or size > 50 * 1024 * 1024:
+                raise HTTPException(400, 'Maximum 10 MB per PDF and 50 MB per batch.')
+            try:
+                parsed, failures = parse_invoice_pdf(content)
+            except Exception:
+                errors.append({'filename': name, 'error': 'Cannot read this invoice PDF.'}); continue
+            digest = sha256(content).hexdigest()
+            accepted = []
+            for record in parsed:
+                try:
+                    record['earning_branch_id'] = require_branch(db, fid, record['branch'])
+                except HTTPException as exc:
+                    errors.append({'filename': name, 'page': record['page'], 'error': exc.detail}); continue
+                record.update(filename=name, source_hash=digest); accepted.append(record)
+            if accepted:
+                db.execute(text('''INSERT INTO commission_document_files(franchise_user_id,source_hash,filename,file_content,uploaded_by_user_id)
+                    VALUES(:fid,:hash,:name,:content,:actor) ON CONFLICT(franchise_user_id,source_hash) DO NOTHING'''),
+                    {'fid': fid, 'hash': digest, 'name': name, 'content': content, 'actor': current_user.id})
+                records.extend(accepted)
+            errors.extend(dict(error, filename=name) for error in failures)
+            if len(records) + len(errors) > 100:
+                raise HTTPException(400, 'Import up to 100 pages per batch.')
+        db.commit()
+    except Exception:
+        db.rollback(); raise
+    return {'records': records, 'errors': errors, 'preview_token': signer().dumps({'kind': 'invoices', 'user_id': current_user.id, 'franchise_user_id': fid, 'records': records})}
+
+
+@router.post('/invoices/stage')
+def stage_invoices(payload: InvoiceStageIn, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not payload.confirmed_franchise:
+        raise HTTPException(400, 'Confirm the invoice details and franchise first.')
+    try:
+        source = signer().loads(payload.preview_token, max_age=3600)
+        if source.get('kind') != 'invoices' or source.get('user_id') != current_user.id:
+            raise BadSignature('Wrong preview')
+    except BadSignature:
+        raise HTTPException(400, 'Invoice preview expired or invalid. Upload again.')
+    fid = import_scope(db, current_user, source['franchise_user_id'])
+    try:
+        db.execute(text('SELECT pg_advisory_xact_lock(:namespace,:fid)'), {'namespace': 15015, 'fid': fid})
+        ids, duplicates = [], 0
+        for record in source['records']:
+            if not db.execute(text('SELECT 1 FROM commission_document_files WHERE franchise_user_id=:fid AND source_hash=:hash'), {'fid': fid, 'hash': record['source_hash']}).scalar():
+                raise HTTPException(400, 'Original invoice PDF is missing. Upload again.')
+            doc_id, duplicate = save_document(db, fid, 'invoice', record, [], current_user.id)
+            ids.append(doc_id); duplicates += duplicate
+        write_audit_log(db, actor_user_id=current_user.id, franchise_user_id=fid, action='mf_invoices_staged', entity_type='commission_documents', new_values={'document_ids': ids})
+        db.commit()
+        return {'document_ids': ids, 'saved': len(ids) - duplicates, 'duplicates': duplicates}
+    except Exception:
+        db.rollback(); raise
+
+
+@router.get('/invoices/{document_id}/download')
+def download_invoice(document_id: int, franchise_user_id: int | None = None, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    fid = import_scope(db, current_user, franchise_user_id)
+    row = db.execute(text('''SELECT f.file_content FROM commission_documents d JOIN commission_document_files f
+        ON f.franchise_user_id=d.franchise_user_id AND f.source_hash=d.source_hash
+        WHERE d.id=:id AND d.franchise_user_id=:fid AND d.kind='invoice' '''), {'id': document_id, 'fid': fid}).mappings().first()
+    if not row:
+        raise HTTPException(404, 'Saved invoice PDF not found in this franchise.')
+    return Response(content=bytes(row['file_content']), media_type='application/pdf', headers={'Content-Disposition': f'attachment; filename="mf-invoice-{document_id}.pdf"', 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff'})
 
 
 @router.post('/preview')
@@ -279,19 +363,34 @@ def calculate_plan(db, fid, ids, user):
         if not books or not receipts:
             result.append({'mf': mf, 'branch': bk, 'state': 'blocked', 'reason': 'Matching Mortuary Book missing' if not books else 'Matching MF File Receipt missing'})
             continue
-        book = books[0]; book_data = json.loads(book['source_data'])
-        receipts.sort(key=lambda d: bool(book_data.get('id_number') and json.loads(d['source_data']).get('id_number') != book_data['id_number']))
-        for doc in [book, *receipts]:
+        from app.services.receipt_commissions import require_payment_proof
+        try:
+            proof = require_payment_proof(db, fid, matched_branch['id'], mf)
+        except HTTPException as exc:
+            result.append({'mf': mf, 'branch': matched_branch['name'], 'state': 'blocked', 'reason': exc.detail})
+            continue
+        book = next(d for d in docs if d['id'] == proof['mortuary_document_id'])
+        invoice = next(d for d in docs if d['id'] == proof['invoice_document_id'])
+        book_data, invoice_data = json.loads(book['source_data']), json.loads(invoice['source_data'])
+        receipts = [d for d in receipts if d['id'] in proof['receipt_document_ids']]
+        for doc in [book, invoice]:
             data = json.loads(doc['source_data'])
-            people = db.execute(text('SELECT * FROM commission_document_staff WHERE document_id=:id ORDER BY employee_user_id'), {'id': doc['id']}).mappings().all()
+            if doc['kind'] == 'invoice':
+                people = db.execute(text('SELECT DISTINCT employee_user_id,NULL AS removal_role FROM commission_document_staff WHERE document_id IN :ids ORDER BY employee_user_id').bindparams(bindparam('ids', expanding=True)), {'ids': proof['receipt_document_ids']}).mappings().all()
+            else:
+                people = db.execute(text('SELECT * FROM commission_document_staff WHERE document_id=:id ORDER BY employee_user_id'), {'id': doc['id']}).mappings().all()
             category = 'removals' if doc['kind'] == 'mortuary' else 'invoice_commission'
-            matching_receipt = receipts[0] if category == 'removals' else doc
+            matching_receipt = receipts[0]
             receipt = json.loads(matching_receipt['source_data'])
             identity_error = bool(book_data.get('id_number') and receipt.get('id_number') and book_data['id_number'] != receipt['id_number'])
             for staff in people:
                 uid = staff['employee_user_id']
                 line = {'mf': mf, 'branch': data['branch'], 'employee_user_id': uid, 'category': category,
                         'mortuary_document_id': book['id'], 'receipt_document_id': matching_receipt['id'],
+                        'invoice_document_id': invoice['id'], 'invoice_number': invoice_data['invoice_number'],
+                        'invoice_total': proof['invoice_total'], 'total_received': proof['total_received'],
+                        'receipt_document_ids': proof['receipt_document_ids'],
+                        'receipt_numbers': [json.loads(d['source_data'])['receipt_number'] for d in receipts],
                         'earning_branch_id': matched_branch['id'], 'earning_branch_name': matched_branch['name'],
                         'service_date': data['service_date'], 'deceased': receipt.get('deceased') or book_data.get('deceased'),
                         'id_number': receipt.get('id_number') or book_data.get('id_number'),
@@ -307,7 +406,10 @@ def calculate_plan(db, fid, ids, user):
                 except HTTPException:
                     line.update(state='blocked', reason='Employee inactive or outside franchise', employee_name=f'Staff #{uid}')
                 options = option_map(db, fid, uid)
-                existing = db.execute(text("SELECT id FROM commission_entries WHERE employee_user_id=:uid AND commission_type=:type AND " + ('mortuary_document_id=:doc' if category == 'removals' else 'receipt_document_id=:doc')), {'uid': uid, 'type': category, 'doc': doc['id']}).scalar()
+                existing = db.execute(text("SELECT id FROM commission_entries WHERE employee_user_id=:uid AND commission_type=:type AND " + ('mortuary_document_id=:doc' if category == 'removals' else 'invoice_document_id=:doc')), {'uid': uid, 'type': category, 'doc': doc['id']}).scalar()
+                if category == 'invoice_commission' and not existing:
+                    historical = db.execute(text("SELECT id,reference,branch_name FROM commission_entries WHERE franchise_user_id=:fid AND employee_user_id=:uid AND commission_type='invoice_commission' AND invoice_document_id IS NULL"), {'fid': fid, 'uid': uid}).mappings().all()
+                    existing = next((r['id'] for r in historical if mf_key(r['reference'].split(' / Receipt ', 1)[0]) == mf and branch_key(r['branch_name']) == bk), None)
                 if existing:
                     line.update(state='already_recorded', reason='Commission already recorded')
                 elif not options.get(category, {}).get('enabled'):
@@ -317,7 +419,7 @@ def calculate_plan(db, fid, ids, user):
                 elif identity_error:
                     line.update(state='blocked', reason='MF matches but deceased ID numbers differ')
                 if not existing:
-                    reference = book_data['reference'] if category == 'removals' else f"{book_data['reference']} / Receipt {receipt['receipt_number']}"
+                    reference = book_data['reference'] if category == 'removals' else f"{book_data['reference']} / Invoice {invoice_data['invoice_number']}"
                     try:
                         _assert_not_duplicate(db, fid, uid, EntryIn(commission_type=category, service_date=data['service_date'], reference=reference[:255], branch_name=data['branch']))
                     except HTTPException as exc:
@@ -336,12 +438,9 @@ def calculate_plan(db, fid, ids, user):
                         rate = options.get(category, {}).get('rate')
                     if rate is None:
                         rate = settings.get('receipt_percentage')
-                    line.update(rate=str(rate) if rate is not None else None, vat_registered=settings['vat_registered'], vat_rate=str(settings['vat_rate']))
-                    if settings['vat_registered'] is None:
-                        if line['state'] == 'ready': line.update(state='blocked', reason='Confirm franchise VAT registration status')
-                    else:
-                        base = receipt_base(receipt['gross_received'], settings['vat_registered'], settings['vat_rate'])
-                        line.update(base_amount=str(base), vat_number=settings.get('vat_number'), amount=str(money(base * Decimal(str(rate)) / 100)) if rate is not None else None)
+                    line.update(rate=str(rate) if rate is not None else None, vat_registered=proof['vat_registered'], vat_rate=proof['vat_rate'], vat_source=proof['vat_source'], vat_notice=proof['vat_notice'])
+                    base = Decimal(proof['commission_base'])
+                    line.update(base_amount=str(base), vat_number=proof.get('vat_number'), amount=str(money(base * Decimal(str(rate)) / 100)) if rate is not None else None)
                     if rate is None and line['state'] == 'ready':
                         line.update(state='blocked', reason='Receipt commission percentage not configured')
                 result.append(line)
@@ -378,17 +477,19 @@ def settle(payload: CalculateIn, current_user: User = Depends(get_current_user),
         for item in plan:
             if item['state'] != 'ready':
                 continue
-            reference = item['reference'] if item['category'] == 'removals' else f"{item['reference']} / Receipt {item['receipt_number']}"
+            from app.services.receipt_commissions import require_payment_proof
+            require_payment_proof(db, fid, item['earning_branch_id'], item['reference'], item['mortuary_document_id'], item['receipt_document_id'], item['invoice_document_id'])
+            reference = item['reference'] if item['category'] == 'removals' else f"{item['reference']} / Invoice {item['invoice_number']}"
             notes = '\n'.join(f'{k}: {v}' for k, v in item.items() if k not in {'notes', 'state', 'reason'} and v is not None)
             if item.get('notes'):
                 notes += '\n' + '\n'.join(f'{k}: {item["notes"].get(k, "-")}' for k in ('deceased', 'id_number', 'collected_at', 'driver_in', 'date_in', 'time_in'))
             entry = db.execute(text('''INSERT INTO commission_entries(franchise_user_id,employee_user_id,commission_type,service_date,reference,quantity,
                 applied_rate,calculated_amount,invoice_value_before_tax,notes,branch_name,created_by_user_id,status,submitted_at,reviewed_at,
-                reviewed_by_user_id,last_edited_by_user_id,mortuary_document_id,receipt_document_id,source_metadata,earning_branch_id)
-                VALUES(:fid,:uid,:type,:day,:ref,1,:rate,:amount,:base,:notes,:branch,:actor,'approved',NOW(),NOW(),:actor,:actor,:book,:receipt,:metadata,:earning_branch) RETURNING *'''),
+                reviewed_by_user_id,last_edited_by_user_id,mortuary_document_id,receipt_document_id,invoice_document_id,source_metadata,earning_branch_id)
+                VALUES(:fid,:uid,:type,:day,:ref,1,:rate,:amount,:base,:notes,:branch,:actor,'approved',NOW(),NOW(),:actor,:actor,:book,:receipt,:invoice,:metadata,:earning_branch) RETURNING *'''),
                 {'fid': fid, 'uid': item['employee_user_id'], 'type': item['category'], 'day': date.fromisoformat(item['service_date']), 'ref': reference[:255],
                  'rate': Decimal(item['rate']), 'amount': Decimal(item['amount']), 'base': Decimal(item['base_amount']) if item.get('base_amount') is not None else None,
-                 'notes': notes, 'branch': item['branch'], 'actor': current_user.id, 'book': item['mortuary_document_id'], 'receipt': item['receipt_document_id'], 'metadata': json.dumps(item, default=str),'earning_branch':item['earning_branch_id']}).mappings().first()
+                 'notes': notes, 'branch': item['branch'], 'actor': current_user.id, 'book': item['mortuary_document_id'], 'receipt': item['receipt_document_id'], 'invoice': item['invoice_document_id'], 'metadata': json.dumps(item, default=str),'earning_branch':item['earning_branch_id']}).mappings().first()
             _audit(db, entry['id'], 'matched_documents_commission', current_user.id, new=dict(entry))
             _notify(db, item['employee_user_id'], 'Matched commission added', f"{COMMISSION_LABELS[item['category']]} · {reference}", entry['id'], 'success')
             ids.append(entry['id'])
@@ -439,6 +540,8 @@ def report(month: str, franchise_user_id: int | None = None, branch_id: int | No
     rows = _rows(db, current_user, employee_user_id=employee_user_id, from_date=first, to_date=last, status='approved', franchise_user_id=fid)
     grouped = {}
     for row in rows:
+        if not row['payment_eligible']:
+            continue
         metadata = json.loads(row.get('source_metadata') or '{}')
         home = assignment(db, row['employee_user_id']) or {}
         bid = row.get('earning_branch_id') or metadata.get('earning_branch_id') or home.get('branch_id')
@@ -458,12 +561,12 @@ def report(month: str, franchise_user_id: int | None = None, branch_id: int | No
             story.append(Paragraph(escape(name), styles['Heading2'])); employee_total = Decimal(0)
             for category, entries in categories.items():
                 story.append(Paragraph(escape(COMMISSION_LABELS.get(category, category)), styles['Heading3']))
-                data = [[para(x) for x in ('Date', 'MF / Receipt / Document branch', 'Deceased / ID', 'Amount received', 'Commissionable amount', 'Fee / Rate', 'Commission')]]
+                data = [[para(x) for x in ('Date', 'MF / Invoice / Receipts / Branch', 'Deceased / ID', 'Total received', 'Commissionable amount', 'Fee / Rate', 'Commission')]]
                 subtotal = Decimal(0)
                 for row, meta in entries:
                     amount = money(row['calculated_amount']); subtotal += amount
-                    values = [row['service_date'], f"{row['reference']}\n{row.get('branch_name') or ''}", f"{meta.get('deceased') or '—'}\n{meta.get('id_number') or '—'}",
-                              f"R {money(meta['gross_received']):,.2f}" if meta.get('gross_received') else '—',
+                    values = [row['service_date'], f"{row['reference']}\nReceipts: {', '.join(meta.get('receipt_numbers', []))}\n{row.get('branch_name') or ''}", f"{meta.get('deceased') or '—'}\n{meta.get('id_number') or '—'}",
+                              f"R {money(meta.get('total_received') or meta['gross_received']):,.2f}" if meta.get('total_received') or meta.get('gross_received') else '—',
                               f"R {money(row['invoice_value_before_tax']):,.2f}" if row.get('invoice_value_before_tax') is not None else '—',
                               f"{row['applied_rate']}%" if category == 'invoice_commission' else f"{row['applied_rate']}x" if category == 'overtime' else f"R {money(row['applied_rate']):,.2f}", f'R {amount:,.2f}']
                     data.append([para(v) for v in values])

@@ -9,7 +9,7 @@ import Irp5DocumentsPage from './Irp5DocumentsPage'
 import LeavePage from './LeavePage'
 import PayrollPage from './PayrollPage'
 import CommissionPage from './CommissionPage'
-import BusinessInformationPage from './BusinessInformationPage'
+import BusinessPage from './BusinessPage'
 import MyProfilePage from './MyProfilePage'
 import DigitalIdCard from '../components/DigitalIdCard'
 import { getNotifications, markNotificationRead } from '../api/client'
@@ -117,7 +117,7 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
     { id: 'history', label: 'History', visible: isSignCapable || isApprovalCapable },
     { id: 'staff', label: isSuperUser || isFranchiseUser ? 'HR Staff' : 'My Staff', visible: isSuperUser || isFranchiseUser || isManagerUser },
     { id: 'profile', label: 'My Profile', visible: isStaffSelfService },
-    { id: 'business', label: 'Business Information', visible: isFranchiseUser },
+    { id: 'business', label: 'Business', visible: isFranchiseUser },
     { id: 'franchises', label: 'Franchise Approvals', visible: isSuperUser },
   ].filter((tab) => tab.visible), [isSignCapable, isApprovalCapable, isSuperUser, isFranchiseUser, isEmployee, isManagerUser, isFinanceEmployee, isStaffSelfService, canManagePayroll, canUsePayroll])
 
@@ -234,7 +234,7 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
         {activeTab === 'approvals' && (isSuperUser || isFranchiseUser || isManagerUser) ? <AttendanceApprovalPage me={me} /> : null}
         {activeTab === 'staff' && (isSuperUser || isFranchiseUser || isManagerUser || isEmployee) ? <FranchiseStaffPage me={me} onNavigate={openTab} /> : null}
         {activeTab === 'profile' && isStaffSelfService ? <MyProfilePage me={me} /> : null}
-        {activeTab === 'business' && isFranchiseUser ? <BusinessInformationPage /> : null}
+        {activeTab === 'business' && isFranchiseUser ? <BusinessPage me={me} /> : null}
         {activeTab === 'franchises' && isSuperUser ? <FranchiseRegistrationApprovalPage me={me} /> : null}
         {activeTab === 'leave' ? <LeavePage me={me} /> : null}
         {activeTab === 'commission' ? <CommissionPage me={me} /> : null}
