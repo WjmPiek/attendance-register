@@ -43,6 +43,10 @@ class Rates(BaseModel):
     driver_out: Decimal | None = Field(default=None, ge=0, le=1000000, decimal_places=2)
     assistant_in: Decimal | None = Field(default=None, ge=0, le=1000000, decimal_places=2)
     assistant_out: Decimal | None = Field(default=None, ge=0, le=1000000, decimal_places=2)
+    driver_sunday_holiday: Decimal | None = Field(default=None, ge=0, le=1000000, decimal_places=2)
+    assistant_sunday_holiday: Decimal | None = Field(default=None, ge=0, le=1000000, decimal_places=2)
+    driver_other_branch: Decimal | None = Field(default=None, ge=0, le=1000000, decimal_places=2)
+    assistant_other_branch: Decimal | None = Field(default=None, ge=0, le=1000000, decimal_places=2)
 
 
 class Policy(BaseModel):
@@ -192,7 +196,12 @@ def evaluate_import(db, user, payload):
         if not branch_key or not reference_key:
             raise HTTPException(400, 'Branch and MF Number are required.')
         policy = effective_policy(policies, a.employee_user_id)
-        quote = price_removal(record, a.role, policy, effective_policy(policies, 0).get('extra_holidays', []))
+        from app.services.receipt_commissions import branch_key as earning_branch_key
+        other_branch = bool(participant.get('branch_name') and earning_branch_key(participant['branch_name']) != earning_branch_key(record['branch']))
+        try:
+            quote = price_removal(record, a.role, policy, effective_policy(policies, 0).get('extra_holidays', []), other_branch=other_branch, staff_hours=participant)
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(400, f"Check saved working hours for {participant['full_name']} in Edit Staff: {exc}")
         duplicate = identity in seen or bool(db.execute(text('''SELECT 1 FROM mortuary_import_allocations
             WHERE franchise_user_id=:fid AND employee_user_id=:uid AND branch_key=:branch AND reference_key=:ref'''),
             {'fid': fid, 'uid': a.employee_user_id, 'branch': branch_key, 'ref': reference_key}).scalar())

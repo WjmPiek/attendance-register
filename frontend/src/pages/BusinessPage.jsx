@@ -20,7 +20,7 @@ export default function BusinessPage() {
   return <section className="stack-page">
     <nav className="staff-page-navigation" aria-label="Business subtabs">
       <button type="button" className={page === 'profile' ? 'primary-button' : 'glass-button'} aria-current={page === 'profile' ? 'page' : undefined} onClick={() => open('profile')}>Business Information</button>
-      <button type="button" className={page === 'rates' ? 'primary-button' : 'glass-button'} aria-current={page === 'rates' ? 'page' : undefined} onClick={() => open('rates')}>Configure Hours and Rates</button>
+      <button type="button" className={page === 'rates' ? 'primary-button' : 'glass-button'} aria-current={page === 'rates' ? 'page' : undefined} onClick={() => open('rates')}>Commission Rates</button>
     </nav>
     {page === 'rates' ? <CommissionSettingsPage /> : <BusinessInformationPage />}
   </section>

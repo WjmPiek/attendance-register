@@ -2,6 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Literal
 import base64
+import json
 import io
 import zipfile
 from pathlib import Path
@@ -39,7 +40,11 @@ PRESERVE_IF_BLANK_ON_EDIT = {"id_number", "username", "password", "employee_numb
 from app.services.receipt_commissions import CommissionBranchOptions
 
 
+from app.services.staff_hours import StaffWorkDay
+
+
 class CommissionSetup(BaseModel):
+    work_week: list[StaffWorkDay | None] | None = Field(default=None, min_length=7, max_length=7)
     commission_branches: dict[int, CommissionBranchOptions] | None = None
     branch_id: int | None = None
     can_import_commissions: bool | None = None
@@ -1321,7 +1326,7 @@ def list_managers(
                 mu.contact_number,
                 mu.office_address_assigned,
                 COALESCE(mu.work_start_time, '08:00') AS work_start_time,
-                COALESCE(mu.work_end_time, '17:00') AS work_end_time,
+                COALESCE(mu.work_end_time, '17:00') AS work_end_time, mu.work_week,
                 g.area_id AS office_area_id,
                 a.name AS office_name,
                 COALESCE(mu.is_active, TRUE) AS is_active,
@@ -1354,7 +1359,7 @@ def list_managers(
                     mu.contact_number,
                     mu.office_address_assigned,
                     COALESCE(mu.work_start_time, '08:00') AS work_start_time,
-                    COALESCE(mu.work_end_time, '17:00') AS work_end_time,
+                    COALESCE(mu.work_end_time, '17:00') AS work_end_time, mu.work_week,
                     g.area_id AS office_area_id,
                     a.name AS office_name,
                     COALESCE(mu.is_active, TRUE) AS is_active,
@@ -1447,7 +1452,7 @@ def list_employees(
                 eu.contact_number,
                 eu.office_address_assigned,
                 COALESCE(eu.work_start_time, '08:00') AS work_start_time,
-                COALESCE(eu.work_end_time, '17:00') AS work_end_time,
+                COALESCE(eu.work_end_time, '17:00') AS work_end_time, eu.work_week,
                 g.area_id AS office_area_id,
                 a.name AS office_name,
                 COALESCE(eu.is_active, TRUE) AS is_active,
@@ -1482,7 +1487,7 @@ def list_employees(
                 eu.contact_number,
                 eu.office_address_assigned,
                 COALESCE(eu.work_start_time, '08:00') AS work_start_time,
-                COALESCE(eu.work_end_time, '17:00') AS work_end_time,
+                COALESCE(eu.work_end_time, '17:00') AS work_end_time, eu.work_week,
                 g.area_id AS office_area_id,
                 a.name AS office_name,
                 COALESCE(eu.is_active, TRUE) AS is_active,
@@ -1509,7 +1514,7 @@ def list_employees(
             rows = db.execute(text("""
                 SELECT eu.id, eu.user_id, eu.franchise_user_id, eu.manager_user_id, eu.employee_role, eu.employee_number,
                        eu.name, eu.surname, eu.email AS email, eu.contact_number, eu.office_address_assigned,
-                       COALESCE(eu.work_start_time,'08:00') work_start_time, COALESCE(eu.work_end_time,'17:00') work_end_time,
+                       COALESCE(eu.work_start_time,'08:00') work_start_time, COALESCE(eu.work_end_time,'17:00') work_end_time, eu.work_week,
                        g.area_id AS office_area_id, a.name AS office_name, COALESCE(eu.is_active,TRUE) is_active,
                        u.is_active login_active, u.username, COALESCE(eu.profile_photo,u.profile_photo) profile_photo,
                        COALESCE(eu.profile_photo_mime,u.profile_photo_mime,'image/png') profile_photo_mime
@@ -1537,7 +1542,7 @@ def list_employees(
                 eu.contact_number,
                 eu.office_address_assigned,
                 COALESCE(eu.work_start_time, '08:00') AS work_start_time,
-                COALESCE(eu.work_end_time, '17:00') AS work_end_time,
+                COALESCE(eu.work_end_time, '17:00') AS work_end_time, eu.work_week,
                 g.area_id AS office_area_id,
                 a.name AS office_name,
                 COALESCE(eu.is_active, TRUE) AS is_active,
@@ -1656,6 +1661,7 @@ def create_manager(payload: CreateManagerRequest, current_user: User = Depends(g
             office_address_assigned,
             work_start_time,
             work_end_time,
+            work_week,
             is_active,
             created_at,
             updated_at
@@ -1672,6 +1678,7 @@ def create_manager(payload: CreateManagerRequest, current_user: User = Depends(g
             :office_address_assigned,
             :work_start_time,
             :work_end_time,
+            :work_week,
             TRUE,
             :now,
             :now
@@ -1689,6 +1696,7 @@ def create_manager(payload: CreateManagerRequest, current_user: User = Depends(g
         "office_address_assigned": payload.office_address_assigned,
         "work_start_time": _valid_hhmm(payload.work_start_time, "08:00"),
         "work_end_time": _valid_hhmm(payload.work_end_time, "17:00"),
+        "work_week": json.dumps(payload.model_dump(mode="json")["work_week"]) if payload.work_week is not None else None,
         "now": datetime.utcnow(),
     }).scalar_one()
 
@@ -1755,6 +1763,7 @@ def create_employee(payload: CreateEmployeeRequest, current_user: User = Depends
             office_address_assigned,
             work_start_time,
             work_end_time,
+            work_week,
             is_active,
             created_at,
             updated_at
@@ -1773,6 +1782,7 @@ def create_employee(payload: CreateEmployeeRequest, current_user: User = Depends
             :office_address_assigned,
             :work_start_time,
             :work_end_time,
+            :work_week,
             TRUE,
             :now,
             :now
@@ -1792,6 +1802,7 @@ def create_employee(payload: CreateEmployeeRequest, current_user: User = Depends
         "office_address_assigned": payload.office_address_assigned,
         "work_start_time": _valid_hhmm(payload.work_start_time, "08:00"),
         "work_end_time": _valid_hhmm(payload.work_end_time, "17:00"),
+        "work_week": json.dumps(payload.model_dump(mode="json")["work_week"]) if payload.work_week is not None else None,
         "now": datetime.utcnow(),
     }).scalar_one()
 
@@ -1961,9 +1972,11 @@ def update_manager(manager_id: int, payload: UpdateManagerRequest, current_user:
         values['work_start_time'] = _valid_hhmm(values.get('work_start_time'), '08:00')
     if 'work_end_time' in values:
         values['work_end_time'] = _valid_hhmm(values.get('work_end_time'), '17:00')
+    if 'work_week' in values:
+        values['work_week'] = json.dumps(values['work_week'])
     updates = []
     params = {"manager_id": manager_id, "now": datetime.utcnow()}
-    for field in ["employee_number", "id_number", "name", "surname", "email", "contact_number", "office_address_assigned", "work_start_time", "work_end_time", "is_active"]:
+    for field in ["employee_number", "id_number", "name", "surname", "email", "contact_number", "office_address_assigned", "work_start_time", "work_end_time", "work_week", "is_active"]:
         if field in values:
             updates.append(f"{field} = :{field}")
             params[field] = str(values[field]) if field == "email" and values[field] else values[field]
@@ -2029,9 +2042,11 @@ def update_employee(employee_id: int, payload: UpdateEmployeeRequest, current_us
     if values.get("employee_role") and values["employee_role"] not in EMPLOYEE_ROLES:
         raise HTTPException(status_code=400, detail="Invalid employee role")
     _ensure_manager_assignment(db, values.get("manager_user_id"), row["franchise_user_id"])
+    if 'work_week' in values:
+        values['work_week'] = json.dumps(values['work_week'])
     updates = []
     params = {"employee_id": employee_id, "now": datetime.utcnow()}
-    for field in ["employee_role", "employee_number", "name", "surname", "id_number", "email", "contact_number", "office_address_assigned", "work_start_time", "work_end_time", "manager_user_id", "is_active"]:
+    for field in ["employee_role", "employee_number", "name", "surname", "id_number", "email", "contact_number", "office_address_assigned", "work_start_time", "work_end_time", "work_week", "manager_user_id", "is_active"]:
         if field in values:
             updates.append(f"{field} = :{field}")
             params[field] = str(values[field]) if field == "email" and values[field] else values[field]

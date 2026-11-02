@@ -396,6 +396,7 @@ def calculate_plan(db, fid, ids, user):
                         'id_number': receipt.get('id_number') or book_data.get('id_number'),
                         'receipt_number': receipt.get('receipt_number'), 'reference': book_data['reference'],
                         'gross_received': receipt.get('gross_received'), 'state': 'ready', 'reason': '', 'amount': None}
+                person = None
                 try:
                     person = import_participant(db, user, uid, fid)
                     if person['franchise_user_id'] != fid:
@@ -428,8 +429,14 @@ def calculate_plan(db, fid, ids, user):
                         line.update(state='already_recorded', reason='Matching commission already recorded manually')
                 if category == 'removals':
                     policy = effective_policy(policies, uid)
-                    fee = price_removal(book_data, staff['removal_role'] or 'driver', policy, effective_policy(policies, 0).get('extra_holidays', []))
-                    line.update(amount=fee['amount'], rate=fee['amount'], band=fee['band'], role=staff['removal_role'], notes=book_data)
+                    other_branch = bool(line.get('employee_branch_id') and line['employee_branch_id'] != matched_branch['id'])
+                    try:
+                        fee = price_removal(book_data, staff['removal_role'] or 'driver', policy, effective_policy(policies, 0).get('extra_holidays', []), other_branch=other_branch, staff_hours=person)
+                    except (ValueError, TypeError):
+                        line.update(state='blocked', reason='Correct the employee’s working hours in Edit Staff before calculating commission')
+                        result.append(line)
+                        continue
+                    line.update(**fee, rate=fee['amount'], role=staff['removal_role'], notes=book_data)
                     if line['amount'] is None and line['state'] == 'ready':
                         line.update(state='blocked', reason='Removal fee not configured')
                 else:
