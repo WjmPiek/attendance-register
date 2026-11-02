@@ -13,6 +13,9 @@ import BusinessPage from './BusinessPage'
 import MyProfilePage from './MyProfilePage'
 import UploadProofPage from './UploadProofPage'
 import { getProfileSwitchUrl } from '../martinsLaunch'
+import { openModuleSwitcher } from '../moduleSwitcher'
+import '../moduleSwitcher.css'
+import '../moduleTypography.css'
 import DigitalIdCard from '../components/DigitalIdCard'
 import { getNotifications, markNotificationRead, apiRequest } from '../api/client'
 import { formatJohannesburgDateTime } from '../utils/dateTime'
@@ -220,10 +223,10 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
               <strong>Martin's Funerals System</strong>
             </a>
             <div className="martins-app-topbar-account">
-              <span>Logged in as</span>
+              <span>Signed in as</span>
               <strong>{me.full_name || me.email || 'User'}</strong>
-              <small>{me.roles?.join(', ') || 'Attendance User'}</small>
-              {(isFranchiseUser || isSuperUser) && <a className="glass-button attendance-profile-switch" href={getProfileSwitchUrl()}>Switch user / branch</a>}
+              <small>{me.roles?.map(role => ({FranchiseUser:'Franchise Holder',SuperUser:'Administrator',ManagerUser:'Manager',EmployeeUser:'Employee'})[role] || role).join(', ') || 'User'}</small>
+              {(isFranchiseUser || isSuperUser) && <a className="glass-button attendance-profile-switch" href={getProfileSwitchUrl()} onClick={(event) => { event.preventDefault(); openModuleSwitcher(getProfileSwitchUrl()) }}>Switch user / branch</a>}
               <button className="logout-button glass-button" onClick={onLogout}>Logout</button>
             </div>
           </header>

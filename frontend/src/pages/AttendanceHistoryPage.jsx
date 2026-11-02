@@ -110,7 +110,7 @@ export default function AttendanceHistoryPage({ me }) {
   const [loading, setLoading] = useState(true), [error, setError] = useState('')
   const [exportOpen, setExportOpen] = useState(false), [exportView, setExportView] = useState('events'), [exportUserIds, setExportUserIds] = useState([]), [exporting, setExporting] = useState(false)
   const request = useRef(0)
-  const activeFilters = useMemo(() => ({ userId: isManagerView ? filters.userId : '', franchiseId: isManagerView ? filters.franchiseId : '', fromDate: filters.fromDate, toDate: filters.toDate }), [filters, isManagerView])
+  const activeFilters = useMemo(() => ({ userId: detailKey && isManagerView ? filters.userId : '', franchiseId: detailKey && isManagerView ? filters.franchiseId : '', fromDate: detailKey ? filters.fromDate : '', toDate: detailKey ? filters.toDate : '' }), [filters, isManagerView, detailKey])
   const model = useMemo(() => buildAttendanceHistory(events, sessions), [events, sessions])
   const detail = [...model.todayMetrics, ...model.metrics].find(metric => metric.key === detailKey)
   const loadAll = async () => {
@@ -144,9 +144,9 @@ export default function AttendanceHistoryPage({ me }) {
   const updateFilters = changes => {
     const next = { ...filters, ...changes }
     setFilters(next); setExportUserIds([]); setExportOpen(false)
-    window.history.replaceState({}, '', locationUrl('', next))
+    window.history.replaceState({}, '', locationUrl(detailKey, next))
   }
-  const navigate = key => { window.history.pushState({}, '', locationUrl(key)); setDetailKey(key); window.scrollTo({ top: 0, behavior: 'smooth' }) }
+  const navigate = key => { const next = key ? filters : { userId:'', franchiseId:'', fromDate:'', toDate:'' }; window.history.pushState({}, '', locationUrl(key, next)); setFilters(next); setDetailKey(key); setExportOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }
   const openPhoto = async id => {
     try {
       const blob = await getAttendanceEventPhoto(id), url = URL.createObjectURL(blob), link = document.createElement('a')
@@ -165,17 +165,9 @@ export default function AttendanceHistoryPage({ me }) {
     finally { setExporting(false) }
   }
   const metricCard = metric => <a key={metric.key} className="history-metric-card" href={typeof window === 'undefined' ? '#' : locationUrl(metric.key).toString()} onClick={event => { if (!event.ctrlKey && !event.metaKey && !event.shiftKey && event.button === 0) { event.preventDefault(); navigate(metric.key) } }}>
-    <strong>{loading ? '…' : metric.value}</strong><span>{metric.label}</span><small className="history-metric-description">{metric.description}</small><small>View records →</small>
+    <h4 className="history-metric-title">{metric.label}</h4><span>{loading ? '…' : metric.value}</span><small className="history-metric-description">{metric.description}</small><small>View records →</small>
   </a>
-  if (detail) return <Card title={detail.label} className="attendance-history-page attendance-history-detail">
-    <button type="button" className="glass-button history-back" onClick={() => navigate('')}>← Attendance history</button>
-    <p>{detail.description}</p>
-    <p className="muted">{filters.fromDate || 'All dates'}{filters.toDate ? ` to ${filters.toDate}` : ''}{filters.userId ? ` · ${visibleUsers.find(user => String(user.user_id) === filters.userId)?.label || 'Selected staff member'}` : ' · Current staff scope'}</p>
-    {!loading && !error && <p>{typeof detail.value === 'string' && <><strong>{detail.value}</strong> · </>}{detail.count} {detail.unit}{detail.sessionBased && ` · ${detail.rows.filter(row => !row.contextOnly).length} attendance events`}</p>}
-    {error && <p role="alert" className="error-message">{error}</p>}
-    <AttendanceRecords records={detail.rows} loading={loading} openPhoto={openPhoto}/>
-  </Card>
-  return <Card title="Attendance History" className="attendance-history-page">
+  const filterPanel = <>
     <div className={`attendance-history-filters${me.roles.includes('SuperUser') ? ' with-franchise' : ''}`}>
       {me.roles.includes('SuperUser') && <label>Franchise<select value={filters.franchiseId} onChange={event => updateFilters({ franchiseId: event.target.value, userId: '' })}><option value="">All approved franchises</option>{franchises.map((franchise, index) => <option key={`${franchise.franchise_id}-${index}`} value={franchise.franchise_id || ''} disabled={!franchise.franchise_id}>{franchise.label}{franchise.status ? ` (${franchise.status})` : ''}</option>)}</select></label>}
       {isManagerView && <label>Manager / employee<select value={filters.userId} onChange={event => updateFilters({ userId: event.target.value })}><option value="">All staff in scope</option>{visibleUsers.map(user => <option key={user.user_id} value={user.user_id}>{user.label}{user.detail ? ` — ${user.detail}` : ''}</option>)}</select></label>}
@@ -187,9 +179,20 @@ export default function AttendanceHistoryPage({ me }) {
       {isManagerView && <><div className="attendance-history-actions"><button type="button" className="glass-button" onClick={() => setExportUserIds(visibleUsers.map(user => String(user.user_id)))}>Select all staff</button><button type="button" className="glass-button" onClick={() => setExportUserIds([])}>Clear selection</button></div><div className="history-export-users">{visibleUsers.map(user => <label key={user.user_id}><input type="checkbox" checked={exportUserIds.includes(String(user.user_id))} onChange={() => setExportUserIds(ids => ids.includes(String(user.user_id)) ? ids.filter(id => id !== String(user.user_id)) : [...ids, String(user.user_id)])}/><span>{user.label}{user.detail && <small>{user.detail}</small>}</span></label>)}</div><p className="muted">{exportUserIds.length ? `${exportUserIds.length} staff selected.` : 'No individual selection: exports the current staff/date scope.'}</p></>}
       <div className="attendance-history-actions"><button type="button" disabled={exporting || loading} onClick={handleExport}>{exporting ? 'Preparing…' : 'Download PDF'}</button><button type="button" className="glass-button" onClick={() => setExportOpen(false)}>Close</button></div>
     </section>}
+  </>
+  if (detail) return <Card title={detail.label} className="attendance-history-page attendance-history-detail">
+    <button type="button" className="glass-button history-back" onClick={() => navigate('')}>← Attendance history</button>
+    {filterPanel}
+    <p>{detail.description}</p>
+    <p className="muted">{filters.fromDate || 'All dates'}{filters.toDate ? ` to ${filters.toDate}` : ''}{filters.userId ? ` · ${visibleUsers.find(user => String(user.user_id) === filters.userId)?.label || 'Selected staff member'}` : ' · Current staff scope'}</p>
+    {!loading && !error && <p>{typeof detail.value === 'string' && <><strong>{detail.value}</strong> · </>}{detail.count} {detail.unit}{detail.sessionBased && ` · ${detail.rows.filter(row => !row.contextOnly).length} attendance events`}</p>}
+    {error && <p role="alert" className="error-message">{error}</p>}
+    <AttendanceRecords records={detail.rows} loading={loading} openPhoto={openPhoto}/>
+  </Card>
+  return <Card title="Attendance History" className="attendance-history-page">
     {error && <p role="alert" className="error-message">{error}</p>}
     <section className="history-summary-section"><h4>Today</h4><div className="history-metric-grid">{model.todayMetrics.map(metricCard)}</div></section>
-    <section className="history-summary-section"><h4>Selected period</h4><div className="history-metric-grid">{model.metrics.map(metricCard)}</div></section>
+    <section className="history-summary-section"><h4>Attendance overview</h4><div className="history-metric-grid">{model.metrics.map(metricCard)}</div></section>
   </Card>
 }
 
