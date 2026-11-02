@@ -7,7 +7,7 @@ const rateLabels = { driver_in: 'Driver · business hours', driver_out: 'Driver 
 const money = value => value === null || value === undefined ? 'Rate not configured' : `R ${Number(value).toFixed(2)}`
 const copy = value => JSON.parse(JSON.stringify(value))
 
-export default function MortuaryBook({ franchiseId }) {
+export default function MortuaryBook({ franchiseId, canManage = true }) {
   const [settings, setSettings] = useState(null)
   const [person, setPerson] = useState('0')
   const [policy, setPolicy] = useState(null)
@@ -93,7 +93,7 @@ export default function MortuaryBook({ franchiseId }) {
       <h2>Mortuary Book</h2>
       <p>Import removal commissions from printed Mortuary Book PDFs. Review the employees, roles and fees before saving to their Work Hubs.</p>
       <p className="muted">Service date uses Date Generated. Fee classification uses Date In and Time In, in South African local time. Sundays and public holidays always use out-of-hours fees. End times are exclusive: 17:00 is out of hours when a shift ends at 17:00.</p>
-      <button type="button" className="glass-button" onClick={() => setShowSettings(v => !v)}>{showSettings ? 'Hide hours and rates' : 'Configure hours and removal rates'}</button>
+      {canManage && <button type="button" className="glass-button" onClick={() => setShowSettings(v => !v)}>{showSettings ? 'Hide hours and rates' : 'Configure hours and removal rates'}</button>}
     </div>
     {error && <div role="alert" className="error-message">{error}</div>}
     {notice && <div role="status" className="success-message">{notice}</div>}
@@ -135,15 +135,15 @@ export default function MortuaryBook({ franchiseId }) {
       <button type="button" className="primary-button" disabled={busy || !allocations.length || allocations.some(a => !a.employee_user_id)} onClick={calculate}>Calculate commissions</button>
     </div>}
     {quote && <div className="form-card">
-      <h3>3. Confirm removal commissions</h3>
+      <h3>3. Save Mortuary Book evidence</h3>
       <div className="table-wrap"><table><thead><tr><th>MF / Branch</th><th>Employee</th><th>Role / Fee</th><th>Quantity</th><th>Amount</th></tr></thead><tbody>{quote.items.map((r, i) => <tr key={i}><td>{r.record_data.reference}<br/>{r.record_data.branch}</td><td>{r.employee_name}</td><td>{r.role} · {r.band === 'in' ? 'Business hours' : 'Out of hours'}</td><td>{r.duplicate ? 'Already recorded — skipped' : '1'}</td><td>{r.duplicate ? 'Skipped' : money(r.amount)}</td></tr>)}</tbody></table></div>
-      <h4>Totals to add per employee</h4>
+      <h4>Indicative fees per employee</h4>
       <div className="mortuary-rates">{totals.map(r => <div className="mortuary-total" key={r.name}><strong>{r.name}</strong><span>{r.quantity} removal(s)</span><strong>{r.missing ? 'Configure missing fees' : money(r.total)}</strong></div>)}</div>
-      <p><strong>Total to add: {money(quote.total)}</strong></p>
-      {quote.items.some(r => !r.duplicate && r.amount === null) && <p className="error-message">Configure missing fees above, then calculate again.</p>}
-      <label className="mortuary-confirm"><input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} disabled={busy}/>I confirm every book belongs to this franchise, the staff and roles are correct, and the commissions shown should be added as approved entries.{preview.errors.length > 0 ? ' I have reviewed the pages that will be excluded.' : ''}</label>
-      <button type="button" className="primary-button" disabled={busy || !confirmed || !totals.length || totals.some(r => r.missing)} onClick={importBooks}>Add approved removal commissions</button>
+      <p><strong>Indicative removal fees: {money(quote.total)}</strong></p><p>No commission is earned by saving a book. A matching MF File Receipt and an enabled employee category are both required.</p>
+      {quote.items.some(r => !r.duplicate && r.amount === null) && <p className="error-message">Fees can be configured before approving matched commissions. Saving a book does not earn commission.</p>}
+      <label className="mortuary-confirm"><input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} disabled={busy}/>I confirm every book belongs to this franchise, the staff and roles are correct, and the books should be saved for matching with MF File Receipts.{preview.errors.length > 0 ? ' I have reviewed the pages that will be excluded.' : ''}</label>
+      <button type="button" className="primary-button" disabled={busy || !confirmed} onClick={importBooks}>Save books for matching</button>
     </div>}
-    {result && <div className="form-card" role="status"><h3>Import complete</h3><p>{result.created} commission entries added. {result.skipped_duplicates} duplicate entries skipped.</p>{Object.entries(result.totals).map(([uid, r]) => <p key={uid}><strong>{r.employee_name}</strong>: {r.quantity} removal(s) · {money(r.total)}</p>)}<p>Open the employee’s Work Hub → Commissions to view the entries and totals.</p></div>}
+    {result && <div className="form-card" role="status"><h3>Import complete</h3><p>{result.saved_books || 0} books saved. {result.skipped_duplicates} duplicate books skipped.</p><p>{result.message}</p>{Object.entries(result.totals).map(([uid, r]) => <p key={uid}><strong>{r.employee_name}</strong>: {r.quantity} removal(s) · {money(r.total)}</p>)}<p>Open HR Staff → MF File Receipt to import receipts and review matched commissions.</p></div>}
   </section>
 }

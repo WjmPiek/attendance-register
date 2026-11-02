@@ -136,6 +136,10 @@ def approve_franchise_registration(
         is_active=True,
     ))
 
+    db.flush()
+    from app.services.attendance_branches import ensure_default_branch
+    profile = db.query(FranchiseUser).filter(FranchiseUser.user_id == user.id).first()
+    ensure_default_branch(db, profile.id)
     registration.status = "approved"
     registration.approved_by_user_id = current_user.id
     registration.approved_at = datetime.utcnow()

@@ -249,6 +249,9 @@ def approve_franchise_registration(
         "updated_at": datetime.utcnow(),
     })
 
+    from app.services.attendance_branches import ensure_default_branch
+    fid = db.execute(text('SELECT id FROM franchise_users WHERE user_id=:uid'), {'uid': new_user_id}).scalar_one()
+    ensure_default_branch(db, fid)
     db.commit()
 
     return {

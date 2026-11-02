@@ -198,7 +198,7 @@ def _assert_not_duplicate(db: Session, franchise_user_id: int, participant_user_
 
 @router.get('/types')
 def types():
-    return [{"value": x, "label": x.replace('_',' ').title()} for x in sorted(COMMISSION_TYPES)]
+    return [{"value": x, "label": "MF File Receipts" if x == "invoice_commission" else x.replace('_',' ').title()} for x in sorted(COMMISSION_TYPES)]
 
 @router.get('/employees')
 def employees(franchise_user_id: int | None = None, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -292,6 +292,8 @@ def create_entry(payload: EntryIn, current_user: User = Depends(get_current_user
     else:
         raise HTTPException(403, "Staff may submit and franchise users may add entries")
     participant = _participant(db, current_user, participant_user_id, write=not self_submit)
+    from app.services.receipt_commissions import require_manual_eligibility
+    require_manual_eligibility(db, participant, payload.commission_type)
     structure = db.execute(text("SELECT * FROM commission_structures WHERE franchise_user_id=:fid AND commission_type=:type AND is_active=TRUE"), {"fid": participant["franchise_user_id"], "type": payload.commission_type}).mappings().first()
     if not structure:
         raise HTTPException(400, "This commission type is not active. Ask the franchise user to configure it.")
@@ -395,6 +397,9 @@ def review(entry_id:int,payload:ReviewIn,current_user:User=Depends(get_current_u
     if not old: raise HTTPException(404,"Entry not found")
     participant = _participant(db,current_user,int(old["employee_user_id"]),write=True)
     _assert_review_allowed(db, current_user, old, participant)
+    if payload.status == 'approved':
+        from app.services.receipt_commissions import require_manual_eligibility
+        require_manual_eligibility(db, participant, payload.commission_type)
     db.execute(text('SELECT pg_advisory_xact_lock(:namespace,:fid)'), {'namespace': 15015, 'fid': int(old['franchise_user_id'])})
     _assert_not_duplicate(db, int(old["franchise_user_id"]), int(old["employee_user_id"]), payload, entry_id)
     structure = db.execute(text("SELECT * FROM commission_structures WHERE franchise_user_id=:fid AND commission_type=:type AND is_active=TRUE"),{"fid":participant["franchise_user_id"],"type":payload.commission_type}).mappings().first()
@@ -416,6 +421,9 @@ def bulk_review(payload:BulkReviewIn,current_user:User=Depends(get_current_user)
         if not row: continue
         participant = _participant(db,current_user,int(row["employee_user_id"]),write=True)
         _assert_review_allowed(db, current_user, row, participant)
+        if payload.status == 'approved':
+            from app.services.receipt_commissions import require_manual_eligibility
+            require_manual_eligibility(db, participant, row['commission_type'])
         db.execute(text("UPDATE commission_entries SET status=:s,review_notes=:n,reviewed_at=NOW(),reviewed_by_user_id=:u,last_edited_by_user_id=:u,updated_at=NOW() WHERE id=:id"),{"s":payload.status,"n":payload.review_notes,"u":current_user.id,"id":eid})
         _audit(db,eid,f"bulk_{payload.status}",current_user.id,note=payload.review_notes)
         _notify(db,int(row["employee_user_id"]),"Commission approved" if payload.status=="approved" else "Commission rejected",f"Your commission reference {row['reference']} was {payload.status}.",eid,"success" if payload.status=="approved" else "danger")

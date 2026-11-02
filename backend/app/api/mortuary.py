@@ -22,6 +22,8 @@ from app.db.session import get_db
 from app.models.core import User
 from app.services.mortuary import DEFAULT_WEEK, RATE_KEYS, match_employee, normalise, parse_pdf, price_removal
 
+from app.services.attendance_branches import import_scope, import_staff, import_participant
+
 router = APIRouter()
 
 
@@ -100,8 +102,8 @@ def effective_policy(policies, uid):
 
 @router.get('/settings')
 def get_settings(franchise_user_id: int | None = None, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    fid = _staff_franchise_id(db, current_user, franchise_user_id)
-    people = employees(fid, current_user, db)
+    fid = import_scope(db, current_user, franchise_user_id)
+    people = import_staff(db, fid)
     policies = policy_map(db, fid)
     return {'employees': people, 'default': effective_policy(policies, 0), 'overrides': policies,
             'franchise_user_id': fid}
@@ -135,7 +137,7 @@ def save_settings(payload: SavePolicy, current_user: User = Depends(get_current_
 @router.post('/preview')
 def preview(franchise_user_id: int | None = None, files: list[UploadFile] = File(...),
             current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    fid = _staff_franchise_id(db, current_user, franchise_user_id)
+    fid = import_scope(db, current_user, franchise_user_id)
     if not 1 <= len(files) <= 30:
         raise HTTPException(400, 'Upload between 1 and 30 PDF files at a time.')
     records, errors, total_bytes = [], [], 0
@@ -156,7 +158,7 @@ def preview(franchise_user_id: int | None = None, files: list[UploadFile] = File
         errors.extend(dict(f, filename=filename) for f in failures)
         if len(records) + len(errors) > 100:
             raise HTTPException(400, 'Import up to 100 pages per batch.')
-    people = employees(fid, current_user, db)
+    people = import_staff(db, fid)
     suggestions = []
     for i, record in enumerate(records):
         for n, name in enumerate(record['names']):
@@ -169,7 +171,7 @@ def preview(franchise_user_id: int | None = None, files: list[UploadFile] = File
 
 def evaluate_import(db, user, payload):
     source = read_preview(payload.preview_token, user.id)
-    fid = _staff_franchise_id(db, user, source['franchise_user_id'])
+    fid = import_scope(db, user, source['franchise_user_id'])
     records = source['records']
     expected = {(i, n) for i, record in enumerate(records) for n in range(len(record['names']))}
     supplied = {(a.record, a.name_index) for a in payload.allocations}
@@ -182,7 +184,7 @@ def evaluate_import(db, user, payload):
             raise HTTPException(400, 'Two Driver In names on the same record must be allocated to different employees.')
         per_record.add((a.record, a.employee_user_id))
         record = records[a.record]
-        participant = _participant(db, user, a.employee_user_id, write=True)
+        participant = import_participant(db, user, a.employee_user_id, fid)
         if participant['franchise_user_id'] != fid:
             raise HTTPException(403, 'Staff member is outside this franchise')
         branch_key, reference_key = normalise(record['branch']), record['reference'].strip().casefold()
@@ -227,7 +229,7 @@ def import_books(payload: ImportIn, current_user: User = Depends(get_current_use
     try:
         # Serialise imports and normal commission writes for this franchise.
         source = read_preview(payload.preview_token, current_user.id)
-        fid = _staff_franchise_id(db, current_user, source['franchise_user_id'])
+        fid = import_scope(db, current_user, source['franchise_user_id'])
         db.execute(text('SELECT pg_advisory_xact_lock(:namespace,:fid)'), {'namespace': 15015, 'fid': fid})
         rows = evaluate_import(db, current_user, payload)
         try:
@@ -236,39 +238,17 @@ def import_books(payload: ImportIn, current_user: User = Depends(get_current_use
             raise HTTPException(400, 'Calculate and review the commissions before importing.')
         if saved_quote.get('kind') != 'quote' or saved_quote.get('user_id') != current_user.id or saved_quote.get('digest') != quote_digest(rows):
             raise HTTPException(409, 'Rates, assignments or duplicate status changed. Calculate and review the commissions again.')
-        if any(r['amount'] is None and not r['duplicate'] for r in rows):
-            raise HTTPException(400, 'Configure the missing employee/role removal rates, then preview again.')
-        ids, totals = [], {}
-        for row in rows:
-            if row['duplicate']:
-                continue
-            record = row['record_data']
-            notes = '\n'.join(f'{label}: {record.get(key) or "-"}' for label, key in (
-                ('Deceased', 'deceased'), ('ID Number', 'id_number'), ('Collected At', 'collected_at'),
-                ('Driver In', 'driver_in'), ('Date In', 'date_in'), ('Time In', 'time_in')))
-            notes += f'\nRole: {row["role"]}\nFee: {"Business hours" if row["band"] == "in" else "Out of hours"}\nSource: Mortuary Book'
-            entry = db.execute(text('''INSERT INTO commission_entries
-                (franchise_user_id,employee_user_id,commission_type,service_date,reference,quantity,
-                 applied_rate,calculated_amount,notes,branch_name,created_by_user_id,status,submitted_at,
-                 reviewed_at,reviewed_by_user_id,last_edited_by_user_id)
-                VALUES(:fid,:uid,'removals',:day,:ref,1,:amount,:amount,:notes,:branch,:actor,'approved',NOW(),NOW(),:actor,:actor)
-                RETURNING *'''), {'fid': fid, 'uid': row['employee_user_id'], 'day': date.fromisoformat(record['service_date']),
-                'ref': record['reference'], 'amount': Decimal(row['amount']), 'notes': notes, 'branch': record['branch'], 'actor': current_user.id}).mappings().first()
-            db.execute(text('''INSERT INTO mortuary_import_allocations
-                (franchise_user_id,employee_user_id,branch_key,reference_key,entry_id,source_hash,source_filename,source_page,removal_role,date_in,time_in,fee_band)
-                VALUES(:fid,:uid,:branch,:ref,:entry,:hash,:filename,:page,:role,:day,:at,:band)'''),
-                {'fid': fid, 'uid': row['employee_user_id'], 'branch': row['branch_key'], 'ref': row['reference_key'],
-                 'entry': entry['id'], 'hash': record['source_hash'], 'filename': record['filename'], 'page': record['page'],
-                 'role': row['role'], 'day': date.fromisoformat(record['date_in']), 'at': record['time_in'], 'band': row['band']})
-            _audit(db, entry['id'], 'mortuary_import', current_user.id, new=dict(entry))
-            _notify(db, row['employee_user_id'], 'Removal commission imported', f'Mortuary Book {record["reference"]} was added and approved.', entry['id'], 'success')
-            ids.append(entry['id'])
-            uid = str(row['employee_user_id'])
-            totals.setdefault(uid, {'employee_name': row['employee_name'], 'total': Decimal(0), 'quantity': 0})
-            totals[uid]['total'] += Decimal(row['amount'])
-            totals[uid]['quantity'] += 1
+        from app.api.receipt_commissions import save_document
+        ids, duplicates = [], 0
+        for index, record in enumerate(source['records']):
+            selected = [r for r in rows if r['record'] == index]
+            staff = [(r['employee_user_id'], r['role']) for r in selected]
+            doc_id, duplicate = save_document(db, fid, 'mortuary', record, staff, current_user.id)
+            ids.append(doc_id); duplicates += duplicate
+        from app.services.audit import write_audit_log
+        write_audit_log(db, actor_user_id=current_user.id, franchise_user_id=fid, action='mortuary_books_staged', entity_type='commission_documents', new_values={'document_ids': ids})
         db.commit()
-        return {'created': len(ids), 'skipped_duplicates': len(rows) - len(ids), 'entry_ids': ids, 'totals': totals}
+        return {'created': 0, 'saved_books': len(ids) - duplicates, 'skipped_duplicates': duplicates, 'document_ids': ids, 'totals': {}, 'message': 'Books saved. Commission is blocked until matching MF File Receipts are present. Review matched commissions on the MF File Receipt tab.'}
     except IntegrityError:
         db.rollback()
         raise HTTPException(409, 'An import changed at the same time. Refresh the preview before importing again.')

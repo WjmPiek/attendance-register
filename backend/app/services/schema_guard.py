@@ -11,7 +11,7 @@ REQUIRED_TABLES = {
     'employee_users', 'areas', 'attendance_events', 'commission_structures',
     'commission_entries', 'notifications', 'leave_applications',
     'payroll_imports', 'payroll_import_rows', 'payroll_payslips',
-    'irp5_documents', 'password_reset_tokens', 'mortuary_policies', 'mortuary_import_allocations',
+    'irp5_documents', 'password_reset_tokens', 'mortuary_policies', 'mortuary_import_allocations', 'employee_commission_options', 'receipt_commission_settings', 'commission_documents', 'commission_document_staff', 'attendance_branches', 'employee_branch_assignments',
 }
 
 

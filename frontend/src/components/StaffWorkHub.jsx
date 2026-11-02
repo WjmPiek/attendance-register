@@ -1,3 +1,4 @@
+import MonthlyCommissionStatement from './MonthlyCommissionStatement'
 import { useEffect, useMemo, useState } from 'react'
 import {
   approveAttendanceEvent,
@@ -164,6 +165,8 @@ export default function StaffWorkHub({ employee, onClose, onEdit, onNavigate }) 
               {!commission?.items?.length ? <tr><td colSpan="5" className="muted">No commission or overtime records.</td></tr> : null}
             </tbody></table></div>
           </section>
+
+          <MonthlyCommissionStatement employeeUserId={userId} franchiseId={employee.franchise_user_id}/>
 
           <section className="staff-work-section">
             <h3>Employee notifications</h3>
