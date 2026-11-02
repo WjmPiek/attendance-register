@@ -13,6 +13,7 @@ import BusinessPage from './BusinessPage'
 import MyProfilePage from './MyProfilePage'
 import UploadProofPage from './UploadProofPage'
 import { getProfileSwitchUrl, getMartinsReturnUrl } from '../martinsLaunch'
+import { notifyAttendanceParent } from '../embeddedAttendance'
 import { openModuleSwitcher } from '../moduleSwitcher'
 import '../moduleSwitcher.css'
 import '../moduleTypography.css'
@@ -79,7 +80,7 @@ function AttendanceExceptionPopup({ me, onNavigate }) {
   )
 }
 
-export default function DashboardPage({ me, roles, entities, onLogout }) {
+export default function DashboardPage({ me, roles, entities, onLogout, embedded = false }) {
   const [menuOpen, setMenuOpen] = useState(false)
   useEffect(() => {
     const closeOnEscape = (event) => {
@@ -151,18 +152,19 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
   ].filter(Boolean)), [tabs, isApprovalCapable, isEmployee, isManagerUser, isFranchiseUser, isSuperUser, canUsePayroll, isStaffSelfService, canImportProof])
   const queryParams = new URLSearchParams(window.location.search)
   const defaultTab = queryParams.get('office_qr') ? 'attendance' : (queryParams.get('tab') || 'home')
-  const shouldStartOnMobileMenu = isMobileLayout && isStaffSelfService && !canManagePayroll && !queryParams.get('tab') && !queryParams.get('office_qr')
+  const shouldStartOnMobileMenu = !embedded && isMobileLayout && isStaffSelfService && !canManagePayroll && !queryParams.get('tab') && !queryParams.get('office_qr')
   const [activeTab, setActiveTab] = useState(shouldStartOnMobileMenu ? null : (availableTabIds.has(defaultTab) ? defaultTab : (tabs[0]?.id || 'attendance')))
 
   useEffect(() => {
-    if (isMobileLayout && isStaffSelfService && !canManagePayroll && activeTab === 'home') {
+    if (!embedded && isMobileLayout && isStaffSelfService && !canManagePayroll && activeTab === 'home') {
       setActiveTab(null)
       const url = new URL(window.location.href)
       url.searchParams.delete('tab')
       window.history.replaceState({}, '', url)
     }
-  }, [isMobileLayout, isStaffSelfService, canManagePayroll, activeTab])
+  }, [embedded, isMobileLayout, isStaffSelfService, canManagePayroll, activeTab])
   const openTab = (tabId) => {
+    if (embedded) notifyAttendanceParent('martins:attendance-scroll-top')
     setMenuOpen(false)
     setActiveTab(tabId)
     const url = new URL(window.location.href)
@@ -188,22 +190,22 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
     window.history.replaceState({}, '', url)
   }
 
-  const showMobileStaffMenuOnly = isMobileLayout && isStaffSelfService && !canManagePayroll && activeTab === null
-  const showMobileStaffContentOnly = isMobileLayout && isStaffSelfService && !canManagePayroll && activeTab !== null
-  const showMainSiteTopMenu = !showMobileStaffMenuOnly && !showMobileStaffContentOnly
+  const showMobileStaffMenuOnly = !embedded && isMobileLayout && isStaffSelfService && !canManagePayroll && activeTab === null
+  const showMobileStaffContentOnly = !embedded && isMobileLayout && isStaffSelfService && !canManagePayroll && activeTab !== null
+  const showMainSiteTopMenu = !embedded && !showMobileStaffMenuOnly && !showMobileStaffContentOnly
 
   return (
-    <div className={showMobileStaffMenuOnly ? 'app-shell mobile-staff-menu-shell' : (showMobileStaffContentOnly ? 'app-shell mobile-staff-content-shell' : `app-shell main-site-page-shell ms-shell${menuOpen ? ' attendance-menu-open' : ''}`)}>
+    <div className={embedded ? 'app-shell attendance-embedded-shell' : (showMobileStaffMenuOnly ? 'app-shell mobile-staff-menu-shell' : (showMobileStaffContentOnly ? 'app-shell mobile-staff-content-shell' : `app-shell main-site-page-shell ms-shell${menuOpen ? ' attendance-menu-open' : ''}`))}>
       {showMainSiteTopMenu && menuOpen ? <button type="button" className="attendance-menu-backdrop" aria-label="Close menu" onClick={() => setMenuOpen(false)} /> : null}
       <AttendanceExceptionPopup me={me} onNavigate={openTab} />
-      {!showMobileStaffContentOnly ? <aside id="attendance-sidebar" className={showMobileStaffMenuOnly ? 'sidebar glass-card mobile-card-menu' : 'sidebar glass-card ms-sidebar'}>
-        <div className="brand-block ms-brand">
+      {!showMobileStaffContentOnly ? <aside id="attendance-sidebar" className={embedded ? 'attendance-embedded-nav' : (showMobileStaffMenuOnly ? 'sidebar glass-card mobile-card-menu' : 'sidebar glass-card ms-sidebar')}>
+        {!embedded && <div className="brand-block ms-brand">
           <img src="/logo.png" alt="Martins logo" />
           <div className="ms-brand-copy">
             <strong className="ms-brand-title">Martin's Funerals</strong>
             <span className="ms-brand-module">Attendance Register</span>
           </div>
-        </div>
+        </div>}
         <nav className={showMobileStaffMenuOnly ? 'sidebar-tabs mobile-card-menu-grid' : 'sidebar-tabs'} aria-label="Main sections">
           {tabs.map((tab) => (
             <button key={`${tab.id}-${tab.label}`} type="button" className={activeTab === tab.id ? 'tab-button active' : 'tab-button'} onClick={() => openTab(tab.id)}>
@@ -212,7 +214,7 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
             </button>
           ))}
         </nav>
-        <a className="tab-button sidebar-return-link" href={getMartinsReturnUrl()}>{isFranchiseUser ? 'Back to franchise site' : 'Back to main site'}</a>
+        {!embedded && <a className="tab-button sidebar-return-link" href={getMartinsReturnUrl()}>{isFranchiseUser ? 'Back to franchise site' : 'Back to main site'}</a>}
       </aside> : null}
 
       {!showMobileStaffMenuOnly ? <main className="page content-panel ms-main">

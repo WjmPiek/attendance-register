@@ -1,0 +1,12 @@
+/* Attendance shares the host site's sidebar and account header. */
+html body.attendance-is-embedded{background:#f7f8fb!important;min-height:0!important}
+body.attendance-is-embedded::before{display:none!important}
+html:root body .app-shell.attendance-embedded-shell{display:block!important;min-height:0!important;padding:0!important;gap:0!important}
+html:root body .attendance-embedded-shell>.attendance-embedded-nav{position:static!important;width:100%!important;height:auto!important;margin:0 0 20px!important;padding:0!important;border:0!important;background:transparent!important}
+html:root body .attendance-embedded-shell .sidebar-tabs{display:flex!important;flex-wrap:wrap!important;gap:8px!important;padding:0!important;overflow:visible!important}
+html:root body .attendance-embedded-shell .sidebar-tabs .tab-button{display:inline-flex!important;align-items:center!important;width:auto!important;min-height:42px!important;margin:0!important;padding:10px 16px!important;background:#fff!important;color:#6b4ba0!important;border:1px solid #e1d9ee!important;border-radius:10px!important;font:400 10.5px/1.4 Arial,Helvetica,sans-serif!important;letter-spacing:1.96px!important;text-transform:uppercase!important;transform:none!important;box-shadow:none!important}
+html:root body .attendance-embedded-shell .sidebar-tabs .tab-button.active{background:#6b4ba0!important;color:#fff!important}
+html:root body .attendance-embedded-shell>.content-panel{width:100%!important;min-height:0!important;margin:0!important;padding:0!important}
+html body .attendance-embedded-status{padding:18px!important;font:14px/1.5 Arial,Helvetica,sans-serif;color:#758195}
+html body .attendance-embedded-status button{display:block;margin-top:12px}
+@media print{.attendance-embedded-nav{display:none!important}}
