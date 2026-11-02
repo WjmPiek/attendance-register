@@ -160,7 +160,7 @@ export default function StaffWorkHub({ employee, onClose, onEdit, onNavigate }) 
           <section className="staff-work-section">
             <div className="section-heading"><div><h3>Commission and overtime</h3><p className="muted small">This employee’s claims remain separate from the manager’s own commission.</p></div><button type="button" onClick={openCommissions}>Review commissions</button></div>
             <div className="table-wrap"><table className="staff-commission-table"><thead><tr><th>Date</th><th>Reference</th><th>Type</th><th>Amount</th><th>Status</th></tr></thead><tbody>
-              {(commission?.items || []).slice(0, 10).map((item) => <tr key={`commission-${item.id}`}><td>{item.service_date}</td><td>{item.reference}</td><td>{String(item.commission_type || '').replaceAll('_', ' ')}</td><td>R {Number(item.calculated_amount || 0).toFixed(2)}</td><td><span className={statusClass(item.status)}>{item.status}</span></td></tr>)}
+              {(commission?.items || []).slice(0, 10).map((item) => <tr key={`commission-${item.id}`}><td>{item.service_date}</td><td>{item.reference}{item.branch_name && <small style={{display: 'block'}}>{item.branch_name}</small>}</td><td>{String(item.commission_type || '').replaceAll('_', ' ')}</td><td>R {Number(item.calculated_amount || 0).toFixed(2)}</td><td><span className={statusClass(item.status)}>{item.status}</span></td></tr>)}
               {!commission?.items?.length ? <tr><td colSpan="5" className="muted">No commission or overtime records.</td></tr> : null}
             </tbody></table></div>
           </section>

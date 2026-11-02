@@ -37,6 +37,7 @@ class EntryIn(BaseModel):
     hourly_rate: Decimal | None = Field(default=None, ge=0)
     rate_override: Decimal | None = Field(default=None, ge=0)
     notes: str | None = None
+    branch_name: str | None = Field(default=None, max_length=255)
 
 class ReviewIn(EntryIn):
     status: str = Field(pattern="^(approved|rejected)$")
@@ -175,6 +176,10 @@ def _assert_not_duplicate(db: Session, franchise_user_id: int, participant_user_
         "reference": payload.reference,
     }
     exclude_clause = ""
+    branch_clause = ""
+    if payload.branch_name:
+        branch_clause = "AND (COALESCE(TRIM(branch_name),'')='' OR LOWER(TRIM(branch_name))=LOWER(TRIM(:branch)))"
+        params["branch"] = payload.branch_name
     if exclude_entry_id is not None:
         exclude_clause = "AND id<>:exclude_id"
         params["exclude_id"] = exclude_entry_id
@@ -185,6 +190,7 @@ def _assert_not_duplicate(db: Session, franchise_user_id: int, participant_user_
           AND LOWER(TRIM(COALESCE(reference,'')))=LOWER(TRIM(:reference))
           AND COALESCE(is_cancelled,FALSE)=FALSE
           {exclude_clause}
+          {branch_clause}
         LIMIT 1
     """), params).scalar()
     if duplicate:
@@ -289,13 +295,14 @@ def create_entry(payload: EntryIn, current_user: User = Depends(get_current_user
     structure = db.execute(text("SELECT * FROM commission_structures WHERE franchise_user_id=:fid AND commission_type=:type AND is_active=TRUE"), {"fid": participant["franchise_user_id"], "type": payload.commission_type}).mappings().first()
     if not structure:
         raise HTTPException(400, "This commission type is not active. Ask the franchise user to configure it.")
+    db.execute(text('SELECT pg_advisory_xact_lock(:namespace,:fid)'), {'namespace': 15015, 'fid': int(participant['franchise_user_id'])})
     _assert_not_duplicate(db, int(participant["franchise_user_id"]), int(participant_user_id), payload)
     rate, amount = _calculate(structure, payload)
     reviewed_at = datetime.now() if status == "approved" else None
     reviewed_by_user_id = current_user.id if status == "approved" else None
-    row = db.execute(text("""INSERT INTO commission_entries(franchise_user_id,employee_user_id,commission_type,service_date,reference,quantity,invoice_value_before_tax,hours,hourly_rate,applied_rate,calculated_amount,notes,created_by_user_id,status,submitted_at,reviewed_at,reviewed_by_user_id,last_edited_by_user_id)
-      VALUES(:fid,:employee,:type,:date,:ref,:qty,:invoice,:hours,:hourly,:rate,:amount,:notes,:uid,:status,NOW(),:reviewed_at,:reviewed_by,:uid) RETURNING *"""),
-      {"fid":participant["franchise_user_id"],"employee":participant_user_id,"type":payload.commission_type,"date":payload.service_date,"ref":payload.reference.strip(),"qty":payload.quantity,"invoice":payload.invoice_value_before_tax,"hours":payload.hours,"hourly":payload.hourly_rate,"rate":rate,"amount":amount,"notes":payload.notes,"uid":current_user.id,"status":status,"reviewed_at":reviewed_at,"reviewed_by":reviewed_by_user_id}).mappings().first()
+    row = db.execute(text("""INSERT INTO commission_entries(franchise_user_id,employee_user_id,commission_type,service_date,reference,quantity,invoice_value_before_tax,hours,hourly_rate,applied_rate,calculated_amount,notes,branch_name,created_by_user_id,status,submitted_at,reviewed_at,reviewed_by_user_id,last_edited_by_user_id)
+      VALUES(:fid,:employee,:type,:date,:ref,:qty,:invoice,:hours,:hourly,:rate,:amount,:notes,:branch,:uid,:status,NOW(),:reviewed_at,:reviewed_by,:uid) RETURNING *"""),
+      {"fid":participant["franchise_user_id"],"employee":participant_user_id,"type":payload.commission_type,"date":payload.service_date,"ref":payload.reference.strip(),"qty":payload.quantity,"invoice":payload.invoice_value_before_tax,"hours":payload.hours,"hourly":payload.hourly_rate,"rate":rate,"amount":amount,"notes":payload.notes,"branch":payload.branch_name,"uid":current_user.id,"status":status,"reviewed_at":reviewed_at,"reviewed_by":reviewed_by_user_id}).mappings().first()
     _audit(db, row["id"], "submitted" if status == "pending" else "created_approved", current_user.id, new=dict(row))
     if status == "pending":
         for uid in _reviewer_ids(db, participant):
@@ -388,12 +395,13 @@ def review(entry_id:int,payload:ReviewIn,current_user:User=Depends(get_current_u
     if not old: raise HTTPException(404,"Entry not found")
     participant = _participant(db,current_user,int(old["employee_user_id"]),write=True)
     _assert_review_allowed(db, current_user, old, participant)
+    db.execute(text('SELECT pg_advisory_xact_lock(:namespace,:fid)'), {'namespace': 15015, 'fid': int(old['franchise_user_id'])})
     _assert_not_duplicate(db, int(old["franchise_user_id"]), int(old["employee_user_id"]), payload, entry_id)
     structure = db.execute(text("SELECT * FROM commission_structures WHERE franchise_user_id=:fid AND commission_type=:type AND is_active=TRUE"),{"fid":participant["franchise_user_id"],"type":payload.commission_type}).mappings().first()
     if not structure: raise HTTPException(400,"This commission type is not active")
     rate,amount = _calculate(structure,payload)
-    row = db.execute(text("""UPDATE commission_entries SET commission_type=:type,service_date=:date,reference=:ref,quantity=:qty,invoice_value_before_tax=:invoice,hours=:hours,hourly_rate=:hourly,applied_rate=:rate,calculated_amount=:amount,notes=:notes,status=:status,review_notes=:review_notes,reviewed_at=NOW(),reviewed_by_user_id=:uid,last_edited_by_user_id=:uid,updated_at=NOW() WHERE id=:id RETURNING *"""),
-      {"type":payload.commission_type,"date":payload.service_date,"ref":payload.reference.strip(),"qty":payload.quantity,"invoice":payload.invoice_value_before_tax,"hours":payload.hours,"hourly":payload.hourly_rate,"rate":rate,"amount":amount,"notes":payload.notes,"status":payload.status,"review_notes":payload.review_notes,"uid":current_user.id,"id":entry_id}).mappings().first()
+    row = db.execute(text("""UPDATE commission_entries SET commission_type=:type,service_date=:date,reference=:ref,quantity=:qty,invoice_value_before_tax=:invoice,hours=:hours,hourly_rate=:hourly,applied_rate=:rate,calculated_amount=:amount,notes=:notes,branch_name=:branch,status=:status,review_notes=:review_notes,reviewed_at=NOW(),reviewed_by_user_id=:uid,last_edited_by_user_id=:uid,updated_at=NOW() WHERE id=:id RETURNING *"""),
+      {"type":payload.commission_type,"date":payload.service_date,"ref":payload.reference.strip(),"qty":payload.quantity,"invoice":payload.invoice_value_before_tax,"hours":payload.hours,"hourly":payload.hourly_rate,"rate":rate,"amount":amount,"notes":payload.notes,"branch":payload.branch_name,"status":payload.status,"review_notes":payload.review_notes,"uid":current_user.id,"id":entry_id}).mappings().first()
     _audit(db,entry_id,payload.status,current_user.id,dict(old),dict(row),payload.review_notes)
     _notify(db,int(row["employee_user_id"]),"Commission approved" if payload.status=="approved" else "Commission rejected",f"Your commission reference {row['reference']} was {payload.status}.",entry_id,"success" if payload.status=="approved" else "danger")
     db.commit(); return dict(row)
@@ -459,7 +467,7 @@ def _pdf(rows,title):
         amount=Decimal(r['calculated_amount'] or 0)
         if r['status']=='approved': total+=amount
         details=f"{r['hours']} hrs x R{r['hourly_rate']} x {r['applied_rate']}" if r['commission_type']=='overtime' else (f"Invoice R{r['invoice_value_before_tax']} @ {r['applied_rate']}%" if r['commission_type']=='invoice_commission' else f"Qty {r['quantity']} @ R{r['applied_rate']}")
-        data.append([str(r['service_date']),r.get('employee_name',''),r['commission_type'].replace('_',' ').title(),r['reference'] or '',r['status'].title(),details,f"R {amount:,.2f}"])
+        data.append([str(r['service_date']),r.get('employee_name',''),r['commission_type'].replace('_',' ').title(),(r['reference'] or '') + (' / ' + r['branch_name'] if r.get('branch_name') else ''),r['status'].title(),details,f"R {amount:,.2f}"])
     data.append(["","","","","","APPROVED TOTAL",f"R {total:,.2f}"])
     table=Table(data,colWidths=[20*mm,31*mm,28*mm,27*mm,20*mm,42*mm,22*mm],repeatRows=1)
     table.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.HexColor('#e8edf3')),('GRID',(0,0),(-1,-1),.35,colors.grey),('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),('FONTNAME',(-2,-1),(-1,-1),'Helvetica-Bold'),('FONTSIZE',(0,0),(-1,-1),7),('VALIGN',(0,0),(-1,-1),'TOP'),('ALIGN',(-1,1),(-1,-1),'RIGHT')]))
