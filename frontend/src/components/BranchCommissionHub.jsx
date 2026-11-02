@@ -102,7 +102,7 @@ export default function BranchCommissionHub({ franchiseId, branchId = '', onBran
     {employee && branch && action === 'pdf' && <EmployeePdfPage franchiseId={franchiseId} employee={employee} branch={branch} month={month} onMonthChange={setMonth}/>}
   </section>
 
-  return <section className="mortuary-book">
+  return <section className="mortuary-book commission-branch-hub">
     <div className="form-card"><h2>All Branches &amp; Commissions</h2><p>All managers and employees are listed below with their commissions for the selected month. Only approved entries with both service and payment proof contribute to totals.</p>
       <div className="mortuary-rates"><label>Branch view<select value={activeBranch} onChange={e => onBranchChange?.(e.target.value)}><option value="">All linked branches</option>{data?.branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label>
         <label>Report month<input type="month" value={month} onChange={e => { if (e.target.value) setMonth(e.target.value) }}/></label></div>

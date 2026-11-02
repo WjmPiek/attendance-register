@@ -22,7 +22,6 @@ import StaffWorkHub from '../components/StaffWorkHub.jsx'
 import MortuaryBook from '../components/MortuaryBook.jsx'
 import MFFileReceipt from '../components/MFFileReceipt.jsx'
 import MFInvoice from '../components/MFInvoice.jsx'
-import DocumentUploaders from '../components/DocumentUploaders'
 import StaffWorkingHours, { defaultStaffWeek, staffWorkWeek, StaffHoursSummary } from '../components/StaffWorkingHours.jsx'
 import BranchCommissionHub from '../components/BranchCommissionHub.jsx'
 import StaffMenu from '../components/StaffMenu.jsx'
@@ -890,7 +889,6 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
       {activeSubTab === 'menu' ? <StaffMenu canManage={canManageStaff} canImport={canImportDocuments} isEmployee={isEmployeeView} onOpen={page => { resetForm(); setWorkHubEmployee(null); setViewItem(null); setActiveSubTab(page) }} /> :
         <nav className="staff-page-navigation" aria-label="HR Staff navigation"><button type="button" className="glass-button" onClick={() => setActiveSubTab('menu')}>← HR Staff</button><span>{staffPages.find(page => page.id === activeSubTab)?.title || 'Staff ID Card'}</span></nav>}
 
-      {activeSubTab === 'proof' && canManageStaff && <DocumentUploaders franchiseId={isSuperUser ? selectedFranchiseId : ''}/>}
       {activeSubTab === 'proof' && (canManageStaff || canImportDocuments) && <section className="form-card"><h2>Upload proof</h2><p>Import all three documents for the same branch, deceased and MF number. Qualifying commissions approve automatically once the invoice is fully paid.</p><div className="staff-proof-links">{staffPages.filter(page => ['invoices', 'receipts', 'mortuary'].includes(page.id)).map(page => <div className="staff-proof-card" key={page.id}><strong>{page.title}</strong><button type="button" className="link-button" onClick={() => setActiveSubTab(page.id)}>Import file →</button></div>)}</div></section>}
       {activeSubTab === 'branches' && canManageStaff && <BranchCommissionHub route={staffRoute} onNavigate={navigateStaff} branchId={viewBranchId} onBranchChange={changeStaffBranch} key={selectedFranchiseId || 'own'} franchiseId={isSuperUser ? selectedFranchiseId : ''} />}
       {activeSubTab === 'invoices' && (canManageStaff || canImportDocuments) && <MFInvoice key={selectedFranchiseId || 'own'} franchiseId={isSuperUser ? selectedFranchiseId : ''} />}

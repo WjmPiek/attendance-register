@@ -1,17 +1,8 @@
 import ServiceClaimPanel from '../components/ServiceClaimPanel'
-import MonthlyCommissionStatement from '../components/MonthlyCommissionStatement'
+import StaffCommissionOverview from '../components/StaffCommissionOverview'
 import { useEffect, useMemo, useState } from 'react'
-import {
-  bulkReviewCommissionEntries, createCommissionEntry, deleteCommissionEntry, downloadCommissionForm,
-  downloadCommissionReport, getCommissionEmployees, getCommissionEntries, getCommissionStructures,
-  getCommissionTypes, reviewCommissionEntry, saveCommissionStructure, getFranchiseUsers,
-  getCommissionEntryHistory, getCommissionEntry, apiRequest,
-} from '../api/client'
-
-const today = () => new Date().toISOString().slice(0, 10)
-const money = (v) => `R ${Number(v || 0).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-const blank = { employee_user_id:'', commission_type:'removals', service_date:today(), reference:'', branch_name:'', earning_branch_id:'', quantity:1, invoice_value_before_tax:'', hours:'', hourly_rate:'', notes:'' }
-const emptyReport = {items:[],total:0,commission_total:0,overtime_total:0,counts:{}}
+import { downloadCommissionForm, getCommissionEmployees, reviewCommissionEntry,
+  getFranchiseUsers, getCommissionEntryHistory, getCommissionEntry } from '../api/client'
 
 export default function CommissionPage({ me }) {
   const isEmployee = me.roles.includes('EmployeeUser')
@@ -21,50 +12,28 @@ export default function CommissionPage({ me }) {
   const isSuper = me.roles.includes('SuperUser')
   const isFranchiseScope = isFranchise || isSuper
   const canReview = me.roles.some(r => ['FranchiseUser','SuperUser'].includes(r))
-  const canManageStructure = me.roles.some(r => ['FranchiseUser','SuperUser'].includes(r))
-  const [types,setTypes]=useState([]), [employees,setEmployees]=useState([]), [structures,setStructures]=useState([])
+  const [employees,setEmployees]=useState([])
   const [franchises,setFranchises]=useState([]), [selectedFranchise,setSelectedFranchise]=useState(null)
-  const [report,setReport]=useState(emptyReport)
-  const [filter,setFilter]=useState({employeeUserId:'',fromDate:'',toDate:'',status:'',search:''})
-  const [form,setForm]=useState(blank), [editing,setEditing]=useState(null), [selected,setSelected]=useState([])
+  const [overviewKey, setOverviewKey] = useState(0)
+  const [editing,setEditing]=useState(null)
   const [selectedEmployee,setSelectedEmployee]=useState(null)
-  const [commissionPreferences,setCommissionPreferences]=useState(null)
-  const commissionPersonId=selectedEmployee?.user_id||(isSelfSubmitter?me.id:form.employee_user_id)
-  useEffect(()=>{let active=true;setCommissionPreferences(null);if(commissionPersonId)apiRequest(`/receipt-commissions/options/${commissionPersonId}`).then(d=>{if(active)setCommissionPreferences(d)}).catch(e=>{if(active)setError(e.message)});return()=>{active=false}},[commissionPersonId])
-  const commissionBranches=(commissionPreferences?.branches||[]).filter(b=>commissionPreferences.commission_branches?.[String(b.id)]?.enabled_types.includes(form.commission_type))
-  useEffect(()=>{setForm(v=>{const next=commissionBranches.some(b=>String(b.id)===String(v.earning_branch_id))?v.earning_branch_id:commissionBranches.length===1?String(commissionBranches[0].id):'';return next===v.earning_branch_id?v:{...v,earning_branch_id:next}})},[commissionPreferences,form.commission_type])
-
   const [employeeSearch,setEmployeeSearch]=useState('')
-  const [structure,setStructure]=useState({commission_type:'removals',label:'Removals',calculation_type:'fixed',rate:0,overtime_multiplier:1.5,is_active:true})
   const [error,setError]=useState(''), [notice,setNotice]=useState(''), [loading,setLoading]=useState(true)
   const [history,setHistory]=useState(null)
   const [reviewPdfUrl,setReviewPdfUrl]=useState('')
 
-  const refresh=async(f=filter)=>{ try{setReport(await getCommissionEntries(f));setError('')}catch(e){setError(e.message)} }
+  const refresh=async()=>{ setOverviewKey(value => value + 1) }
   const load=async()=>{
     setLoading(true)
-    if(isSuper){
-      const results=await Promise.allSettled([getCommissionTypes(),getFranchiseUsers()])
-      if(results[0].status==='fulfilled')setTypes(results[0].value);else setError(results[0].reason?.message||'Commission types could not load.')
-      if(results[1].status==='fulfilled')setFranchises(results[1].value.filter(x=>x.is_active!==false&&x.login_active!==false));else setError(results[1].reason?.message||'Franchise users could not load.')
-      setLoading(false);return
-    }
-    const results = await Promise.allSettled([getCommissionTypes(),getCommissionEmployees(),getCommissionStructures()])
-    const [t,e,s] = results
-    if(t.status==='fulfilled') setTypes(t.value); else setError(t.reason?.message || 'Commission types could not load.')
-    if(e.status==='fulfilled') {
-      setEmployees(e.value)
-      if(isSelfSubmitter && e.value.length>=1) setForm(v=>({...v,employee_user_id:String(e.value[0].user_id)}))
-    } else setError(e.reason?.message || 'Employees could not load.')
-    if(s.status==='fulfilled') setStructures(s.value); else setError(s.reason?.message || 'Commission structures could not load.')
-    if(!isFranchiseScope) await refresh()
-    setLoading(false)
+    try {
+      if (isSuper) setFranchises((await getFranchiseUsers()).filter(x=>x.is_active!==false&&x.login_active!==false))
+      else setEmployees(await getCommissionEmployees())
+    } catch (e) { setError(e.message || 'Staff could not load.') }
+    finally { setLoading(false) }
   }
   useEffect(()=>{load()},[])
   useEffect(()=>()=>{if(reviewPdfUrl)URL.revokeObjectURL(reviewPdfUrl)},[reviewPdfUrl])
 
-  const active=useMemo(()=>structures.filter(s=>s.is_active),[structures])
-  const current=active.find(s=>s.commission_type===form.commission_type)
   const linkedEmployees=useMemo(()=>employees.filter(x=>x.staff_type==='employee'),[employees])
   const staffHierarchy=useMemo(()=>{
     const q=employeeSearch.trim().toLowerCase()
@@ -81,10 +50,7 @@ export default function CommissionPage({ me }) {
     const direct=employees.filter(item=>item.staff_type==='employee'&&!assignedIds.has(Number(item.user_id))&&(!q||matches(item)))
     return {groups,direct}
   },[employees,employeeSearch])
-  const estimate=()=>{if(!current)return 0;if(form.commission_type==='invoice_commission')return Number(form.invoice_value_before_tax||0)*Number(current.rate||0)/100;if(form.commission_type==='overtime')return Number(form.hours||0)*Number(form.hourly_rate||0)*Number(current.overtime_multiplier||current.rate||1);return Number(form.quantity||0)*Number(current.rate||0)}
   const payload=(x)=>({...x,earning_branch_id:x.earning_branch_id?Number(x.earning_branch_id):null,employee_user_id:x.employee_user_id?Number(x.employee_user_id):null,quantity:Number(x.quantity||1),invoice_value_before_tax:x.invoice_value_before_tax===''?null:Number(x.invoice_value_before_tax),hours:x.hours===''?null:Number(x.hours),hourly_rate:x.hourly_rate===''?null:Number(x.hourly_rate)})
-  const submit=async e=>{e.preventDefault();try{await createCommissionEntry(payload(form));setForm(v=>({...blank,employee_user_id:v.employee_user_id}));setNotice(isSelfSubmitter?'Commission submitted for review.':'Commission added for this employee.');await refresh(filter)}catch(x){setError(x.message)}}
-  const saveStructure=async e=>{e.preventDefault();try{await saveCommissionStructure({...structure,franchise_user_id:selectedFranchise?.id||null,rate:Number(structure.rate||0),overtime_multiplier:structure.calculation_type==='overtime'?Number(structure.overtime_multiplier||1):null});setStructures(await getCommissionStructures(selectedFranchise?.id));setNotice('Structure saved.')}catch(x){setError(x.message)}}
   const closeReview=()=>{setEditing(null);if(reviewPdfUrl)URL.revokeObjectURL(reviewPdfUrl);setReviewPdfUrl('')}
   const openReview=async entry=>{
     try{
@@ -94,20 +60,14 @@ export default function CommissionPage({ me }) {
       setReviewPdfUrl(URL.createObjectURL(blob));setEditing({...entry})
     }catch(x){setError(x.message||'Commission review document could not load.')}finally{setLoading(false)}
   }
-  const review=async status=>{try{await reviewCommissionEntry(editing.id,{...payload(editing),status,review_notes:editing.review_notes||''});closeReview();setNotice(`Commission ${status}. Employee notification sent.`);await refresh(filter)}catch(x){setError(x.message)}}
-  const bulk=async status=>{if(!selected.length)return;try{const count=selected.length;await bulkReviewCommissionEntries({entry_ids:selected,status,review_notes:''});setSelected([]);setNotice(`${count} submission(s) ${status}.`);await refresh(filter)}catch(x){setError(x.message)}}
-  const saveBlob=(blob,name)=>{const u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=name;a.click();URL.revokeObjectURL(u)}
+  const review=async status=>{try{await reviewCommissionEntry(editing.id,{...payload(editing),status,review_notes:editing.review_notes||''});closeReview();setNotice(`Commission ${status}. Employee notification sent.`);await refresh()}catch(x){setError(x.message)}}
   const openEmployee=async employee=>{
-    const next={employeeUserId:String(employee.user_id),fromDate:'',toDate:'',status:'',search:'',franchiseUserId:selectedFranchise?.id||''}
-    setSelectedEmployee(employee);setForm({...blank,employee_user_id:String(employee.user_id)});setFilter(next);setSelected([]);setEditing(null);setNotice('');setError('')
+    setSelectedEmployee(employee);setEditing(null);setHistory(null);setNotice('');setError('')
     const url=new URL(window.location.href);url.searchParams.set('commission_employee',String(employee.user_id));window.history.replaceState({},'',url)
-    await refresh(next)
   }
   const closeEmployee=()=>{
-    const next={employeeUserId:'',fromDate:'',toDate:'',status:'',search:'',franchiseUserId:selectedFranchise?.id||''}
-    setSelectedEmployee(null);setReport(emptyReport);setFilter(next);setSelected([]);setEditing(null)
+    setSelectedEmployee(null);setEditing(null);setHistory(null)
     const url=new URL(window.location.href);url.searchParams.delete('commission_employee');window.history.replaceState({},'',url)
-    if(isManager)refresh(next)
   }
 
   useEffect(()=>{
@@ -120,10 +80,8 @@ export default function CommissionPage({ me }) {
   const openFranchise=async franchise=>{
     setLoading(true);setError('');setNotice('');setSelectedFranchise(franchise)
     const scope=String(franchise.id)
-    const next={employeeUserId:'',fromDate:'',toDate:'',status:'',search:'',franchiseUserId:scope}
     try{
-      const [staff,configured]=await Promise.all([getCommissionEmployees(scope),getCommissionStructures(scope)])
-      setEmployees(staff);setStructures(configured);setFilter(next);setReport(emptyReport)
+      setEmployees(await getCommissionEmployees(scope))
     }catch(x){setError(x.message)}finally{setLoading(false)}
   }
 
@@ -147,41 +105,35 @@ export default function CommissionPage({ me }) {
     return()=>{activeRequest=false}
   },[employees])
 
-  const staffButton=(employee,nested=false)=><button type="button" className={`commission-employee-row${nested?' nested':''}`} key={employee.user_id} onClick={()=>openEmployee(employee)}><div><strong>{employee.full_name}</strong><span>{employee.employee_role||'Employee'}{employee.employee_number?` · ${employee.employee_number}`:''}</span>{employee.office_address_assigned&&<small>{employee.office_address_assigned}</small>}</div><span className="commission-open-label">Open commissions →</span></button>
+  const staffButton=(employee,nested=false)=><button type="button" className={`commission-employee-row${nested?' nested':''}`} key={employee.user_id} onClick={()=>openEmployee(employee)}><div><strong>{employee.full_name}</strong><span>{employee.employee_role||'Employee'}{employee.employee_number?` · ${employee.employee_number}`:''}</span></div><span className="commission-open-label">Open commissions →</span></button>
   const viewingLinkedEmployee=isManager&&selectedEmployee?.staff_type==='employee'
 
   if(editing){
-    return <section className="stack-page commission-review-page"><div className="commission-review-workspace"><div className="section-heading"><div><button type="button" className="glass-button" onClick={closeReview}>← Back to commissions</button><p className="eyebrow">Approval document</p><h1>Review commission #{editing.id}</h1><p>{editing.employee_name} · {editing.reference}</p></div></div>{error&&<div className="error-message">{error}</div>}{reviewPdfUrl?<div className="pdf-preview commission-review-pdf"><iframe src={reviewPdfUrl} title={`Commission review ${editing.id}`}/></div>:<p>Preparing review PDF...</p>}<div className="commission-review-decision"><label>Deceased name and surname<input required value={editing.claim_deceased || ''} onChange={e => setEditing(v => ({...v,claim_deceased:e.target.value}))}/></label><label>Service role<select value={editing.commission_role || 'driver'} onChange={e => setEditing(v => ({...v,commission_role:e.target.value}))}><option value="driver">Employee</option><option value="assistant">Assistant</option></select></label><label>Decision notes<textarea placeholder="Add an approval or rejection note" value={editing.review_notes||''} onChange={e=>setEditing(v=>({...v,review_notes:e.target.value}))}/></label><div className="button-row"><button className="primary-button" onClick={()=>review('approved')}>Approve claim</button><button className="danger-button" onClick={()=>review('rejected')}>Reject claim</button></div></div></div></section>
+    return <section className="stack-page staff-commission-page commission-review-page"><div className="commission-review-workspace"><div className="section-heading"><div><button type="button" className="glass-button" onClick={closeReview}>← Back to commissions</button><p className="eyebrow">Approval document</p><h1>Review commission #{editing.id}</h1><p>{editing.employee_name} · {editing.reference}</p></div></div>{error&&<div className="error-message">{error}</div>}{reviewPdfUrl?<div className="pdf-preview commission-review-pdf"><iframe src={reviewPdfUrl} title={`Commission review ${editing.id}`}/></div>:<p>Preparing review PDF...</p>}<div className="commission-review-decision"><label>Deceased name and surname<input required value={editing.claim_deceased || ''} onChange={e => setEditing(v => ({...v,claim_deceased:e.target.value}))}/></label><label>Service role<select value={editing.commission_role || 'driver'} onChange={e => setEditing(v => ({...v,commission_role:e.target.value}))}><option value="driver">Employee</option><option value="assistant">Assistant</option></select></label><label>Decision notes<textarea placeholder="Add an approval or rejection note" value={editing.review_notes||''} onChange={e=>setEditing(v=>({...v,review_notes:e.target.value}))}/></label><div className="button-row"><button className="primary-button" onClick={()=>review('approved')}>Approve claim</button><button className="danger-button" onClick={()=>review('rejected')}>Reject claim</button></div></div></div></section>
   }
 
   if(isSuper&&!selectedFranchise){
-    return <section className="stack-page"><div className="glass-card section-card"><h1>Franchise Commissions</h1><p>Select a franchise user to view only that franchise’s managers, employees, structures and commission history.</p>{error&&<div className="error-message">{error}</div>}</div><div className="glass-card section-card"><h2>Franchise Users</h2>{loading?<p>Loading franchise users...</p>:<div className="commission-employee-list">{franchises.map(f=><button type="button" className="commission-employee-row" key={f.id} onClick={()=>openFranchise(f)}><div><strong>{f.franchise_name||f.business_name||f.full_name||`Franchise ${f.id}`}</strong><span>{f.username||f.email||'Franchise user'}</span></div><span className="commission-open-label">Open commissions →</span></button>)}{!franchises.length&&<div className="empty-state">No active franchise users found.</div>}</div>}</div></section>
+    return <section className="stack-page staff-commission-page"><div className="glass-card section-card"><h1>Franchise Commissions</h1><p>Select a franchise user to view only that franchise’s managers, employees and commission history.</p>{error&&<div className="error-message">{error}</div>}</div><div className="glass-card section-card"><h2>Franchise Users</h2>{loading?<p>Loading franchise users...</p>:<div className="commission-employee-list">{franchises.map(f=><button type="button" className="commission-employee-row" key={f.id} onClick={()=>openFranchise(f)}><div><strong>{f.franchise_name||f.business_name||f.full_name||`Franchise ${f.id}`}</strong><span>{f.username||f.email||'Franchise user'}</span></div><span className="commission-open-label">Open commissions →</span></button>)}{!franchises.length&&<div className="empty-state">No active franchise users found.</div>}</div>}</div></section>
   }
 
-  const structurePanel = null
-
   if(isFranchiseScope && !selectedEmployee){
-    return <section className="stack-page">
-      <div className="glass-card section-card"><div className="section-heading"><div>{isSuper&&<button type="button" className="glass-button" onClick={()=>{setSelectedFranchise(null);setEmployees([]);setStructures([])}}>← Franchise users</button>}<h1>{selectedFranchise?(selectedFranchise.franchise_name||selectedFranchise.business_name||selectedFranchise.full_name):'Staff'} Commissions</h1><p>Select a manager or employee to open their commission page and add or review commissions.</p></div></div>{error&&<div className="error-message">{error}</div>}{notice&&<div className="success-message">{notice}</div>}</div>
-      {structurePanel}
+    return <section className="stack-page staff-commission-page">
+      <div className="glass-card section-card"><div className="section-heading"><div>{isSuper&&<button type="button" className="glass-button" onClick={()=>{setSelectedFranchise(null);setEmployees([])}}>← Franchise users</button>}<h1>{selectedFranchise?(selectedFranchise.franchise_name||selectedFranchise.business_name||selectedFranchise.full_name):'Staff'} Commissions</h1><p>Select a manager or employee to view their commissions and document status.</p></div></div>{error&&<div className="error-message">{error}</div>}{notice&&<div className="success-message">{notice}</div>}</div>
       <div className="glass-card section-card"><div className="section-heading"><div><h2>Managers and linked employees</h2><p>Select a manager for their own commissions, or select an employee listed beneath that manager.</p></div><label className="commission-employee-search">Search staff<input value={employeeSearch} onChange={e=>setEmployeeSearch(e.target.value)} placeholder="Name, role, number or email"/></label></div>
         {loading?<p>Loading employees...</p>:<div className="commission-hierarchy-list">{staffHierarchy.groups.map(group=><section className="commission-manager-group" key={group.manager.user_id}><div className="commission-manager-heading">{staffButton(group.manager)}<span>{group.employees.length} linked employee{group.employees.length===1?'':'s'}</span></div><div className="commission-linked-employees">{group.employees.map(employee=>staffButton(employee,true))}{!group.employees.length&&<small className="muted">No linked employees.</small>}</div></section>)}{staffHierarchy.direct.length>0&&<section className="commission-manager-group"><h3>Direct employees</h3><div className="commission-linked-employees">{staffHierarchy.direct.map(employee=>staffButton(employee,true))}</div></section>}{!staffHierarchy.groups.length&&!staffHierarchy.direct.length&&<div className="empty-state">No registered staff found.</div>}</div>}
       </div>
     </section>
   }
 
-  return <section className="stack-page">
-    <div className="glass-card section-card"><div className="section-heading"><div>{selectedEmployee&&<button type="button" className="glass-button" onClick={closeEmployee}>{isManager?'← My commissions':'← All employees'}</button>}<h1>{selectedEmployee?`${selectedEmployee.full_name} — Commissions`:'Commissions & Overtime'}</h1><p>{selectedEmployee?`${selectedEmployee.employee_role||'Employee'}${selectedEmployee.employee_number?` · ${selectedEmployee.employee_number}`:''}`:isSelfSubmitter?'Submit claims and track review status.':'Configure, review, approve and report on submissions.'}</p></div></div>{error&&<div className="error-message">{error}</div>}{notice&&<div className="success-message">{notice}</div>}<div className="stats-grid"><div className="stat-card"><span>Approved total</span><strong>{money(report.total)}</strong></div><div className="stat-card"><span>Pending</span><strong>{report.counts?.pending||0}</strong></div><div className="stat-card"><span>Approved</span><strong>{report.counts?.approved||0}</strong></div><div className="stat-card"><span>Rejected</span><strong>{report.counts?.rejected||0}</strong></div></div></div>
+  return <section className="stack-page staff-commission-page">
+    <div className="glass-card section-card"><div className="section-heading"><div>{selectedEmployee&&<button type="button" className="glass-button" onClick={closeEmployee}>{isManager?'← My commissions':'← All employees'}</button>}<h1>{selectedEmployee?`${selectedEmployee.full_name} — Commissions`:'My Commissions'}</h1><p>{selectedEmployee?`${selectedEmployee.employee_role||'Employee'}${selectedEmployee.employee_number?` · ${selectedEmployee.employee_number}`:''}`:isSelfSubmitter?'View commissions and submit service claims.':'View this staff member’s commissions and document status.'}</p></div></div>{error&&<div className="error-message">{error}</div>}{notice&&<div className="success-message">{notice}</div>}</div>
 
-    {selectedEmployee && <div className="glass-card section-card"><MonthlyCommissionStatement employeeUserId={selectedEmployee.user_id} franchiseId={selectedFranchise?.id}/></div>}
-    {isSelfSubmitter && !selectedEmployee && <div className="glass-card section-card"><MonthlyCommissionStatement employeeUserId={me.id}/></div>}
-    {!selectedEmployee&&structurePanel}
 
-    {isManager&&!selectedEmployee&&<div className="glass-card section-card"><div className="section-heading"><div><h2>Employees linked to me</h2><p>Your totals above contain only your own commission. Select an employee to view that employee’s claims. The franchise holder approves claims.</p></div></div><div className="commission-employee-list">{linkedEmployees.map(employee=>staffButton(employee))}{!linkedEmployees.length&&<div className="empty-state">No employees are linked to this manager.</div>}</div></div>}
 
-    {!viewingLinkedEmployee && <ServiceClaimPanel me={me} employee={selectedEmployee} franchiseId={selectedFranchise?.id} onSaved={() => refresh(filter)}/>}
+    <StaffCommissionOverview employeeId={selectedEmployee?.user_id || me.id} franchiseId={selectedFranchise?.id} refreshKey={overviewKey} me={me} onReview={openReview} onHistory={async entry => setHistory({entry,items:await getCommissionEntryHistory(entry.id)})}/>
+    {!viewingLinkedEmployee && <details className="commission-add-claim"><summary>Add a service commission</summary><ServiceClaimPanel me={me} employee={selectedEmployee} franchiseId={selectedFranchise?.id} onSaved={refresh}/></details>}
 
-    <div className="glass-card section-card"><div className="section-heading"><h2>{canReview?'Commission history':'My submissions'}</h2><button className="glass-button" onClick={async()=>saveBlob(await downloadCommissionReport(filter),selectedEmployee?`${selectedEmployee.full_name}-commissions.pdf`:'commission-overtime-report.pdf')}>Download letterhead PDF</button></div><div className="form-grid compact-grid">{canReview&&!selectedEmployee&&<label>Employee<select value={filter.employeeUserId} onChange={e=>setFilter(v=>({...v,employeeUserId:e.target.value}))}><option value="">All</option>{employees.map(x=><option key={x.user_id} value={x.user_id}>{x.full_name}</option>)}</select></label>}<label>Status<select value={filter.status} onChange={e=>setFilter(v=>({...v,status:e.target.value}))}><option value="">All</option><option value="pending">Pending</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="cancelled">Cancelled</option></select></label><label>Search<input placeholder="Reference or type" value={filter.search} onChange={e=>setFilter(v=>({...v,search:e.target.value}))}/></label><label>From<input type="date" value={filter.fromDate} onChange={e=>setFilter(v=>({...v,fromDate:e.target.value}))}/></label><label>To<input type="date" value={filter.toDate} onChange={e=>setFilter(v=>({...v,toDate:e.target.value}))}/></label><button className="glass-button" onClick={()=>refresh(filter)}>Apply</button></div>{canReview&&selected.length>0&&<div className="button-row"><button className="primary-button" onClick={()=>bulk('approved')}>Approve selected</button><button className="danger-button" onClick={()=>bulk('rejected')}>Reject selected</button></div>}<div className="table-wrap"><table><thead><tr>{canReview&&<th>Select</th>}<th>Date</th>{canReview&&!selectedEmployee&&<th>Employee</th>}<th>Type</th><th>Reference / Branch</th><th>Qty</th><th>Amount</th><th>Status</th><th>Actions</th></tr></thead><tbody>{report.items.map(r=><tr key={r.id}>{canReview&&<td><input type="checkbox" disabled={r.status!=='pending'||Number(r.employee_user_id)===Number(me.id)} checked={selected.includes(r.id)} onChange={e=>setSelected(v=>e.target.checked?[...v,r.id]:v.filter(id=>id!==r.id))}/></td>}<td>{r.service_date}</td>{canReview&&!selectedEmployee&&<td>{r.employee_name}</td>}<td>{r.commission_type.replaceAll('_',' ')}</td><td>{r.reference}{r.branch_name && <small style={{display: 'block'}}>{r.branch_name}</small>}{r.notes && <details><summary>Notes</summary><p style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxWidth:360}}>{r.notes}</p></details>}</td><td>{r.quantity}</td><td>{money(r.calculated_amount)}</td><td><strong>{r.status}</strong>{r.payment_eligible === false && <small className="commission-branch-summary">Blocked for payment: {r.payment_block_reason}</small>}</td><td><div className="button-row">{canReview&&r.status==='pending'&&Number(r.employee_user_id)!==Number(me.id)&&<button className="glass-button" onClick={()=>openReview(r)}>Review PDF</button>}<button className="glass-button" onClick={async()=>saveBlob(await downloadCommissionForm(r.id),`commission-form-${r.id}.pdf`)}>PDF</button><button className="glass-button" onClick={async()=>setHistory({entry:r,items:await getCommissionEntryHistory(r.id)})}>Audit history</button>{canManageStructure&&r.status!=='approved'&&r.status!=='cancelled'&&<button className="danger-button" onClick={async()=>{if(window.confirm('Cancel this commission entry? Its audit history will be retained.')){await deleteCommissionEntry(r.id);refresh(filter)}}}>Cancel</button>}</div></td></tr>)}{!report.items.length&&<tr><td colSpan="10">No commission records found for this employee.</td></tr>}</tbody></table></div></div>
+    {isManager&&!selectedEmployee&&<div className="glass-card section-card"><div className="section-heading"><div><h2>Employees linked to me</h2><p>Your totals above contain only your own commission. Select an employee to view that employee’s claims. Qualifying commissions approve automatically.</p></div></div><div className="commission-employee-list">{linkedEmployees.map(employee=>staffButton(employee))}{!linkedEmployees.length&&<div className="empty-state">No employees are linked to this manager.</div>}</div></div>}
 
     {history&&<div className="glass-card section-card"><div className="section-heading"><h2>Audit history — {history.entry.reference}</h2><button className="glass-button" onClick={()=>setHistory(null)}>Close</button></div><div className="table-wrap"><table><thead><tr><th>Date</th><th>Action</th><th>Actor</th><th>Note</th></tr></thead><tbody>{history.items.map(x=><tr key={x.id}><td>{new Date(x.created_at).toLocaleString('en-ZA')}</td><td>{x.action.replaceAll('_',' ')}</td><td>{x.actor_name}</td><td>{x.note||'—'}</td></tr>)}</tbody></table></div></div>}
   </section>
