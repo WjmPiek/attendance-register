@@ -211,6 +211,7 @@ export default function BusinessInformationPage() {
       </section>
 
       <form className="form-card business-info-form" onSubmit={save}>
+        <p className="muted">Missing business details are filled from your main holder’s primary franchise when you open Attendance from the main system. Details already saved here are preserved. Linked branches keep their own VAT settings for commissions.</p>
         {error ? <p className="error">{error}</p> : null}
         {message ? <p className="success-message">{message}</p> : null}
         <div className="form-grid two-column-grid">

@@ -2,6 +2,20 @@
 
 ## Holder setup
 
+HR Staff opens a card menu: All Branches & Commissions, MF File Receipt,
+Mortuary Book, View Staff, Add New Employee, Office Attendance Codes and My Payslips.
+Each opens a separate page with an HR Staff return button. From the branch list,
+Commission permissions, Monthly commissions and Employee PDF each open a separate
+employee/branch page. Use **Save this commission** to save the branch's permissions;
+other branches are preserved. Browser Back and refresh retain the selected page.
+
+Opening Attendance from the main system also fills missing Business Information
+from the approved holder's primary franchise: business/trading name, registration,
+VAT number, address, website and contact numbers. Existing locally entered values
+are preserved (except legacy branch-label placeholders in the business name).
+Opening a secondary branch does not copy its VAT or business details over the main
+holder's profile. Branch commission VAT settings remain independent.
+
 1. Open Attendance from the main Martins system after deployment. The signed
    handoff now includes the selected holder principal's assigned franchise group,
    with stable main-system branch IDs and recorded VAT numbers. It does not grant

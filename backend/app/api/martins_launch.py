@@ -108,6 +108,8 @@ def martins_launch(payload: MartinsLaunchRequest, db: Session = Depends(get_db))
             profile.franchise_name = franchises[0]
         if not profile.business_name:
             profile.business_name = franchises[0]
+        from app.services.business_handoff import fill_business_profile
+        fill_business_profile(profile, handoff)
         profile.is_active = True
         db.flush()
         if handoff.get('branch_scope'):

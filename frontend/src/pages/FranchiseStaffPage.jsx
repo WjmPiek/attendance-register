@@ -22,6 +22,8 @@ import StaffWorkHub from '../components/StaffWorkHub.jsx'
 import MortuaryBook from '../components/MortuaryBook.jsx'
 import MFFileReceipt from '../components/MFFileReceipt.jsx'
 import BranchCommissionHub from '../components/BranchCommissionHub.jsx'
+import StaffMenu from '../components/StaffMenu.jsx'
+import { staffPages, useStaffNavigation } from '../api/staffNavigation'
 import CommissionCheckboxes from '../components/CommissionCheckboxes.jsx'
 import { getCurrentLocation } from "../utils/location";
 import { getDistance } from "../utils/distance";
@@ -243,7 +245,9 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
   )
   const canManageStaff = isSuperUser || Boolean(me?.roles?.includes('FranchiseUser'))
   const canSeeManagerList = isSuperUser || (!isManagerView && !isEmployeeView)
-  const [activeSubTab, setActiveSubTab] = useState(canManageStaff ? 'branches' : 'view')
+  const [staffRoute, navigateStaff] = useStaffNavigation()
+  const activeSubTab = staffRoute.page
+  const setActiveSubTab = page => navigateStaff(page)
   const [canImportDocuments, setCanImportDocuments] = useState(false)
   const [holderBranches, setHolderBranches] = useState([])
   const [viewBranchId,setViewBranchId] = useState(getStaffBranchId)
@@ -251,7 +255,14 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
   const [managers, setManagers] = useState([])
   const [employees, setEmployees] = useState([])
   const [franchiseUsers, setFranchiseUsers] = useState([])
-  const [selectedFranchiseId, setSelectedFranchiseId] = useState('')
+  const [selectedFranchiseId, setSelectedFranchiseId] = useState(() => isSuperUser ? new URLSearchParams(window.location.search).get('staff_franchise') || '' : '')
+  useEffect(() => {
+    if (!isSuperUser) return
+    const url = new URL(window.location.href)
+    if (selectedFranchiseId) url.searchParams.set('staff_franchise', selectedFranchiseId)
+    else url.searchParams.delete('staff_franchise')
+    window.history.replaceState({}, '', url)
+  }, [selectedFranchiseId, isSuperUser])
   useEffect(() => {
     if (isSuperUser && !selectedFranchiseId) return
     const suffix = isSuperUser ? `?franchise_user_id=${selectedFranchiseId}` : ''
@@ -871,46 +882,10 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
       ) : null}
 
       {canManageStaff && holderBranches.length>0 && <section className="form-card staff-branch-selector"><label>Staff branch view<select value={viewBranchId} onChange={e=>changeStaffBranch(e.target.value)}><option value="">Main holder — all linked branches</option>{holderBranches.map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</select></label><p className="muted">View Staff shows people whose home branch is selected. Commission pages show earnings for that branch.</p></section>}
-      <div className="sub-tabs">
-        {canManageStaff && <button className={activeSubTab === 'branches' ? 'active' : ''} onClick={() => setActiveSubTab('branches')}>All Branches &amp; Commissions</button>}
-        {(canManageStaff || canImportDocuments) && <button className={activeSubTab === 'receipts' ? 'active' : ''} onClick={() => setActiveSubTab('receipts')}>MF File Receipt</button>}
+      {activeSubTab === 'menu' ? <StaffMenu canManage={canManageStaff} canImport={canImportDocuments} isEmployee={isEmployeeView} onOpen={page => { resetForm(); setWorkHubEmployee(null); setViewItem(null); setActiveSubTab(page) }} /> :
+        <nav className="staff-page-navigation" aria-label="HR Staff navigation"><button type="button" className="glass-button" onClick={() => setActiveSubTab('menu')}>← HR Staff</button><span>{staffPages.find(page => page.id === activeSubTab)?.title || 'Staff ID Card'}</span></nav>}
 
-        {(canManageStaff || canImportDocuments) && <button className={activeSubTab === 'mortuary' ? 'active' : ''} onClick={() => setActiveSubTab('mortuary')}>Mortuary Book</button>}
-
-        <button
-          className={activeSubTab === 'view' ? 'active' : ''}
-          onClick={() => setActiveSubTab('view')}
-        >
-          View Staff
-        </button>
-
-        {canManageStaff ? <button
-          className={activeSubTab === 'add' ? 'active' : ''}
-          onClick={() => {
-            resetForm()
-            setActiveSubTab('add')
-          }}
-        >
-          Add New Employee
-        </button> : null}
-
-        {!isEmployeeView ? <button
-          className={activeSubTab === 'qr' ? 'active' : ''}
-          onClick={() => setActiveSubTab('qr')}
-        >
-          Office Attendance Codes
-        </button> : null}
-
-        <button
-          className={activeSubTab === 'payslips' ? 'active' : ''}
-          onClick={() => setActiveSubTab('payslips')}
-        >
-          My Payslips
-        </button>
-
-      </div>
-
-      {activeSubTab === 'branches' && canManageStaff && <BranchCommissionHub branchId={viewBranchId} onBranchChange={changeStaffBranch} key={selectedFranchiseId || 'own'} franchiseId={isSuperUser ? selectedFranchiseId : ''} />}
+      {activeSubTab === 'branches' && canManageStaff && <BranchCommissionHub route={staffRoute} onNavigate={navigateStaff} branchId={viewBranchId} onBranchChange={changeStaffBranch} key={selectedFranchiseId || 'own'} franchiseId={isSuperUser ? selectedFranchiseId : ''} />}
       {activeSubTab === 'receipts' && (canManageStaff || canImportDocuments) && <MFFileReceipt key={selectedFranchiseId || 'own'} franchiseId={isSuperUser ? selectedFranchiseId : ''} canManage={canManageStaff} />}
       {activeSubTab === 'mortuary' && (canManageStaff || canImportDocuments) && <MortuaryBook canManage={canManageStaff} key={selectedFranchiseId || 'own'} franchiseId={isSuperUser ? selectedFranchiseId : ''} />}
 
@@ -1030,7 +1005,7 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
         </section>
       ) : null}
 
-      {activeSubTab === 'add' ? (
+      {activeSubTab === 'add' && canManageStaff ? (
         <section className="form-card staff-card single-staff-form">
           <div className="detail-header">
             <h2>{editing ? `Edit ${isManagerRole ? 'Manager' : 'Employee'}` : 'Add Staff Member'}</h2>
@@ -1126,7 +1101,7 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
         </section>
       ) : null}
 
-      {activeSubTab === 'qr' ? (
+      {activeSubTab === 'qr' && !isEmployeeView ? (
         <section className="form-card staff-list-card">
           <h2>Office Attendance Codes</h2>
           <p className="muted">Only managers and franchise users can view or issue these codes. Give the code directly to the employee who calls you. It works once and is replaced immediately after use; unused codes expire after 20 minutes.</p>
@@ -1181,7 +1156,7 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
         </section>
       ) : null}
 
-      {selectedOffice ? (
+      {activeSubTab === 'qr' && selectedOffice ? (
         <div className="card" style={{ marginTop: 20 }}>
           <h3>Set GPS location: {selectedOffice.name || `Office #${selectedOffice.id}`}</h3>
 
