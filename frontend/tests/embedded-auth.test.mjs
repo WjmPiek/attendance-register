@@ -24,3 +24,15 @@ test('a signed module session works when frame storage is blocked and clears on 
   assert.equal(getStaffBranchId(),'');
  }finally{delete globalThis.localStorage;delete globalThis.sessionStorage;delete globalThis.window;delete globalThis.CustomEvent;}
 });
+
+test('integrated sessions stay in their own frame instead of overwriting another branch tab', () => {
+ const stored=new Map([['token','independent-standalone-session']]);
+ globalThis.localStorage={getItem:key=>stored.get(key)||null,setItem:(key,value)=>stored.set(key,value),removeItem:key=>stored.delete(key)};
+ globalThis.window={parent:{},location:{search:'?embedded=1&parent_origin=https://martinssystem.co.za'}};
+ try {
+  setAccessToken('signed-branch-session');
+  assert.equal(getAccessToken(),'signed-branch-session');
+  assert.equal(stored.get('token'),'independent-standalone-session');
+  setAccessToken(null);assert.equal(getAccessToken(),null);
+ }finally{delete globalThis.localStorage;delete globalThis.window;}
+});
