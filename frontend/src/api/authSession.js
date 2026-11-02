@@ -1,11 +1,12 @@
 import {setStaffBranchId} from './branchContext.js'
+import {embeddedParentOrigin} from '../embeddedAttendance.js'
 const TOKEN_KEY = 'token'
 export const AUTH_INVALID_EVENT = 'attendance:auth-invalid'
 let memoryToken = null
 let memoryOnly = false
 
 export function getAccessToken() {
-  if (memoryOnly) return memoryToken
+  if (memoryOnly || embeddedParentOrigin()) return memoryToken
   try { return localStorage.getItem(TOKEN_KEY) }
   catch { return memoryToken }
 }
@@ -13,6 +14,8 @@ export function getAccessToken() {
 export function setAccessToken(token) {
   if (token !== getAccessToken()) setStaffBranchId('')
   memoryToken = token || null
+  // A host-page session belongs only to this frame and its selected branch.
+  if (embeddedParentOrigin()) { memoryOnly = true; return }
   try {
     if (token) localStorage.setItem(TOKEN_KEY, token)
     else localStorage.removeItem(TOKEN_KEY)
