@@ -195,6 +195,8 @@ def database(monkeypatch):
         monkeypatch.setattr(mortuary, '_participant', participant)
         monkeypatch.setattr(receipt_commissions, '_participant', participant)
         monkeypatch.setattr(commission, '_participant', participant)
+        from app.services import commission_automation
+        monkeypatch.setattr(commission_automation, 'SessionLocal', lambda: Session(engine))
         yield db
     engine.dispose()
 

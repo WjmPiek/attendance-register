@@ -99,6 +99,14 @@ def _initialize_database() -> None:
 @app.on_event("startup")
 def on_startup() -> None:
     _initialize_database()
+    from app.services.commission_automation import start_automation
+    start_automation()
+
+
+@app.on_event("shutdown")
+def on_shutdown() -> None:
+    from app.services.commission_automation import stop_automation
+    stop_automation()
 
 
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
