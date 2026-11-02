@@ -89,3 +89,13 @@ def import_participant(db, user, uid, fid):
     if not person:
         raise HTTPException(403, 'Employee is inactive or outside the holder branch group.')
     return person
+
+
+def launch_branch_context(db,fid,handoff):
+    selected=handoff.get('active_franchise_id')
+    if not selected:
+        return None
+    match=next((b for b in branches(db,fid) if b['main_franchise_id']==selected),None)
+    if not match:
+        raise HTTPException(403,'Selected branch is outside this holder group.')
+    return match['id']

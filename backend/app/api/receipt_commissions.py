@@ -21,7 +21,7 @@ from app.models.core import User
 from app.services.mortuary import price_removal
 from app.services.receipt_commissions import (
     COMMISSION_LABELS, branch_key, mf_key, money, option_map, enabled,
-    parse_receipt_pdf, receipt_base, set_enabled_types,
+    parse_receipt_pdf, receipt_base, set_enabled_types, branch_options, enabled_for_branch, save_branch_options, CommissionBranchOptions,
 )
 from app.services.audit import write_audit_log
 
@@ -33,7 +33,8 @@ router = APIRouter()
 class OptionIn(BaseModel):
     employee_user_id: int
     franchise_user_id: int | None = None
-    enabled_types: list[str] = Field(max_length=8)
+    enabled_types: list[str] = Field(default_factory=list, max_length=8)
+    commission_branches: dict[int, CommissionBranchOptions] | None = None
     receipt_percentage: Decimal | None = Field(default=None, ge=0, le=100, decimal_places=4)
 
 
@@ -83,6 +84,7 @@ def require_branch(db, fid, value):
         raise HTTPException(400, 'Printed branch name is ambiguous within this holder group. Use distinct branch names before importing.')
     if not branch_key(value) or branch_key(value) not in aliases:
         raise HTTPException(400, f'Printed franchise "{value}" does not match this franchise profile. Correct the franchise profile or use its own document.')
+    return next((b['id'] for b in available if branch_key(b['name'])==branch_key(value)), None)
 
 
 def receipt_settings(db, fid, branch_id=0):
@@ -113,7 +115,7 @@ def get_settings(franchise_user_id: int | None = None, branch_id: int = 0, curre
     fid = import_scope(db, current_user, franchise_user_id)
     people = import_staff(db, fid)
     return {'franchise_user_id': fid, 'branches': branches(db, fid), 'franchise': dict(franchise_record(db, fid)), 'settings': receipt_settings(db, fid, branch_id),
-            'employees': [{**p, 'commission_options': option_map(db, fid, p['user_id'])} for p in people], 'categories': COMMISSION_LABELS}
+            'employees': [{**p, 'commission_options': option_map(db, fid, p['user_id']), 'commission_branches': branch_options(db,fid,p['user_id'])} for p in people], 'categories': COMMISSION_LABELS}
 
 
 @router.put('/settings')
@@ -136,7 +138,7 @@ def save_settings(payload: SettingsIn, current_user: User = Depends(get_current_
 @router.get('/options/{employee_user_id}')
 def get_options(employee_user_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     person = _participant(db, current_user, employee_user_id)
-    return {'categories': COMMISSION_LABELS, 'options': option_map(db, person['franchise_user_id'], employee_user_id), 'assignment': assignment(db, employee_user_id), 'branches': branches(db, person['franchise_user_id'])}
+    return {'categories': COMMISSION_LABELS, 'options': option_map(db, person['franchise_user_id'], employee_user_id), 'commission_branches': branch_options(db,person['franchise_user_id'],employee_user_id), 'assignment': assignment(db, employee_user_id), 'branches': branches(db, person['franchise_user_id'])}
 
 
 @router.put('/options')
@@ -146,7 +148,18 @@ def save_options(payload: OptionIn, current_user: User = Depends(get_current_use
     if person['franchise_user_id'] != fid:
         raise HTTPException(403, 'Employee is outside the selected franchise.')
     old = option_map(db, fid, payload.employee_user_id)
-    set_enabled_types(db, fid, payload.employee_user_id, payload.enabled_types, current_user.id)
+    if payload.commission_branches is not None:
+        save_branch_options(db,fid,payload.employee_user_id,payload.commission_branches,current_user.id)
+    else:
+        # Older clients may update global flags; retain only existing branch grants.
+        current = branch_options(db,fid,payload.employee_user_id)
+        for value in current.values():
+            value['enabled_types']=[c for c in value['enabled_types'] if c in payload.enabled_types]
+        home = str(assignment(db,payload.employee_user_id)['branch_id'])
+        for category in payload.enabled_types:
+            if not any(category in value['enabled_types'] for value in current.values()):
+                current.setdefault(home,{'enabled_types':[],'receipt_percentage':None})['enabled_types'].append(category)
+        save_branch_options(db,fid,payload.employee_user_id,current,current_user.id)
     db.execute(text("UPDATE employee_commission_options SET rate=:rate WHERE franchise_user_id=:fid AND employee_user_id=:uid AND commission_type='invoice_commission'"), {'fid': fid, 'uid': payload.employee_user_id, 'rate': payload.receipt_percentage})
     write_audit_log(db, actor_user_id=current_user.id, franchise_user_id=fid, action='employee_commissions_updated', entity_type='employee_commission_options', entity_id=payload.employee_user_id, old_values=old, new_values=payload.model_dump(mode='json'))
     db.commit()
@@ -195,7 +208,7 @@ def preview(franchise_user_id: int | None = None, files: list[UploadFile] = File
             errors.append({'filename': name, 'error': 'Cannot read this receipt PDF.'}); continue
         for record in parsed:
             try:
-                require_branch(db, fid, record['branch'])
+                record['earning_branch_id'] = require_branch(db, fid, record['branch'])
             except HTTPException as exc:
                 errors.append({'filename': name, 'page': record['page'], 'error': exc.detail}); continue
             record.update(filename=name, source_hash=sha256(content).hexdigest()); records.append(record)
@@ -226,7 +239,7 @@ def stage(payload: StageIn, current_user: User = Depends(get_current_user), db: 
             staff = []
             for uid in set(allocation.employee_user_ids):
                 person = import_participant(db, current_user, uid, fid)
-                if person['franchise_user_id'] != fid or not enabled(db, fid, uid, 'invoice_commission'):
+                if person['franchise_user_id'] != fid or not enabled_for_branch(db, fid, uid, 'invoice_commission', require_branch(db,fid,records[allocation.record]['branch'])):
                     raise HTTPException(403, 'Select only active franchise employees enabled for MF File Receipts.')
                 staff.append((uid, None))
             doc_id, duplicate = save_document(db, fid, 'receipt', records[allocation.record], staff, current_user.id)
@@ -279,6 +292,7 @@ def calculate_plan(db, fid, ids, user):
                 uid = staff['employee_user_id']
                 line = {'mf': mf, 'branch': data['branch'], 'employee_user_id': uid, 'category': category,
                         'mortuary_document_id': book['id'], 'receipt_document_id': matching_receipt['id'],
+                        'earning_branch_id': matched_branch['id'], 'earning_branch_name': matched_branch['name'],
                         'service_date': data['service_date'], 'deceased': receipt.get('deceased') or book_data.get('deceased'),
                         'id_number': receipt.get('id_number') or book_data.get('id_number'),
                         'receipt_number': receipt.get('receipt_number'), 'reference': book_data['reference'],
@@ -298,6 +312,8 @@ def calculate_plan(db, fid, ids, user):
                     line.update(state='already_recorded', reason='Commission already recorded')
                 elif not options.get(category, {}).get('enabled'):
                     line.update(state='blocked', reason='Commission category disabled for this employee')
+                elif not enabled_for_branch(db,fid,uid,category,matched_branch['id']):
+                    line.update(state='blocked',reason='Commission category disabled for this employee at this branch')
                 elif identity_error:
                     line.update(state='blocked', reason='MF matches but deceased ID numbers differ')
                 if not existing:
@@ -315,7 +331,9 @@ def calculate_plan(db, fid, ids, user):
                     if line['amount'] is None and line['state'] == 'ready':
                         line.update(state='blocked', reason='Removal fee not configured')
                 else:
-                    rate = options.get(category, {}).get('rate')
+                    rate = branch_options(db,fid,uid).get(str(matched_branch['id']),{}).get('receipt_percentage')
+                    if rate is None:
+                        rate = options.get(category, {}).get('rate')
                     if rate is None:
                         rate = settings.get('receipt_percentage')
                     line.update(rate=str(rate) if rate is not None else None, vat_registered=settings['vat_registered'], vat_rate=str(settings['vat_rate']))
@@ -366,11 +384,11 @@ def settle(payload: CalculateIn, current_user: User = Depends(get_current_user),
                 notes += '\n' + '\n'.join(f'{k}: {item["notes"].get(k, "-")}' for k in ('deceased', 'id_number', 'collected_at', 'driver_in', 'date_in', 'time_in'))
             entry = db.execute(text('''INSERT INTO commission_entries(franchise_user_id,employee_user_id,commission_type,service_date,reference,quantity,
                 applied_rate,calculated_amount,invoice_value_before_tax,notes,branch_name,created_by_user_id,status,submitted_at,reviewed_at,
-                reviewed_by_user_id,last_edited_by_user_id,mortuary_document_id,receipt_document_id,source_metadata)
-                VALUES(:fid,:uid,:type,:day,:ref,1,:rate,:amount,:base,:notes,:branch,:actor,'approved',NOW(),NOW(),:actor,:actor,:book,:receipt,:metadata) RETURNING *'''),
+                reviewed_by_user_id,last_edited_by_user_id,mortuary_document_id,receipt_document_id,source_metadata,earning_branch_id)
+                VALUES(:fid,:uid,:type,:day,:ref,1,:rate,:amount,:base,:notes,:branch,:actor,'approved',NOW(),NOW(),:actor,:actor,:book,:receipt,:metadata,:earning_branch) RETURNING *'''),
                 {'fid': fid, 'uid': item['employee_user_id'], 'type': item['category'], 'day': date.fromisoformat(item['service_date']), 'ref': reference[:255],
                  'rate': Decimal(item['rate']), 'amount': Decimal(item['amount']), 'base': Decimal(item['base_amount']) if item.get('base_amount') is not None else None,
-                 'notes': notes, 'branch': item['branch'], 'actor': current_user.id, 'book': item['mortuary_document_id'], 'receipt': item['receipt_document_id'], 'metadata': json.dumps(item, default=str)}).mappings().first()
+                 'notes': notes, 'branch': item['branch'], 'actor': current_user.id, 'book': item['mortuary_document_id'], 'receipt': item['receipt_document_id'], 'metadata': json.dumps(item, default=str),'earning_branch':item['earning_branch_id']}).mappings().first()
             _audit(db, entry['id'], 'matched_documents_commission', current_user.id, new=dict(entry))
             _notify(db, item['employee_user_id'], 'Matched commission added', f"{COMMISSION_LABELS[item['category']]} · {reference}", entry['id'], 'success')
             ids.append(entry['id'])
@@ -423,10 +441,10 @@ def report(month: str, franchise_user_id: int | None = None, branch_id: int | No
     for row in rows:
         metadata = json.loads(row.get('source_metadata') or '{}')
         home = assignment(db, row['employee_user_id']) or {}
-        bid = metadata.get('employee_branch_id') or home.get('branch_id')
+        bid = row.get('earning_branch_id') or metadata.get('earning_branch_id') or home.get('branch_id')
         if branch_id and bid != branch_id:
             continue
-        branch_name = metadata.get('employee_branch_name') or home.get('branch_name') or 'Unassigned branch'
+        branch_name = next((b['name'] for b in branches(db,fid,False) if b['id']==bid),None) or metadata.get('earning_branch_name') or home.get('branch_name') or 'Unassigned branch'
         grouped.setdefault(branch_name, {}).setdefault((row['employee_user_id'], row['employee_name']), {}).setdefault(row['commission_type'], []).append((row, metadata))
     stream = BytesIO(); styles = getSampleStyleSheet()
     styles['BodyText'].fontSize = 8; styles['BodyText'].leading = 11

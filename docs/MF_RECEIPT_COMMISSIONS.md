@@ -7,13 +7,19 @@
    with stable main-system branch IDs and recorded VAT numbers. It does not grant
    access to another principal's branches or change the main system's active-branch
    permissions. Reopen Attendance from the main system after changing group links.
-2. **HR Staff → All Branches & Commissions** lists the holder's staff under their
-   home branches. Existing staff retain the Attendance profile's original branch;
+2. **HR Staff → View Staff** lists staff by home branch. The branch selector and
+   the main system's selected access profile both select this view. Choosing a
+   linked profile uses the uniquely approved main holder's Attendance access;
+   it does not add Head Office privileges. Existing staff retain their original branch;
    use **View Staff → Edit** to correct their home branch where needed. No accounts
    are merged by matching an email, employee name or branch name.
-3. In **Add/Edit Staff**, choose the home branch and tick each permitted commission
-   category. New categories default off. Removals and MF File Receipts are separate
-   opt-ins. An employee's optional receipt percentage overrides branch/holder rates.
+3. In **Add/Edit Staff**, choose the home branch and use the separate card for each
+   linked branch to tick its permitted commission categories. Employees and managers
+   use the same controls. New permissions default off. Removals and MF File Receipts
+   are separate opt-ins, checked against the document's branch. Each branch card has
+   an optional employee receipt percentage overriding employee/branch/holder defaults.
+   **All Branches & Commissions** includes people who work at or may earn at each
+   branch, and also lets the holder edit that branch's permissions independently.
 4. Optionally tick **Allow this employee to import commission documents…**. This
    permits allocation across this holder's active branches, but does not grant
    general access to other employees' HR records, rate settings or group reports.
@@ -27,7 +33,7 @@
 
 - Mortuary Books are saved as waiting evidence; they do not directly award money.
 - Import original searchable MF File Receipt PDFs and select the receipt recipients
-  from employees whose receipt category is enabled. The list includes home branches
+  from employees whose receipt category is enabled for the printed branch. The list includes home branches
   and searches the entire holder group. A receipt may have no recipients if it is
   only needed to qualify removal commissions.
 - Printed franchise names must resolve to an active branch in that holder group.
@@ -64,8 +70,9 @@ Employee Work Hubs and commission pages show a monthly category statement with
 entry details, deceased name/ID, source MF/receipt, commissionable amount, rate,
 category subtotals and monthly total. Only approved entries contribute.
 
-The holder can download PDFs for all branches, one home branch, or one employee.
-Reports retain the document branch separately from the employee's home branch.
+The holder can download PDFs for all branches, one earning branch, or one employee.
+Branch statements include only commissions earned for that branch, even when the
+employee's home branch differs. Reports retain both branches separately.
 New awards snapshot the employee branch and VAT calculation, so later settings or
 branch transfers do not rewrite already approved financial records.
 
@@ -78,6 +85,12 @@ The additive `016_receipt_commissions` migration creates branch assignments, opt
 receipt settings and source-document evidence, and nullable source links on existing
 commission entries. Existing approved amounts remain unchanged; historical removal
 imports retain their source linkage and cannot be paid again.
+
+Migration `017_commission_branch_scope` adds branch-specific opt-ins and earning
+branches. Existing category permissions are initially assigned only to the staff
+member's current home branch; the holder must explicitly enable other branches.
+Existing entries use their recorded source branch where identifiable, otherwise
+their home branch. Approved amounts are preserved.
 
 The main system also needs the updated signed Attendance handoff. Deploy Attendance
 first, then the main-system launch change. Existing native Attendance accounts stay

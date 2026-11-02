@@ -491,6 +491,7 @@ export async function getCommissionEntries(filters = {}) {
   if (filters.status) params.set('status', filters.status)
     if (filters.search) params.set('search', filters.search)
     if (filters.franchiseUserId) params.set('franchise_user_id', filters.franchiseUserId)
+  if (filters.earningBranchId) params.set('earning_branch_id', filters.earningBranchId)
   const qs = params.toString()
   return apiRequest(`/commission/entries${qs ? `?${qs}` : ''}`)
 }

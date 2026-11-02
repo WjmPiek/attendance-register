@@ -152,13 +152,14 @@ def database(monkeypatch):
             'CREATE TABLE attendance_branches(id INTEGER PRIMARY KEY,franchise_user_id INT,main_franchise_id INT,name TEXT,vat_number TEXT,is_active BOOLEAN DEFAULT TRUE,main_synced BOOLEAN DEFAULT FALSE)',
             'CREATE TABLE employee_branch_assignments(franchise_user_id INT,employee_user_id INT PRIMARY KEY,branch_id INT,can_import_commissions BOOLEAN DEFAULT FALSE)',
             'CREATE TABLE employee_commission_options(franchise_user_id INT,employee_user_id INT,commission_type TEXT,enabled BOOLEAN,rate NUMERIC,updated_by_user_id INT,updated_at TEXT DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(franchise_user_id,employee_user_id,commission_type))',
+            'CREATE TABLE employee_commission_branch_options(franchise_user_id INT,employee_user_id INT,commission_type TEXT,branch_id INT,rate NUMERIC,PRIMARY KEY(franchise_user_id,employee_user_id,commission_type,branch_id))',
             'CREATE TABLE receipt_commission_settings(franchise_user_id INT,branch_id INT DEFAULT 0,vat_registered BOOLEAN,vat_number TEXT,vat_rate NUMERIC,receipt_percentage NUMERIC,updated_by_user_id INT,updated_at TEXT DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(franchise_user_id,branch_id))',
             'CREATE TABLE commission_documents(id INTEGER PRIMARY KEY,franchise_user_id INT,kind TEXT,branch_key TEXT,mf_key TEXT,document_key TEXT,source_data TEXT,source_hash TEXT,created_by_user_id INT,created_at TEXT DEFAULT CURRENT_TIMESTAMP,UNIQUE(franchise_user_id,kind,branch_key,document_key))',
             'CREATE TABLE commission_document_staff(document_id INT,employee_user_id INT,removal_role TEXT,PRIMARY KEY(document_id,employee_user_id))',
         ]
         for schema in schemas:
             db.execute(text(schema))
-        for column in ('mortuary_document_id INT', 'receipt_document_id INT', 'source_metadata TEXT', 'invoice_value_before_tax NUMERIC', 'hours NUMERIC', 'hourly_rate NUMERIC'):
+        for column in ('mortuary_document_id INT', 'receipt_document_id INT', 'source_metadata TEXT', 'invoice_value_before_tax NUMERIC', 'hours NUMERIC', 'hourly_rate NUMERIC', 'earning_branch_id INT'):
             db.execute(text('ALTER TABLE commission_entries ADD COLUMN ' + column))
         db.execute(text("CREATE UNIQUE INDEX uq_receipt_award ON commission_entries(receipt_document_id,employee_user_id) WHERE commission_type='invoice_commission' AND receipt_document_id IS NOT NULL"))
         db.execute(text("CREATE UNIQUE INDEX uq_book_award ON commission_entries(mortuary_document_id,employee_user_id) WHERE commission_type='removals' AND mortuary_document_id IS NOT NULL"))
