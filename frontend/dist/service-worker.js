@@ -1,4 +1,4 @@
-const CACHE_NAME = 'attendance-pwa-v33-compact-sidebar-font-20261102';
+const CACHE_NAME = 'attendance-pwa-v34-single-line-sidebar-20261102';
 const APP_SHELL = [
   '/',
   '/index.html',
