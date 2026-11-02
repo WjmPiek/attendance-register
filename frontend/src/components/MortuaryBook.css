@@ -28,3 +28,32 @@
 .monthly-commission-statement td { white-space:normal; overflow-wrap:anywhere; }
 .staff-form-single label.mortuary-confirm { display:flex!important; flex-direction:row!important; text-align:left!important; align-items:flex-start; gap:10px; }
 .staff-form-single label.mortuary-confirm input { width:18px!important; flex-shrink:0; }
+
+/* Keep nested commission choices out of the staff form's two-column layout. */
+.staff-page > .single-staff-form { width:100%; max-width:none; min-width:0; box-sizing:border-box; }
+.staff-form-single > * { min-width:0; max-width:100%; box-sizing:border-box; }
+.staff-form-single > .staff-home-branch,
+.staff-form-single > .employee-commission-picker,
+.staff-form-single > .mortuary-confirm,
+.staff-form-single > .hours-grid { grid-column:1 / -1; }
+.staff-form-single .employee-commission-picker { width:100%; margin:0; align-self:stretch; }
+.employee-commission-picker .commission-checkbox-grid { grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr)); align-items:stretch; }
+.employee-commission-picker .commission-checkbox-grid > label { grid-column:auto!important; min-height:64px; margin:0; box-sizing:border-box; }
+.employee-commission-picker .commission-checkbox-grid > label > span { min-width:0; }
+.employee-commission-picker input[type=checkbox] { min-width:18px!important; max-width:18px!important; padding:0!important; margin:0; box-sizing:border-box; flex:0 0 18px; }
+.employee-commission-picker .commission-receipt-rate { grid-column:1 / -1; margin:0; }
+.employee-commission-picker .commission-receipt-rate input { max-width:360px; box-sizing:border-box; }
+.employee-commission-picker .commission-receipt-rate input:disabled { opacity:.65; }
+.staff-form-single > .hours-grid > label { grid-column:auto; min-width:0; }
+
+.commission-branch-card { display:grid; gap:16px; border:1px solid #ddd5e8; border-radius:12px; padding:18px; min-width:0; box-sizing:border-box; }
+.commission-branch-card h3 { margin:0; }
+.commission-branch-card .commission-receipt-rate { min-width:0; }
+.commission-branch-summary { display:block; margin-top:6px; font-weight:400; line-height:1.5; overflow-wrap:anywhere; }
+
+.branch-staff-row { display:grid; grid-template-columns:minmax(220px,2fr) repeat(3,minmax(120px,1fr)); gap:12px; align-items:center; min-width:0; padding:16px 0; border-top:1px solid #e1e6ef; }
+@media(max-width:900px) { .branch-staff-row { grid-template-columns:minmax(0,1fr); } }
+
+.staff-form-single input[type=checkbox] { width:18px!important; min-width:18px!important; max-width:18px!important; height:18px!important; min-height:18px!important; max-height:18px!important; padding:0!important; margin:0; box-sizing:border-box; flex:0 0 18px; }
+
+.staff-page > .staff-branch-selector { width:100%; max-width:none; box-sizing:border-box; }

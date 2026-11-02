@@ -36,7 +36,11 @@ EMPLOYEE_ROLES = [
 PRESERVE_IF_BLANK_ON_EDIT = {"id_number", "username", "password", "employee_number", "email"}
 
 
+from app.services.receipt_commissions import CommissionBranchOptions
+
+
 class CommissionSetup(BaseModel):
+    commission_branches: dict[int, CommissionBranchOptions] | None = None
     branch_id: int | None = None
     can_import_commissions: bool | None = None
     commission_types: list[Literal['removals','invoice_commission','grave_service','full_funeral_service','cremation_service','church_service','joinings','overtime']] | None = None
@@ -44,11 +48,21 @@ class CommissionSetup(BaseModel):
 
 
 def _save_staff_commissions(db, payload, fid, uid, actor, creating=False):
-    from app.services.receipt_commissions import set_enabled_types
-    from app.services.attendance_branches import assign_staff
+    from app.services.receipt_commissions import set_enabled_types, save_branch_options, branch_options
+    from app.services.attendance_branches import assign_staff, assignment
     assign_staff(db, fid, uid, payload.branch_id, payload.can_import_commissions, creating)
-    if creating or payload.commission_types is not None:
-        set_enabled_types(db, fid, uid, payload.commission_types or [], actor)
+    if payload.commission_branches is not None:
+        save_branch_options(db,fid,uid,payload.commission_branches,actor)
+    elif creating or payload.commission_types is not None:
+        types = payload.commission_types or []
+        values = branch_options(db,fid,uid)
+        for value in values.values():
+            value['enabled_types']=[category for category in value['enabled_types'] if category in types]
+        home = str(assignment(db,uid)['branch_id'])
+        for category in types:
+            if not any(category in value['enabled_types'] for value in values.values()):
+                values.setdefault(home,{'enabled_types':[],'receipt_percentage':None})['enabled_types'].append(category)
+        save_branch_options(db,fid,uid,values,actor)
     if creating or 'receipt_commission_percentage' in payload.model_fields_set:
         db.execute(text("UPDATE employee_commission_options SET rate=:rate WHERE franchise_user_id=:fid AND employee_user_id=:uid AND commission_type='invoice_commission'"), {'fid': fid, 'uid': uid, 'rate': payload.receipt_commission_percentage})
 
@@ -1261,9 +1275,27 @@ def staff_integrity(current_user: User = Depends(get_current_user), db: Session 
     return _staff_integrity_report(db)
 
 
+def _staff_branch_rows(db, rows, branch_id=None):
+    if not rows:
+        return []
+    from sqlalchemy import bindparam
+    assignments = db.execute(text("""SELECT a.employee_user_id,a.branch_id,b.name AS branch_name,b.is_active AS branch_active
+        FROM employee_branch_assignments a JOIN attendance_branches b ON b.id=a.branch_id
+        WHERE a.employee_user_id IN :ids""").bindparams(bindparam('ids',expanding=True)), {'ids':[row['user_id'] for row in rows]}).mappings().all()
+    mapped = {row['employee_user_id']:dict(row) for row in assignments}
+    result = []
+    for row in rows:
+        home = mapped.get(row['user_id'],{})
+        if branch_id and (home.get('branch_id')!=branch_id or not home.get('branch_active')):
+            continue
+        result.append({**row,**{key:home.get(key) for key in ('branch_id','branch_name')}})
+    return result
+
+
 @router.get("/managers")
 def list_managers(
     franchise_user_id: int | None = Query(default=None),
+    branch_id: int | None = Query(default=None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -1339,7 +1371,7 @@ def list_managers(
                   AND COALESCE(u.is_active, TRUE) = TRUE
                 ORDER BY mu.id DESC
             """), {"franchise_user_id": franchise_id}).mappings().all()
-            return [_public_staff_dict(row) for row in rows]
+            return _staff_branch_rows(db, [_public_staff_dict(row) for row in rows], branch_id)
         manager_row = (
             _active_manager_profile(db, current_user.id)
             if "FranchiseUser" not in names
@@ -1351,7 +1383,7 @@ def list_managers(
             return []
         raise HTTPException(status_code=403, detail="Only SuperUser can load managers")
 
-    return [_public_staff_dict(row) for row in rows]
+    return _staff_branch_rows(db, [_public_staff_dict(row) for row in rows], branch_id)
 
 def _ensure_office_hours_columns(db: Session):
     try:
@@ -1387,6 +1419,7 @@ def _ensure_office_hours_columns(db: Session):
 @router.get("/employees")
 def list_employees(
     franchise_user_id: int | None = Query(default=None),
+    branch_id: int | None = Query(default=None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -1466,7 +1499,7 @@ def list_employees(
               AND COALESCE(u.is_active, TRUE) = TRUE
             ORDER BY eu.id DESC
         """), {"franchise_user_id": franchise_id}).mappings().all()
-            return [_public_staff_dict(row) for row in rows]
+            return _staff_branch_rows(db, [_public_staff_dict(row) for row in rows], branch_id)
         manager_row = (
             _active_manager_profile(db, current_user.id)
             if "FranchiseUser" not in names
@@ -1487,7 +1520,7 @@ def list_employees(
                   AND COALESCE(eu.is_active,TRUE)=TRUE AND COALESCE(u.is_active,TRUE)=TRUE
                 ORDER BY eu.id DESC
             """), {"mid": manager_row["id"], "fid": manager_row["franchise_user_id"]}).mappings().all()
-            return [_public_staff_dict(row) for row in rows]
+            return _staff_branch_rows(db, [_public_staff_dict(row) for row in rows], branch_id)
         employee_row = _active_employee_profile(db, current_user.id)
         if employee_row:
             rows = db.execute(text("""
@@ -1521,10 +1554,10 @@ def list_employees(
               AND COALESCE(eu.is_active, TRUE) = TRUE
               AND COALESCE(u.is_active, TRUE) = TRUE
         """), {"employee_id": employee_row["id"], "user_id": current_user.id}).mappings().all()
-            return [_public_staff_dict(row) for row in rows]
+            return _staff_branch_rows(db, [_public_staff_dict(row) for row in rows], branch_id)
         raise HTTPException(status_code=403, detail="Only SuperUser can load all employees")
 
-    return [_public_staff_dict(row) for row in rows]
+    return _staff_branch_rows(db, [_public_staff_dict(row) for row in rows], branch_id)
 
 def _create_user(db: Session, full_name: str, email: str | None, password: str, role_name: str, username: str | None = None):
     from app.models.core import User, Role, UserRole

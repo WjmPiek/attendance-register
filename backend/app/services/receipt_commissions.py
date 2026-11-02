@@ -8,8 +8,14 @@ import re
 from fastapi import HTTPException
 from pypdf import PdfReader
 from sqlalchemy import text
+from pydantic import BaseModel, Field
 
 from app.services.mortuary import normalise
+
+class CommissionBranchOptions(BaseModel):
+    enabled_types: list[str] = Field(default_factory=list, max_length=8)
+    receipt_percentage: Decimal | None = Field(default=None, ge=0, le=100, decimal_places=4)
+
 
 COMMISSION_LABELS = {
     'removals': 'Removals', 'invoice_commission': 'MF File Receipts',
@@ -121,6 +127,44 @@ def enabled(db, fid, uid, category):
     return bool(option_map(db, fid, uid).get(category, {}).get('enabled'))
 
 
+def branch_options(db, fid, uid):
+    result = {}
+    rows = db.execute(text('''SELECT o.branch_id,o.commission_type,o.rate FROM employee_commission_branch_options o
+        JOIN attendance_branches b ON b.id=o.branch_id AND b.franchise_user_id=o.franchise_user_id
+        WHERE o.franchise_user_id=:fid AND o.employee_user_id=:uid AND b.is_active=TRUE
+        ORDER BY o.branch_id,o.commission_type'''), {'fid':fid,'uid':uid}).mappings().all()
+    for row in rows:
+        group = result.setdefault(str(row['branch_id']), {'enabled_types':[], 'receipt_percentage':None})
+        group['enabled_types'].append(row['commission_type'])
+        if row['commission_type']=='invoice_commission':
+            group['receipt_percentage']=row['rate']
+    return result
+
+
+def enabled_for_branch(db, fid, uid, category, branch_id):
+    return enabled(db, fid, uid, category) and category in branch_options(db,fid,uid).get(str(branch_id),{}).get('enabled_types',[])
+
+
+def save_branch_options(db, fid, uid, values, actor):
+    from app.services.attendance_branches import branches
+    available = {b['id'] for b in branches(db,fid)}
+    normalised = {int(key):(value.model_dump() if hasattr(value,'model_dump') else CommissionBranchOptions(**value).model_dump()) for key,value in values.items()}
+    if set(normalised)-available:
+        raise HTTPException(403,'Commission branch is outside this holder group.')
+    all_types = set()
+    for value in normalised.values():
+        all_types.update(value.get('enabled_types',[]))
+    if all_types-set(COMMISSION_LABELS):
+        raise HTTPException(400,'Invalid commission category.')
+    set_enabled_types(db,fid,uid,list(all_types),actor)
+    db.execute(text('DELETE FROM employee_commission_branch_options WHERE franchise_user_id=:fid AND employee_user_id=:uid'), {'fid':fid,'uid':uid})
+    for bid,value in normalised.items():
+        for category in set(value.get('enabled_types',[])):
+            db.execute(text('''INSERT INTO employee_commission_branch_options(franchise_user_id,employee_user_id,commission_type,branch_id,rate)
+                VALUES(:fid,:uid,:type,:branch,:rate)'''), {'fid':fid,'uid':uid,'type':category,'branch':bid,
+                'rate':value.get('receipt_percentage') if category=='invoice_commission' else None})
+
+
 def set_enabled_types(db, fid, uid, types, actor):
     if set(types) - set(COMMISSION_LABELS):
         raise HTTPException(400, 'Invalid employee commission category.')
@@ -131,7 +175,7 @@ def set_enabled_types(db, fid, uid, types, actor):
             {'fid': fid, 'uid': uid, 'type': category, 'enabled': category in types, 'actor': actor})
 
 
-def require_manual_eligibility(db, participant, category):
+def require_manual_eligibility(db, participant, category, branch_id=None):
     from app.services.attendance_branches import assignment
     home = assignment(db, participant['user_id'])
     if not home or not home['branch_active'] or home['franchise_user_id'] != participant['franchise_user_id']:
@@ -140,3 +184,7 @@ def require_manual_eligibility(db, participant, category):
         raise HTTPException(403, 'This commission category is not enabled for this employee.')
     if category in {'removals', 'invoice_commission'}:
         raise HTTPException(400, 'Use the matched Mortuary Book and MF File Receipt imports for this commission category.')
+    branch_id = branch_id or home['branch_id']
+    if not enabled_for_branch(db,participant['franchise_user_id'],participant['user_id'],category,branch_id):
+        raise HTTPException(403,'This commission is not enabled for this employee at the selected branch.')
+    return branch_id

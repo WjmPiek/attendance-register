@@ -38,6 +38,7 @@ class EntryIn(BaseModel):
     rate_override: Decimal | None = Field(default=None, ge=0)
     notes: str | None = None
     branch_name: str | None = Field(default=None, max_length=255)
+    earning_branch_id: int | None = Field(default=None, gt=0)
 
 class ReviewIn(EntryIn):
     status: str = Field(pattern="^(approved|rejected)$")
@@ -293,7 +294,8 @@ def create_entry(payload: EntryIn, current_user: User = Depends(get_current_user
         raise HTTPException(403, "Staff may submit and franchise users may add entries")
     participant = _participant(db, current_user, participant_user_id, write=not self_submit)
     from app.services.receipt_commissions import require_manual_eligibility
-    require_manual_eligibility(db, participant, payload.commission_type)
+    earning_branch = require_manual_eligibility(db, participant, payload.commission_type, payload.earning_branch_id)
+    payload.branch_name = db.execute(text('SELECT name FROM attendance_branches WHERE id=:id'), {'id':earning_branch}).scalar_one()
     structure = db.execute(text("SELECT * FROM commission_structures WHERE franchise_user_id=:fid AND commission_type=:type AND is_active=TRUE"), {"fid": participant["franchise_user_id"], "type": payload.commission_type}).mappings().first()
     if not structure:
         raise HTTPException(400, "This commission type is not active. Ask the franchise user to configure it.")
@@ -302,9 +304,9 @@ def create_entry(payload: EntryIn, current_user: User = Depends(get_current_user
     rate, amount = _calculate(structure, payload)
     reviewed_at = datetime.now() if status == "approved" else None
     reviewed_by_user_id = current_user.id if status == "approved" else None
-    row = db.execute(text("""INSERT INTO commission_entries(franchise_user_id,employee_user_id,commission_type,service_date,reference,quantity,invoice_value_before_tax,hours,hourly_rate,applied_rate,calculated_amount,notes,branch_name,created_by_user_id,status,submitted_at,reviewed_at,reviewed_by_user_id,last_edited_by_user_id)
-      VALUES(:fid,:employee,:type,:date,:ref,:qty,:invoice,:hours,:hourly,:rate,:amount,:notes,:branch,:uid,:status,NOW(),:reviewed_at,:reviewed_by,:uid) RETURNING *"""),
-      {"fid":participant["franchise_user_id"],"employee":participant_user_id,"type":payload.commission_type,"date":payload.service_date,"ref":payload.reference.strip(),"qty":payload.quantity,"invoice":payload.invoice_value_before_tax,"hours":payload.hours,"hourly":payload.hourly_rate,"rate":rate,"amount":amount,"notes":payload.notes,"branch":payload.branch_name,"uid":current_user.id,"status":status,"reviewed_at":reviewed_at,"reviewed_by":reviewed_by_user_id}).mappings().first()
+    row = db.execute(text("""INSERT INTO commission_entries(franchise_user_id,employee_user_id,commission_type,service_date,reference,quantity,invoice_value_before_tax,hours,hourly_rate,applied_rate,calculated_amount,notes,branch_name,created_by_user_id,status,submitted_at,reviewed_at,reviewed_by_user_id,last_edited_by_user_id,earning_branch_id)
+      VALUES(:fid,:employee,:type,:date,:ref,:qty,:invoice,:hours,:hourly,:rate,:amount,:notes,:branch,:uid,:status,NOW(),:reviewed_at,:reviewed_by,:uid,:earning_branch) RETURNING *"""),
+      {"fid":participant["franchise_user_id"],"employee":participant_user_id,"type":payload.commission_type,"date":payload.service_date,"ref":payload.reference.strip(),"qty":payload.quantity,"invoice":payload.invoice_value_before_tax,"hours":payload.hours,"hourly":payload.hourly_rate,"rate":rate,"amount":amount,"notes":payload.notes,"branch":payload.branch_name,"uid":current_user.id,"status":status,"reviewed_at":reviewed_at,"reviewed_by":reviewed_by_user_id,"earning_branch":earning_branch}).mappings().first()
     _audit(db, row["id"], "submitted" if status == "pending" else "created_approved", current_user.id, new=dict(row))
     if status == "pending":
         for uid in _reviewer_ids(db, participant):
@@ -315,7 +317,7 @@ def create_entry(payload: EntryIn, current_user: User = Depends(get_current_user
     return dict(row)
 
 
-def _rows(db, user, employee_user_id=None, from_date=None, to_date=None, status=None, search=None, franchise_user_id=None):
+def _rows(db, user, employee_user_id=None, from_date=None, to_date=None, status=None, search=None, franchise_user_id=None, earning_branch_id=None):
     roles, fid, manager_profile_id, own_user_id, kind = _profile(db, user)
     fid = _franchise_scope(db, user, franchise_user_id)
     where = ["1=1"]
@@ -344,6 +346,8 @@ def _rows(db, user, employee_user_id=None, from_date=None, to_date=None, status=
             return []
         where.append("c.franchise_user_id=:fid")
         params["fid"] = fid
+    if earning_branch_id:
+        where.append("c.earning_branch_id=:earning_branch"); params["earning_branch"] = earning_branch_id
     if from_date:
         where.append("c.service_date>=:fd"); params["fd"] = from_date
     if to_date:
@@ -362,8 +366,8 @@ def _rows(db, user, employee_user_id=None, from_date=None, to_date=None, status=
       WHERE {' AND '.join(where)} ORDER BY CASE WHEN c.status='pending' THEN 0 ELSE 1 END,c.service_date DESC,c.id DESC"""), params).mappings().all()
 
 @router.get('/entries')
-def entries(employee_user_id:int|None=None,from_date:date|None=None,to_date:date|None=None,status:str|None=None,search:str|None=None,franchise_user_id:int|None=None,current_user:User=Depends(get_current_user),db:Session=Depends(get_db)):
-    rows = _rows(db,current_user,employee_user_id,from_date,to_date,status,search,franchise_user_id)
+def entries(employee_user_id:int|None=None,from_date:date|None=None,to_date:date|None=None,status:str|None=None,search:str|None=None,franchise_user_id:int|None=None,current_user:User=Depends(get_current_user),db:Session=Depends(get_db),earning_branch_id:int|None=None):
+    rows = _rows(db,current_user,employee_user_id,from_date,to_date,status,search,franchise_user_id,earning_branch_id)
     approved = [r for r in rows if r["status"] == "approved"]
     total = sum((Decimal(r["calculated_amount"] or 0) for r in approved), Decimal(0))
     overtime = sum((Decimal(r["calculated_amount"] or 0) for r in approved if r["commission_type"] == "overtime"), Decimal(0))
@@ -397,16 +401,17 @@ def review(entry_id:int,payload:ReviewIn,current_user:User=Depends(get_current_u
     if not old: raise HTTPException(404,"Entry not found")
     participant = _participant(db,current_user,int(old["employee_user_id"]),write=True)
     _assert_review_allowed(db, current_user, old, participant)
+    earning_branch = payload.earning_branch_id or old.get('earning_branch_id')
     if payload.status == 'approved':
         from app.services.receipt_commissions import require_manual_eligibility
-        require_manual_eligibility(db, participant, payload.commission_type)
+        earning_branch = require_manual_eligibility(db, participant, payload.commission_type, earning_branch)
     db.execute(text('SELECT pg_advisory_xact_lock(:namespace,:fid)'), {'namespace': 15015, 'fid': int(old['franchise_user_id'])})
     _assert_not_duplicate(db, int(old["franchise_user_id"]), int(old["employee_user_id"]), payload, entry_id)
     structure = db.execute(text("SELECT * FROM commission_structures WHERE franchise_user_id=:fid AND commission_type=:type AND is_active=TRUE"),{"fid":participant["franchise_user_id"],"type":payload.commission_type}).mappings().first()
     if not structure: raise HTTPException(400,"This commission type is not active")
     rate,amount = _calculate(structure,payload)
-    row = db.execute(text("""UPDATE commission_entries SET commission_type=:type,service_date=:date,reference=:ref,quantity=:qty,invoice_value_before_tax=:invoice,hours=:hours,hourly_rate=:hourly,applied_rate=:rate,calculated_amount=:amount,notes=:notes,branch_name=:branch,status=:status,review_notes=:review_notes,reviewed_at=NOW(),reviewed_by_user_id=:uid,last_edited_by_user_id=:uid,updated_at=NOW() WHERE id=:id RETURNING *"""),
-      {"type":payload.commission_type,"date":payload.service_date,"ref":payload.reference.strip(),"qty":payload.quantity,"invoice":payload.invoice_value_before_tax,"hours":payload.hours,"hourly":payload.hourly_rate,"rate":rate,"amount":amount,"notes":payload.notes,"branch":payload.branch_name,"status":payload.status,"review_notes":payload.review_notes,"uid":current_user.id,"id":entry_id}).mappings().first()
+    row = db.execute(text("""UPDATE commission_entries SET commission_type=:type,service_date=:date,reference=:ref,quantity=:qty,invoice_value_before_tax=:invoice,hours=:hours,hourly_rate=:hourly,applied_rate=:rate,calculated_amount=:amount,notes=:notes,branch_name=:branch,earning_branch_id=:earning_branch,status=:status,review_notes=:review_notes,reviewed_at=NOW(),reviewed_by_user_id=:uid,last_edited_by_user_id=:uid,updated_at=NOW() WHERE id=:id RETURNING *"""),
+      {"type":payload.commission_type,"date":payload.service_date,"ref":payload.reference.strip(),"qty":payload.quantity,"invoice":payload.invoice_value_before_tax,"hours":payload.hours,"hourly":payload.hourly_rate,"rate":rate,"amount":amount,"notes":payload.notes,"branch":payload.branch_name,"status":payload.status,"review_notes":payload.review_notes,"earning_branch":earning_branch,"uid":current_user.id,"id":entry_id}).mappings().first()
     _audit(db,entry_id,payload.status,current_user.id,dict(old),dict(row),payload.review_notes)
     _notify(db,int(row["employee_user_id"]),"Commission approved" if payload.status=="approved" else "Commission rejected",f"Your commission reference {row['reference']} was {payload.status}.",entry_id,"success" if payload.status=="approved" else "danger")
     db.commit(); return dict(row)
@@ -423,7 +428,7 @@ def bulk_review(payload:BulkReviewIn,current_user:User=Depends(get_current_user)
         _assert_review_allowed(db, current_user, row, participant)
         if payload.status == 'approved':
             from app.services.receipt_commissions import require_manual_eligibility
-            require_manual_eligibility(db, participant, row['commission_type'])
+            require_manual_eligibility(db, participant, row['commission_type'], row.get('earning_branch_id'))
         db.execute(text("UPDATE commission_entries SET status=:s,review_notes=:n,reviewed_at=NOW(),reviewed_by_user_id=:u,last_edited_by_user_id=:u,updated_at=NOW() WHERE id=:id"),{"s":payload.status,"n":payload.review_notes,"u":current_user.id,"id":eid})
         _audit(db,eid,f"bulk_{payload.status}",current_user.id,note=payload.review_notes)
         _notify(db,int(row["employee_user_id"]),"Commission approved" if payload.status=="approved" else "Commission rejected",f"Your commission reference {row['reference']} was {payload.status}.",eid,"success" if payload.status=="approved" else "danger")

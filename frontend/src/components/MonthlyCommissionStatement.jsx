@@ -1,25 +1,28 @@
 import { useEffect, useState } from 'react'
-import { getCommissionEntries } from '../api/client'
+import { getCommissionEntries, apiRequest } from '../api/client'
 import { commissionLabels } from './CommissionCheckboxes'
 
 const money = n => `R ${Number(n || 0).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 const source = row => { try { return JSON.parse(row.source_metadata || '{}') } catch { return {} } }
-export default function MonthlyCommissionStatement({ employeeUserId, franchiseId }) {
+export default function MonthlyCommissionStatement({ employeeUserId, franchiseId, earningBranchId }) {
   const [month, setMonth] = useState(new Date(Date.now() + 7200000).toISOString().slice(0, 7))
   const [items, setItems] = useState([]), [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
+  const [branches,setBranches] = useState([]), [branch,setBranch] = useState('')
+  useEffect(() => {let active=true;apiRequest(`/receipt-commissions/options/${employeeUserId}`).then(d=>{if(active)setBranches(d.branches||[])}).catch(()=>{});return()=>{active=false}},[employeeUserId])
   useEffect(() => {
     if (!/^\d{4}-\d{2}$/.test(month)) return
     const [y, m] = month.split('-').map(Number)
     const end = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10)
     let active = true
     setItems([]); setError(''); setLoading(true)
-    getCommissionEntries({ employeeUserId, franchiseUserId: franchiseId || '', fromDate: `${month}-01`, toDate: end, status: 'approved' })
+    getCommissionEntries({ employeeUserId, earningBranchId: earningBranchId || branch, franchiseUserId: franchiseId || '', fromDate: `${month}-01`, toDate: end, status: 'approved' })
       .then(data => { if (active) { setItems(data.items || []); setLoading(false) } }).catch(e => { if (active) { setItems([]); setError(e.message); setLoading(false) } })
     return () => { active = false }
-  }, [employeeUserId, franchiseId, month])
+  }, [employeeUserId, franchiseId, month, earningBranchId, branch])
   return <section className="monthly-commission-statement">
     <h3>Monthly commission statement</h3><label>Month<input type="month" value={month} onChange={e => setMonth(e.target.value)}/></label>
+    {!earningBranchId && <label>Commission branch<select value={branch} onChange={e=>setBranch(e.target.value)}><option value="">All linked branches</option>{branches.map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</select></label>}
     <p className="muted">Approved commissions only, grouped by category using their service dates. Waiting or unmatched documents do not contribute to earnings.</p>
     {error && <p role="alert" className="error-message">{error}</p>}
     {Object.entries(commissionLabels).map(([category, label]) => {

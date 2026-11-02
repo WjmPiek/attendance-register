@@ -27,6 +27,7 @@ class MartinsLaunchResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     main_app_url: str = ""
+    active_branch_id: int | None = None
 
 
 @router.post("/martins-launch", response_model=MartinsLaunchResponse)
@@ -94,6 +95,7 @@ def martins_launch(payload: MartinsLaunchRequest, db: Session = Depends(get_db))
     ).first():
         db.add(UserRole(user_id=user.id, role_id=role.id))
 
+    active_branch_id = None
     if is_admin:
         if not db.query(SuperUser).filter(SuperUser.user_id == user.id).first():
             db.add(SuperUser(user_id=user.id, notes="Linked from Martins System"))
@@ -111,6 +113,8 @@ def martins_launch(payload: MartinsLaunchRequest, db: Session = Depends(get_db))
         if handoff.get('branch_scope'):
             from app.services.attendance_branches import sync_branches
             sync_branches(db, profile.id, handoff['branch_scope'])
+            from app.services.attendance_branches import launch_branch_context
+            active_branch_id = launch_branch_context(db,profile.id,handoff)
         else:
             from app.services.attendance_branches import ensure_default_branch
             ensure_default_branch(db, profile.id)
@@ -121,5 +125,6 @@ def martins_launch(payload: MartinsLaunchRequest, db: Session = Depends(get_db))
     token = create_access_token(str(user.id))
     return MartinsLaunchResponse(
         access_token=token,
+        active_branch_id=active_branch_id,
         main_app_url=str(handoff.get("return_url") or getattr(settings, "MARTINS_MAIN_APP_URL", "")),
     )

@@ -1,3 +1,4 @@
+import {setStaffBranchId} from './api/branchContext'
 import { useEffect, useState } from 'react'
 import { getCoreEntities, getMe, getRoles, login } from './api/client'
 import { AUTH_INVALID_EVENT, getAccessToken, setAccessToken } from './api/authSession'
@@ -34,6 +35,7 @@ export default function App() {
       if (cancelled) return
       if (!data.access_token) throw new Error('Attendance could not verify your session. Please try opening it again from the main system.')
       setAccessToken(data.access_token)
+      setStaffBranchId(data.active_branch_id || '')
       setToken(data.access_token)
       setError('')
     }).catch((err) => {

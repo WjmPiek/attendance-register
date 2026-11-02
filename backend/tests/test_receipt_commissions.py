@@ -11,7 +11,7 @@ from sqlalchemy import text
 
 from app.api import receipt_commissions as api, mortuary
 from app.services import attendance_branches as branch_service
-from app.services.receipt_commissions import parse_receipt_text, receipt_base, set_enabled_types, branch_key, mf_key, require_manual_eligibility, printed_money
+from app.services.receipt_commissions import parse_receipt_text, receipt_base, set_enabled_types, branch_key, mf_key, require_manual_eligibility, printed_money, save_branch_options, branch_options, enabled_for_branch
 from tests.test_mortuary_book import database, record, import_payload, quote_and_import
 
 OWNER = SimpleNamespace(id=1)
@@ -39,7 +39,7 @@ def configure(db, registered=True):
     db.execute(text('INSERT INTO receipt_commission_settings VALUES(2,0,:registered,:number,15,2,1,NOW())'), {'registered':registered,'number':'4000000000' if registered else None})
     db.execute(text('UPDATE attendance_branches SET vat_number=:number WHERE franchise_user_id=2'), {'number':'4000000000' if registered else None})
     for uid in (11,12):
-        set_enabled_types(db,2,uid,['removals','invoice_commission'],1)
+        save_branch_options(db,2,uid,{bid:{'enabled_types':['removals','invoice_commission'],'receipt_percentage':None} for bid in (101,102)},1)
     db.execute(text("UPDATE employee_commission_options SET rate=3 WHERE employee_user_id=12 AND commission_type='invoice_commission'"))
     db.commit()
 
@@ -243,12 +243,12 @@ def test_branch_and_individual_pdfs_contain_only_selected_employee_totals(databa
     import asyncio
     async def contents(response):
         return b''.join([part async for part in response.body_iterator])
-    response=api.report('2026-10',branch_id=102,employee_user_id=12,current_user=OWNER,db=database)
+    response=api.report('2026-10',branch_id=101,employee_user_id=12,current_user=OWNER,db=database)
     result=asyncio.run(contents(response))
     text_content='\n'.join(p.extract_text() for p in PdfReader(BytesIO(result)).pages)
     assert 'Aubrey Example' in text_content and 'Ewald Example' not in text_content
     assert 'MF File Receipts subtotal: R 615.15' in text_content
-    assert 'EXAMPLE SOUTH' in text_content and 'TEST-1492' in text_content
+    assert 'EXAMPLE' in text_content and 'TEST-1492' in text_content
     with pytest.raises(HTTPException):api.report('2026-10',branch_id=900,current_user=OWNER,db=database)
 
 
@@ -303,6 +303,9 @@ def test_http_import_delegate_cannot_change_rates_or_print_group_reports(databas
 def test_three_branches_only_registered_branch_excludes_vat(database):
     configure(database,False)
     database.execute(text("INSERT INTO attendance_branches VALUES(103,2,3,'EXAMPLE WEST',NULL,TRUE,TRUE)"));database.commit()
+    for uid in (11,12):
+        save_branch_options(database,2,uid,{bid:{'enabled_types':['removals','invoice_commission'],'receipt_percentage':None} for bid in (101,102,103)},1)
+    database.commit()
     api.save_settings(api.SettingsIn(branch_id=101,vat_registered=True,vat_number='4000000000',receipt_percentage=2),OWNER,database)
     for bid in (102,103):api.save_settings(api.SettingsIn(branch_id=bid,vat_registered=False,receipt_percentage=2),OWNER,database)
     names=['EXAMPLE','EXAMPLE SOUTH','EXAMPLE WEST']

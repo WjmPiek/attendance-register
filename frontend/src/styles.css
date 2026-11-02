@@ -354,8 +354,8 @@ body::before {
 .sub-tabs button.active { background: linear-gradient(135deg, var(--lilac), var(--purple)); color: white; }
 .single-staff-form { max-width: 980px; }
 .staff-form-single { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 18px; }
-.staff-form-single label:nth-last-child(-n+3) { grid-column: span 2; }
-@media (max-width: 900px) { .dashboard-two-col, .staff-form-single { grid-template-columns: 1fr; } .staff-form-single label:nth-last-child(-n+3) { grid-column: auto; } }
+.staff-form-single > label:nth-last-child(-n+3) { grid-column: span 2; }
+@media (max-width: 900px) { .dashboard-two-col, .staff-form-single { grid-template-columns: 1fr; } .staff-form-single > label:nth-last-child(-n+3) { grid-column: auto; } }
 
 /* Upgraded signature pad: solid ink, better mobile pointer handling, preview and undo */
 .signature-pad-upgraded {
