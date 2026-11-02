@@ -804,8 +804,8 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
 
   if (isSuperUser && !selectedFranchiseId) {
     return (
-      <div className="staff-page">
-        <div className="section-header">
+      <div className="card attendance-tab-panel staff-page">
+        <div className="tab-page-intro">
           <h2>Select a Franchise User</h2>
           <p className="muted">Managers and employees remain hidden until you select their franchise.</p>
         </div>
@@ -841,8 +841,8 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
   }
 
   return (
-    <div className="staff-page">
-      <div className="section-header">
+    <div className="card attendance-tab-panel staff-page">
+      <div className="tab-page-intro">
         <h2>{canManageStaff ? 'Franchise Staff' : (isManagerView ? 'My Assigned Staff' : 'My Staff Profile')}</h2>
         <p className="muted">{canManageStaff
           ? 'Create and manage staff, assign employees to managers, and maintain staff records.'
@@ -883,7 +883,7 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
         </section>
       ) : null}
 
-      {canManageStaff && holderBranches.length>0 && <section className="form-card staff-branch-selector"><label>Staff branch view<select value={viewBranchId} onChange={e=>changeStaffBranch(e.target.value)}><option value="">Main holder — all linked branches</option>{holderBranches.map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</select></label><p className="muted">View Staff shows people whose home branch is selected. Commission pages show earnings for that branch.</p></section>}
+      {canManageStaff && holderBranches.length>0 && <section className="tab-page-section staff-branch-selector"><label>Staff branch view<select value={viewBranchId} onChange={e=>changeStaffBranch(e.target.value)}><option value="">Main holder — all linked branches</option>{holderBranches.map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</select></label><p className="muted">View Staff shows people whose home branch is selected. Commission pages show earnings for that branch.</p></section>}
       {activeSubTab === 'menu' ? <StaffMenu canManage={canManageStaff} canImport={canImportDocuments} isEmployee={isEmployeeView} onOpen={page => { resetForm(); setWorkHubEmployee(null); setViewItem(null); setActiveSubTab(page) }} /> :
         <nav className="staff-page-navigation" aria-label="HR Staff navigation"><button type="button" className="glass-button" onClick={() => setActiveSubTab('menu')}>← HR Staff</button><span>{staffPages.find(page => page.id === activeSubTab)?.title || 'Staff ID Card'}</span></nav>}
 
