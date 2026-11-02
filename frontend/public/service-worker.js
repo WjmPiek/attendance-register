@@ -1,4 +1,4 @@
-const CACHE_NAME = 'attendance-pwa-v27-clear-attendance-cards-20261102';
+const CACHE_NAME = 'attendance-pwa-v28-branch-module-switch-20261102';
 const APP_SHELL = [
   '/',
   '/index.html',
