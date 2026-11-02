@@ -5,6 +5,8 @@ import { AUTH_INVALID_EVENT, getAccessToken, setAccessToken } from './api/authSe
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
 import { consumeMartinsLaunch } from './martinsLaunch'
+import { embeddedParentOrigin, notifyAttendanceParent } from './embeddedAttendance'
+import './embeddedAttendance.css'
 
 // React StrictMode can mount twice; exchange each launch token only once.
 let launchRequest
@@ -16,6 +18,7 @@ function exchangeLaunch(token) {
 }
 
 export default function App() {
+  const [embedded] = useState(() => Boolean(embeddedParentOrigin()))
   const [launchToken] = useState(() => new URLSearchParams(window.location.search).get('martins_launch'))
   const [launching, setLaunching] = useState(Boolean(launchToken))
   const [token, setToken] = useState(() => launchToken ? null : getAccessToken())
@@ -24,6 +27,23 @@ export default function App() {
   const [me, setMe] = useState(null)
   const [roles, setRoles] = useState([])
   const [entities, setEntities] = useState([])
+
+  useEffect(() => {
+    if (!embedded) return undefined
+    document.body.classList.add('attendance-is-embedded')
+    let previousHeight = 0
+    const publishHeight = () => {
+      const height = Math.ceil(document.getElementById('root')?.getBoundingClientRect().height || 0)
+      if (height !== previousHeight) {
+        previousHeight = height
+        notifyAttendanceParent('martins:attendance-height', {height})
+      }
+    }
+    const observer = new ResizeObserver(publishHeight)
+    observer.observe(document.getElementById('root'))
+    publishHeight()
+    return () => { observer.disconnect(); document.body.classList.remove('attendance-is-embedded') }
+  }, [embedded])
 
   useEffect(() => {
     if (!launchToken) return
@@ -114,12 +134,14 @@ export default function App() {
   }
 
   if (launching || (token && !me)) {
+    if (embedded) return <section className="attendance-embedded-status" role="status" aria-live="polite">Loading attendance…</section>
     return <main className="attendance-session-loading" role="status" aria-live="polite"><img src="/logo.png" alt="Martin's Funerals" /><h1>Opening Attendance Register</h1><p>Please wait while we verify your session.</p></main>
   }
 
   if (!token || !me) {
+    if (embedded) return <section className="attendance-embedded-status" role="alert"><p>{error || 'Your Attendance session needs to be reopened.'}</p><button type="button" onClick={() => notifyAttendanceParent('martins:attendance-retry')}>Reload Attendance</button></section>
     return <LoginPage onLogin={handleLogin} loading={loading} error={error} />
   }
 
-  return <DashboardPage me={me} roles={roles} entities={entities} onLogout={handleLogout} />
+  return <DashboardPage me={me} roles={roles} entities={entities} onLogout={handleLogout} embedded={embedded} />
 }
