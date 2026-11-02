@@ -43,17 +43,21 @@ export default function BranchCommissionHub({ franchiseId, branchId = '', onBran
     setEarnings(null); setEarningsError('')
     if (!/^\d{4}-\d{2}$/.test(month)) return undefined
     const [year, number] = month.split('-').map(Number)
-    getCommissionEntries({ franchiseUserId: franchiseId, earningBranchId: activeBranch, fromDate: `${month}-01`, toDate: new Date(Date.UTC(year, number, 0)).toISOString().slice(0, 10), status: 'approved' })
-      .then(result => { if (active) setEarnings(result.items.filter(r => r.payment_eligible)) })
+    const loadEarnings = () => getCommissionEntries({ franchiseUserId: franchiseId, earningBranchId: activeBranch, fromDate: `${month}-01`, toDate: new Date(Date.UTC(year, number, 0)).toISOString().slice(0, 10) })
+      .then(result => { if (active) { setEarnings(result.items); setEarningsError('') } })
       .catch(e => { if (active) setEarningsError(e.message) })
-    return () => { active = false }
+    loadEarnings()
+    const timer = setInterval(loadEarnings, 20000)
+    return () => { active = false; clearInterval(timer) }
   }, [franchiseId, activeBranch, month])
   const commissionSummary = (person, branch) => {
     if (earningsError) return 'Commissions unavailable'
     if (!earnings) return 'Loading commissions…'
     const rows = earnings.filter(r => Number(r.employee_user_id) === Number(person.user_id) && Number(r.earning_branch_id) === Number(branch.id))
-    const total = rows.reduce((sum, row) => sum + Number(row.calculated_amount || 0), 0)
-    return `Approved with payment proof: R ${total.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    const approved = rows.filter(row => row.status === 'approved' && row.payment_eligible).reduce((sum, row) => sum + Number(row.calculated_amount || 0), 0)
+    const awaiting = rows.filter(row => ['pending', 'approved'].includes(row.status) && !row.payment_eligible).reduce((sum, row) => sum + Number(row.expected_amount ?? row.calculated_amount ?? 0), 0)
+    const money = value => `R ${value.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    return <><strong>Approved: {money(approved)}</strong><span className="commission-awaiting-badge">Awaiting document checks: {money(awaiting)}</span></>
   }
   useEffect(() => {
     let active = true
@@ -112,10 +116,10 @@ export default function BranchCommissionHub({ franchiseId, branchId = '', onBran
     </div>
     {data?.branches.filter(b => !activeBranch || String(b.id) === activeBranch).map(b => <section className="form-card" key={b.id}>
       <div className="section-heading"><h3>{b.name}</h3><div className="button-row">{!activeBranch && <button type="button" className="glass-button" onClick={() => onBranchChange?.(String(b.id))}>Open this branch</button>}<button type="button" onClick={() => download(b.id)}>Branch commission PDF</button></div></div>
-      {members(b).map(e => <div className="branch-staff-row" key={e.user_id}><div><strong>{e.full_name} · {e.employee_role}</strong><small className="commission-branch-summary">Home branch: {e.branch_name}<br/>Enabled here: {enabled(e, b.id).map(c => commissionLabels[c]).join(', ') || 'No commissions enabled'}<br/><strong>{commissionSummary(e, b)}</strong></small></div>
-        <button type="button" className="glass-button" onClick={() => open('permissions', e, b)}>Commission permissions</button>
+      {members(b).map(e => <div className="branch-staff-row" key={e.user_id}><div><strong>{e.full_name} · {e.employee_role}</strong><small className="commission-branch-summary">Home branch: {e.branch_name}<br/>Enabled here: {enabled(e, b.id).map(c => commissionLabels[c]).join(', ') || 'No commissions enabled'}<br/>{commissionSummary(e, b)}</small></div>
+        <div className="branch-staff-actions"><button type="button" className="glass-button" onClick={() => open('permissions', e, b)}>Commission permissions</button>
         <button type="button" className="glass-button" onClick={() => open('monthly', e, b)}>Monthly commissions</button>
-        <button type="button" className="glass-button" onClick={() => open('pdf', e, b)}>Employee PDF</button></div>)}
+        <button type="button" className="glass-button" onClick={() => open('pdf', e, b)}>Employee PDF</button></div></div>)}
       {!members(b).length && <p>No active staff are assigned to or enabled for commissions at this branch.</p>}
     </section>)}
   </section>
