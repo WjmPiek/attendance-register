@@ -157,8 +157,19 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
     setActiveTab(tabId)
     const url = new URL(window.location.href)
     url.searchParams.set('tab', tabId)
+    for (const key of [...url.searchParams.keys()]) if (key.startsWith('staff_')) url.searchParams.delete(key)
     window.history.replaceState({}, '', url)
+    window.dispatchEvent(new PopStateEvent('popstate'))
   }
+
+  useEffect(() => {
+    const syncTab = () => {
+      const tab = new URLSearchParams(window.location.search).get('tab') || defaultTab
+      if (availableTabIds.has(tab)) setActiveTab(tab)
+    }
+    window.addEventListener('popstate', syncTab)
+    return () => window.removeEventListener('popstate', syncTab)
+  }, [availableTabIds, defaultTab])
 
   const goBackToMobileMenu = () => {
     setActiveTab(null)

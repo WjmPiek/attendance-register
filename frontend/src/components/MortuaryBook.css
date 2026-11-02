@@ -57,3 +57,15 @@
 .staff-form-single input[type=checkbox] { width:18px!important; min-width:18px!important; max-width:18px!important; height:18px!important; min-height:18px!important; max-height:18px!important; padding:0!important; margin:0; box-sizing:border-box; flex:0 0 18px; }
 
 .staff-page > .staff-branch-selector { width:100%; max-width:none; box-sizing:border-box; }
+
+.staff-menu-cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr)); gap:16px; width:100%; min-width:0; }
+.staff-menu-cards .staff-menu-card { display:flex; flex-direction:column; align-items:flex-start; text-align:left; gap:10px; min-height:156px!important; padding:22px; border:1px solid #ded6ea; border-color:#ded6ea!important; border-radius:14px!important; background:#fff!important; color:#261b35!important; box-shadow:0 4px 18px #24103908; white-space:normal; overflow-wrap:anywhere; }
+.staff-menu-cards .staff-menu-card:hover { border-color:#79539f!important; background:#faf7ff!important; }
+.staff-menu-cards .staff-menu-card:focus-visible { outline:3px solid #8f6ab4; outline-offset:3px; }
+.staff-menu-card strong { font-size:1rem; line-height:1.4; }
+.staff-menu-card > span { font-size:.875rem; line-height:1.5; font-weight:400; }
+.staff-menu-card .staff-menu-open { margin-top:auto; color:#6c3c8c; font-weight:700; }
+.staff-page-navigation { display:flex; flex-wrap:wrap; align-items:center; gap:16px; margin-bottom:18px; }
+.staff-commission-detail > .form-card { width:100%; max-width:none; }
+.staff-pdf-page iframe { width:100%; min-height:680px; border:1px solid #ded6ea; border-radius:10px; }
+.staff-download-link { color:#673388; font-weight:700; }
