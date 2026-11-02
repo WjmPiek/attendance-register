@@ -1,4 +1,4 @@
-const CACHE_NAME = 'attendance-pwa-v31-sidebar-heading-font-20261102';
+const CACHE_NAME = 'attendance-pwa-v32-consistent-tab-panels-20261102';
 const APP_SHELL = [
   '/',
   '/index.html',

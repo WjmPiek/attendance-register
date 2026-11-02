@@ -201,16 +201,16 @@ export default function BusinessInformationPage() {
     } catch (err) { setError(err.message || 'Unable to check linked staff') }
   }
 
-  if (loading) return <section className="form-card"><p>Loading business information...</p></section>
+  if (loading) return <section className="tab-page-section"><p>Loading business information...</p></section>
 
   return (
     <div className="business-information-page">
-      <section className="form-card business-info-hero">
-        <div><p className="eyebrow">Franchise profile</p><h1>Business Information</h1><p className="muted">Manage the business profile, office GPS locations, permanent reception QR codes and timed four-digit fallback codes. This page is visible only to the franchise user.</p></div>
+      <section className="tab-page-intro business-info-hero">
+        <div><h4>Business Information</h4><p className="muted">Manage the business profile, office GPS locations, permanent reception QR codes and timed four-digit fallback codes. This page is visible only to the franchise user.</p></div>
         {mapUrl ? <a className="glass-button" href={mapUrl} target="_blank" rel="noreferrer">Open address in Google Maps</a> : null}
       </section>
 
-      <form className="form-card business-info-form" onSubmit={save}>
+      <form className="tab-page-section business-info-form" onSubmit={save}>
         <p className="muted">Missing business details are filled from your main holder’s primary franchise when you open Attendance from the main system. Details already saved here are preserved. Linked branches keep their own VAT settings for commissions.</p>
         {error ? <p className="error">{error}</p> : null}
         {message ? <p className="success-message">{message}</p> : null}

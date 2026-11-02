@@ -1,0 +1,18 @@
+/* The History card is the common frame for Attendance work tabs. */
+.app-shell .attendance-tab-panel{display:grid!important;gap:24px!important;width:100%;max-width:none;min-width:0;box-sizing:border-box;align-content:start}
+.app-shell .attendance-tab-panel .tab-page-intro{display:grid;gap:12px;margin:0!important;padding:0!important;border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important}
+.app-shell .attendance-tab-panel .tab-page-intro :is(h1,h2,h3,h4,p){margin:0!important}
+.app-shell .attendance-tab-panel .tab-page-section{display:grid;gap:16px;min-width:0;width:100%;box-sizing:border-box}
+.app-shell .attendance-tab-panel .staff-branch-selector{margin:0!important;padding:0!important;border:0!important;box-shadow:none!important;background:transparent!important}
+.app-shell .attendance-tab-panel .staff-page-navigation{margin:0!important}
+.app-shell .attendance-tab-panel .staff-menu-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+.app-shell .attendance-tab-panel .staff-menu-card{min-height:156px!important;padding:20px!important;gap:10px!important;border:1px solid #e1e6ef!important;border-radius:14px!important;background:#fff!important;box-shadow:0 4px 14px #18202a06!important}
+.app-shell .attendance-tab-panel .staff-menu-card>span:not(.staff-menu-open){font:400 14px/1.5 Arial,Helvetica,sans-serif!important;color:#758195!important}
+.app-shell .attendance-tab-panel .staff-menu-open{font:400 12px/1.5 Arial,Helvetica,sans-serif!important;color:#6b4ba0!important}
+.app-shell .attendance-tab-panel .commission-employee-row{background:#fff!important;border:1px solid #e1e6ef!important;border-radius:14px!important;padding:20px!important;color:#211b30!important;box-shadow:0 4px 14px #18202a06!important}
+.app-shell .attendance-tab-panel .commission-employee-row strong{font:400 14px/1.5 Arial,Helvetica,sans-serif!important;letter-spacing:.14em;text-transform:uppercase;color:#6b4ba0!important}
+.app-shell .attendance-tab-panel .commission-employee-row :is(span,small){font:400 14px/1.5 Arial,Helvetica,sans-serif!important;color:#758195!important}
+.app-shell .attendance-tab-panel :is(.staff-menu-card,.commission-employee-row):hover{border-color:#8f6ab4!important;background:#faf8fd!important}
+.app-shell .attendance-tab-panel :is(.staff-menu-card,.commission-employee-row):focus-visible{outline:3px solid #8f6ab4;outline-offset:3px}
+@media(max-width:760px){.app-shell .attendance-tab-panel .staff-menu-cards{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:520px){.app-shell .attendance-tab-panel .staff-menu-cards{grid-template-columns:minmax(0,1fr)}}

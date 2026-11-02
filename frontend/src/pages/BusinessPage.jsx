@@ -17,7 +17,8 @@ export default function BusinessPage() {
     window.history.pushState({}, '', url)
     setPage(next)
   }
-  return <section className="stack-page">
+  return <section className="card attendance-tab-panel business-tab-page">
+    <header className="tab-page-intro"><h3>Business</h3><p>Manage your business information and commission settings.</p></header>
     <nav className="staff-page-navigation" aria-label="Business subtabs">
       <button type="button" className={page === 'profile' ? 'primary-button' : 'glass-button'} aria-current={page === 'profile' ? 'page' : undefined} onClick={() => open('profile')}>Business Information</button>
       <button type="button" className={page === 'rates' ? 'primary-button' : 'glass-button'} aria-current={page === 'rates' ? 'page' : undefined} onClick={() => open('rates')}>Commissions</button>
