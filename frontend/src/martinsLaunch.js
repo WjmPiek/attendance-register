@@ -58,3 +58,16 @@ export function getProfileSwitchUrl() {
   try { return profileSwitchUrl(window.sessionStorage.getItem(RETURN_URL_KEY)); }
   catch { return profileSwitchUrl(); }
 }
+
+export function getMartinsReturnUrl() {
+  const fallback = 'https://martinssystem.co.za/';
+  try {
+    const url = new URL(window.sessionStorage.getItem(RETURN_URL_KEY) || fallback);
+    if (url.protocol === 'https:' || (url.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(url.hostname))) {
+      return url.toString();
+    }
+  } catch {
+    // A direct module visit can still return to the main site.
+  }
+  return fallback;
+}

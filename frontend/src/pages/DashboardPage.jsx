@@ -12,7 +12,7 @@ import CommissionPage from './CommissionPage'
 import BusinessPage from './BusinessPage'
 import MyProfilePage from './MyProfilePage'
 import UploadProofPage from './UploadProofPage'
-import { getProfileSwitchUrl } from '../martinsLaunch'
+import { getProfileSwitchUrl, getMartinsReturnUrl } from '../martinsLaunch'
 import { openModuleSwitcher } from '../moduleSwitcher'
 import '../moduleSwitcher.css'
 import '../moduleTypography.css'
@@ -212,7 +212,7 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
             </button>
           ))}
         </nav>
-        <button className="logout-button glass-button" onClick={onLogout}>Logout</button>
+        <a className="tab-button sidebar-return-link" href={getMartinsReturnUrl()}>{isFranchiseUser ? 'Back to franchise site' : 'Back to main site'}</a>
       </aside> : null}
 
       {!showMobileStaffMenuOnly ? <main className="page content-panel ms-main">
