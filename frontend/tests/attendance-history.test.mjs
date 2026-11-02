@@ -33,6 +33,8 @@ test('each event ID appears once while different events at the same time survive
   assert.equal(model.records.length, 3)
   assert.equal(model.records.filter(row => row.id === 1).length, 1)
   assert.ok(model.records.some(row => row.id === 3 && row.action === 'other_action'))
+  assert.equal(metric(model, 'sessions').value, 3)
+  assert.ok(metric(model, 'sessions').rows.some(row => row.id === 3))
 })
 
 test('late and early cards show only the relevant event, not the entire pair twice', () => {
@@ -84,4 +86,16 @@ test('today cards use South African dates at the UTC boundary', () => {
   assert.equal(metric(model, 'today-sessions').count, 1)
   assert.equal(metric(model, 'latest-status').value, 'Signed in')
   assert.deepEqual(metric(model, 'latest-status').rows.map(item => item.id), [4])
+})
+
+test('sign-ins today excludes unpaired sign-outs and time cards show only completed attendance', () => {
+  const openEvent = { ...inside, id: 3, action: 'sign_in', created_at: '2026-11-02T16:00:00Z' }
+  const orphanEvent = { ...inside, id: 4, action: 'sign_out', created_at: '2026-11-02T16:30:00Z' }
+  const open = { session_id: 'open', user_id: 11, sign_in_event_id: 3, sign_in_at: openEvent.created_at, sign_out_at: null, status: 'open' }
+  const orphan = { session_id: 'orphan', user_id: 11, sign_in_event_id: null, sign_in_at: null, sign_out_event_id: 4, sign_out_at: orphanEvent.created_at, status: 'open' }
+  const model = buildAttendanceHistory([...events, openEvent, orphanEvent], [complete, open, orphan], now)
+  assert.equal(metric(model, 'today-sessions').count, 2)
+  assert.equal(metric(model, 'today-time').count, 1)
+  assert.equal(metric(model, 'duration').count, 1)
+  assert.deepEqual(metric(model, 'duration').rows.map(row => row.id).sort(), [1, 2])
 })

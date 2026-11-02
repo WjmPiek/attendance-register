@@ -35,27 +35,42 @@ export function buildAttendanceHistory(events, sessions, now = new Date()) {
   const late = row => !!(row.is_late || (row.action !== 'sign_out' && row.session?.is_late))
   const early = row => !!(row.left_early || (row.action === 'sign_out' && row.session?.left_early))
   const today = attendanceDay(now)
-  const todaySessions = realSessions.filter(session => attendanceDay(session.sign_in_at || session.sign_out_at) === today)
+  const todaySessions = realSessions.filter(session => session.sign_in_at && attendanceDay(session.sign_in_at) === today)
   const todayEvents = records.filter(row => !row.contextOnly && attendanceDay(row.created_at) === today)
   const latest = todayEvents[0]
   const sessionRecords = selected => { const keys = new Set(selected.map(row => row.session_id)); return records.filter(row => row.session && keys.has(row.session.session_id)) }
   const minutes = selected => selected.reduce((sum, session) => sum + Number(session.duration_minutes || 0), 0)
-  const sessionMetric = (key, label, selected, value = selected.length) => ({ key, label, value, count: selected.length, rows: sessionRecords(selected), unit: 'sessions' })
-  const eventMetric = (key, label, predicate) => { const rows = records.filter(predicate); return { key, label, value: rows.length, count: rows.length, rows, unit: 'records' } }
+  const sessionMetric = (key, label, selected, value = selected.length) => ({ key, label, value, count: selected.length, rows: sessionRecords(selected), sessionBased: true, unit: selected.length === 1 ? 'attendance period' : 'attendance periods' })
+  const eventMetric = (key, label, predicate) => { const rows = records.filter(predicate); return { key, label, value: rows.length, count: rows.length, rows, unit: rows.length === 1 ? 'attendance record' : 'attendance records' } }
   const todayMetrics = [
-    sessionMetric('today-sessions', 'Sessions today', todaySessions),
-    sessionMetric('today-time', 'Session time today', todaySessions, formatAttendanceDuration(minutes(todaySessions))),
-    { key: 'latest-status', label: 'Latest status today', value: latest ? latest.action === 'sign_in' ? 'Signed in' : latest.action === 'sign_out' ? 'Signed out' : String(latest.attendance_status || latest.action).replaceAll('_', ' ') : 'No events', rows: latest ? [latest] : [], count: latest ? 1 : 0, unit: 'events' },
+    sessionMetric('today-sessions', 'Sign-ins today', todaySessions),
+    sessionMetric('today-time', 'Completed time today', todaySessions.filter(row => row.sign_out_at), formatAttendanceDuration(minutes(todaySessions))),
+    { key: 'latest-status', label: 'Latest attendance action', value: latest ? latest.action === 'sign_in' ? 'Signed in' : latest.action === 'sign_out' ? 'Signed out' : String(latest.attendance_status || latest.action).replaceAll('_', ' ') : 'No attendance today', rows: latest ? [latest] : [], count: latest ? 1 : 0, unit: 'events' },
   ]
   const metrics = [
-    sessionMetric('sessions', 'Sessions', realSessions),
-    sessionMetric('completed', 'Completed sessions', realSessions.filter(row => row.sign_in_at && row.sign_out_at)),
+    { key: 'sessions', label: 'All attendance entries', value: uniqueEvents.length, count: uniqueEvents.length, rows: records, unit: uniqueEvents.length === 1 ? 'attendance entry' : 'attendance entries' },
+    sessionMetric('completed', 'Signed in and out', realSessions.filter(row => row.sign_in_at && row.sign_out_at)),
     sessionMetric('signed-in', 'Currently signed in', realSessions.filter(row => row.sign_in_at && !row.sign_out_at && !row.missing_sign_out)),
-    sessionMetric('duration', 'Total session time', realSessions, formatAttendanceDuration(minutes(realSessions))),
-    eventMetric('late', 'Late arrivals', late), eventMetric('early-leave', 'Early departures', early),
-    eventMetric('outside-gps', 'Outside office GPS', row => row.gps_status === 'outside_area'),
-    eventMetric('low-accuracy', 'Low GPS accuracy', row => row.gps_status === 'accuracy_too_low'),
-    eventMetric('missing-sign-out', 'Missing sign-out', missing),
+    sessionMetric('duration', 'Total recorded time', realSessions.filter(row => row.sign_in_at && row.sign_out_at), formatAttendanceDuration(minutes(realSessions))),
+    eventMetric('late', 'Late sign-ins', late), eventMetric('early-leave', 'Early sign-outs', early),
+    eventMetric('outside-gps', 'Outside office location', row => row.gps_status === 'outside_area'),
+    eventMetric('low-accuracy', 'Unclear GPS location', row => row.gps_status === 'accuracy_too_low'),
+    eventMetric('missing-sign-out', 'Missing sign-outs', missing),
   ]
-  return { records, realSessions, todayMetrics, metrics }
+  const descriptions = {
+    'today-sessions': 'Number of sign-ins recorded today. Repeat sign-ins by the same person are counted separately.',
+    'today-time': 'Time between completed sign-ins and sign-outs for attendance that started today.',
+    'latest-status': 'Most recent sign-in or sign-out recorded today for the selected staff.',
+    sessions: 'Every recorded sign-in and sign-out in the selected period.',
+    completed: 'Attendance periods with both a sign-in and a sign-out.',
+    'signed-in': 'Sign-ins still open, excluding those already flagged as missing sign-outs.',
+    duration: 'Time between completed sign-ins and sign-outs. Open attendance is not included.',
+    late: 'Sign-ins after the staff member’s configured start time.',
+    'early-leave': 'Sign-outs before the staff member’s configured finish time.',
+    'outside-gps': 'Attendance recorded outside the office’s allowed GPS area.',
+    'low-accuracy': 'GPS readings that were not accurate enough to confirm the location.',
+    'missing-sign-out': 'Sign-ins with no matching sign-out that have been flagged as overdue.',
+  }
+  const describe = metric => ({ ...metric, description: descriptions[metric.key] })
+  return { records, realSessions, todayMetrics: todayMetrics.map(describe), metrics: metrics.map(describe) }
 }

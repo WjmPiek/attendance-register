@@ -27,3 +27,5 @@
 @media(max-width:1200px) { .attendance-history-filters.with-franchise { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 @media(max-width:760px) { .history-metric-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .attendance-history-filters,.attendance-history-filters.with-franchise { grid-template-columns:minmax(0,1fr); } }
 @media(max-width:520px) { .history-metric-grid,.history-export-users { grid-template-columns:minmax(0,1fr); } }
+
+.history-metric-card .history-metric-description { color:#647084; font-weight:400; line-height:1.5; }
