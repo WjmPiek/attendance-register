@@ -806,7 +806,6 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
     return (
       <div className="staff-page">
         <div className="section-header">
-          <p className="eyebrow">HR Management</p>
           <h2>Select a Franchise User</h2>
           <p className="muted">Managers and employees remain hidden until you select their franchise.</p>
         </div>
@@ -844,7 +843,6 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
   return (
     <div className="staff-page">
       <div className="section-header">
-        <p className="eyebrow">HR Management</p>
         <h2>{canManageStaff ? 'Franchise Staff' : (isManagerView ? 'My Assigned Staff' : 'My Staff Profile')}</h2>
         <p className="muted">{canManageStaff
           ? 'Create and manage staff, assign employees to managers, and maintain staff records.'
