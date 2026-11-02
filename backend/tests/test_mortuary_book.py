@@ -173,6 +173,10 @@ def database(monkeypatch):
         db.execute(text("INSERT INTO attendance_branches VALUES(101,2,1,'EXAMPLE',NULL,TRUE,TRUE),(102,2,2,'EXAMPLE SOUTH',NULL,TRUE,TRUE),(900,99,9,'FOREIGN',NULL,TRUE,TRUE)"))
         db.execute(text('INSERT INTO employee_branch_assignments VALUES(2,11,101,FALSE),(2,12,102,FALSE),(99,99,900,FALSE)'))
         db.execute(text('INSERT INTO mortuary_policies VALUES(2,0,:p,1,NOW())'), {'p': json.dumps(policy())})
+        for staff_table in ('employee_users', 'manager_users'):
+            db.execute(text(f"ALTER TABLE {staff_table} ADD COLUMN work_start_time TEXT DEFAULT '08:00'"))
+            db.execute(text(f"ALTER TABLE {staff_table} ADD COLUMN work_end_time TEXT DEFAULT '17:00'"))
+            db.execute(text(f'ALTER TABLE {staff_table} ADD COLUMN work_week TEXT'))
         db.commit()
         def scope(db, user, fid):
             if user.id != 1 or fid not in (2, None):

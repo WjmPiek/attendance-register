@@ -71,11 +71,12 @@ def import_scope(db, user, requested=None):
 def import_staff(db, fid):
     return [dict(r) for r in db.execute(text('''SELECT s.*,a.branch_id,b.name AS branch_name,a.can_import_commissions FROM (
         SELECT e.user_id,e.franchise_user_id,COALESCE(NULLIF(TRIM(CONCAT(COALESCE(e.name,''),' ',COALESCE(e.surname,''))),''),u.full_name) AS full_name,
-            e.employee_number,COALESCE(e.employee_role,'Employee') AS employee_role,'employee' AS staff_type
+            e.employee_number,COALESCE(e.employee_role,'Employee') AS employee_role,'employee' AS staff_type,
+            COALESCE(e.work_start_time,'08:00') AS work_start_time,COALESCE(e.work_end_time,'17:00') AS work_end_time,e.work_week
         FROM employee_users e JOIN users u ON u.id=e.user_id WHERE e.is_active=TRUE AND u.is_active=TRUE
         UNION ALL
         SELECT m.user_id,m.franchise_user_id,COALESCE(NULLIF(TRIM(CONCAT(COALESCE(m.name,''),' ',COALESCE(m.surname,''))),''),u.full_name),
-            m.employee_number,'Manager','manager'
+            m.employee_number,'Manager','manager',COALESCE(m.work_start_time,'08:00'),COALESCE(m.work_end_time,'17:00'),m.work_week
         FROM manager_users m JOIN users u ON u.id=m.user_id WHERE m.is_active=TRUE AND u.is_active=TRUE
         ) s JOIN employee_branch_assignments a ON a.employee_user_id=s.user_id AND a.franchise_user_id=s.franchise_user_id
         JOIN attendance_branches b ON b.id=a.branch_id AND b.franchise_user_id=s.franchise_user_id

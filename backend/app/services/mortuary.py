@@ -9,7 +9,8 @@ from dateutil.easter import easter
 from pypdf import PdfReader
 
 
-RATE_KEYS = ('driver_in', 'driver_out', 'assistant_in', 'assistant_out')
+RATE_KEYS = ('driver_in', 'driver_out', 'assistant_in', 'assistant_out',
+             'driver_sunday_holiday', 'assistant_sunday_holiday', 'driver_other_branch', 'assistant_other_branch')
 DEFAULT_WEEK = [{'start': '08:00', 'end': '17:00'} for _ in range(5)] + [{'start': '08:00', 'end': '13:00'}]
 
 
@@ -116,15 +117,29 @@ def public_holidays(year):
     return days | {d for d in special if d.year == year}
 
 
-def price_removal(record, role, policy, extra_holidays=()):
+def price_removal(record, role, policy, extra_holidays=(), other_branch=False, staff_hours=None):
     day = date.fromisoformat(record['date_in'])
     at = time.fromisoformat(record['time_in'])
     holiday = day in public_holidays(day.year) or day.isoformat() in extra_holidays
     business = False
     if day.weekday() != 6 and not holiday:
-        window = policy['week'][day.weekday()]
+        from app.services.staff_hours import work_window
+        window = work_window(staff_hours, day.weekday()) if staff_hours is not None else policy['week'][day.weekday()]
         if window is not None:
-            business = time.fromisoformat(window['start']) <= at < time.fromisoformat(window['end'])
+            start, end = time.fromisoformat(window['start']), time.fromisoformat(window['end'])
+            if start == end:
+                raise ValueError('Staff working hours must have different start and end times. Correct them in Edit Staff.')
+            business = start <= at < end if start < end else at >= start or at < end
     band = 'in' if business else 'out'
-    rate = policy['rates'].get(f'{role}_{band}')
-    return {'band': band, 'amount': str(Decimal(str(rate)).quantize(Decimal('0.01'))) if rate is not None else None}
+    sunday_holiday = day.weekday() == 6 or holiday
+    category = 'sunday_holiday' if sunday_holiday else band
+    rate = policy['rates'].get(f'{role}_{category}')
+    if rate is None and sunday_holiday:
+        rate = policy['rates'].get(f'{role}_out')
+    additional = Decimal(str(policy['rates'].get(f'{role}_other_branch') or 0)) if other_branch else Decimal(0)
+    base = Decimal(str(rate)) if rate is not None else None
+    return {'band': band, 'fee_category': category,
+            'fee_label': 'Sunday / public holiday' if sunday_holiday else 'Business hours' if business else 'After hours',
+            'other_branch': bool(other_branch), 'additional_fee': str(additional.quantize(Decimal('0.01'))),
+            'removal_base_fee': str(base.quantize(Decimal('0.01'))) if base is not None else None,
+            'amount': str((base + additional).quantize(Decimal('0.01'))) if base is not None else None}

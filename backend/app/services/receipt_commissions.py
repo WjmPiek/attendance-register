@@ -210,7 +210,7 @@ def resolve_commission_vat(db, fid, branch_id, invoice):
     valid_print = invoice.get('vat_issue') is None and isinstance(invoice.get('vat_registered'), bool) and invoice.get('commission_base') is not None
     if registered is None:
         if not valid_print:
-            raise HTTPException(400, 'Invoice VAT details are unclear and the system has no confirmed branch VAT status. Confirm it under Business → Configure Hours and Rates.')
+            raise HTTPException(400, 'Invoice VAT details are unclear and the system has no confirmed branch VAT status. Confirm it under Business → Commission Rates.')
         registered, number, source = invoice['vat_registered'], invoice.get('vat_number'), 'Printed invoice VAT details'
     total = Decimal(str(invoice['invoice_total']))
     rate = Decimal(str(configuration['vat_rate'] if configuration else invoice.get('vat_rate') if valid_print and invoice['vat_registered'] else 15)) if registered else Decimal(0)

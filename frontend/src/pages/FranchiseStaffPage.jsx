@@ -22,6 +22,7 @@ import StaffWorkHub from '../components/StaffWorkHub.jsx'
 import MortuaryBook from '../components/MortuaryBook.jsx'
 import MFFileReceipt from '../components/MFFileReceipt.jsx'
 import MFInvoice from '../components/MFInvoice.jsx'
+import StaffWorkingHours, { defaultStaffWeek, staffWorkWeek, StaffHoursSummary } from '../components/StaffWorkingHours.jsx'
 import BranchCommissionHub from '../components/BranchCommissionHub.jsx'
 import StaffMenu from '../components/StaffMenu.jsx'
 import { staffPages, useStaffNavigation } from '../api/staffNavigation'
@@ -63,6 +64,7 @@ const emptyStaff = {
   office_address_assigned: '',
   work_start_time: '08:00',
   work_end_time: '17:00',
+  work_week: defaultStaffWeek(),
   password: '',
   is_active: true,
 }
@@ -551,6 +553,7 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
       office_address_assigned: item.office_address_assigned || '',
       work_start_time: item.work_start_time || '08:00',
       work_end_time: item.work_end_time || '17:00',
+      work_week: staffWorkWeek(item),
       password: '',
       username: item.username || '',
       employee_number: item.employee_number || '',
@@ -1062,10 +1065,7 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
               </select>
               {!activeOfficeAddresses.length ? <span className="optional-note">Save an active franchise office before adding staff.</span> : null}
             </label>
-            <div className="hours-grid">
-              <label>Office Start Time<input type="time" required value={staff.work_start_time || '08:00'} onChange={(e) => setStaff({ ...staff, work_start_time: e.target.value })} /></label>
-              <label>Office End Time<input type="time" required value={staff.work_end_time || '17:00'} onChange={(e) => setStaff({ ...staff, work_end_time: e.target.value })} /></label>
-            </div>
+            <StaffWorkingHours value={staffWorkWeek(staff)} onChange={work_week => setStaff(current => ({ ...current, work_week }))}/>
             <label>Password <span className="optional-note">blank = keep current / Temp123! for new</span><input type="password" value={staff.password || ''} onChange={(e) => setStaff({ ...staff, password: e.target.value })} /></label>
             <div className="id-photo-template">
               <MovablePhotoPlaceholder preview={idPhotoPreview} offset={idPhotoOffset} setOffset={setIdPhotoOffset} onDropFile={(file) => handleIdPhotoChange({ target: { files: [file] } })} />
@@ -1237,7 +1237,7 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
                 <thead><tr><th>Name</th><th>Username</th><th>EMPL. NO</th><th>Email</th><th>Contact</th><th>Office</th><th>Office Hours</th><th>Active</th><th>Actions</th></tr></thead>
                 <tbody>
                   {managers.filter((m) => m.is_active !== false && m.login_active !== false).map((m) => <tr key={m.id} className={m.is_active === false ? 'inactive-row' : ''}>
-                    <td>{m.name} {m.surname}</td><td>{m.username || '—'}</td><td>{m.employee_number || '—'}</td><td>{m.email || '—'}</td><td>{m.contact_number || '—'}</td><td>{m.office_name || m.office_address_assigned || '—'}</td><td>{m.work_start_time || '08:00'} - {m.work_end_time || '17:00'}</td><td>{m.is_active === false ? 'No' : 'Yes'}</td>
+                    <td>{m.name} {m.surname}</td><td>{m.username || '—'}</td><td>{m.employee_number || '—'}</td><td>{m.email || '—'}</td><td>{m.contact_number || '—'}</td><td>{m.office_name || m.office_address_assigned || '—'}</td><td><StaffHoursSummary staff={m}/></td><td>{m.is_active === false ? 'No' : 'Yes'}</td>
                     {renderActions('managers', m)}
                   </tr>)}
                   {!managers.length ? <tr><td colSpan="9" className="muted">No managers found.</td></tr> : null}
@@ -1253,7 +1253,7 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
                 <thead><tr><th>Role</th><th>EMPL. NO</th><th>Name</th><th>Username</th><th>Email</th><th>Contact</th><th>Office</th><th>Office Hours</th><th>Active</th><th>Actions</th></tr></thead>
                 <tbody>
                   {employees.filter((e) => e.is_active !== false && e.login_active !== false).map((e) => <tr key={e.id} className={e.is_active === false ? 'inactive-row' : ''}>
-                    <td>{e.employee_role || '—'}</td><td>{e.employee_number || '—'}</td><td>{e.name} {e.surname}</td><td>{e.username || '—'}</td><td>{e.email || '—'}</td><td>{e.contact_number || '—'}</td><td>{e.office_name || e.office_address_assigned || '—'}</td><td>{e.work_start_time || '08:00'} - {e.work_end_time || '17:00'}</td><td>{e.is_active === false ? 'No' : 'Yes'}</td>
+                    <td>{e.employee_role || '—'}</td><td>{e.employee_number || '—'}</td><td>{e.name} {e.surname}</td><td>{e.username || '—'}</td><td>{e.email || '—'}</td><td>{e.contact_number || '—'}</td><td>{e.office_name || e.office_address_assigned || '—'}</td><td><StaffHoursSummary staff={e}/></td><td>{e.is_active === false ? 'No' : 'Yes'}</td>
                     {renderActions('employees', e)}
                   </tr>)}
                   {!employees.length ? <tr><td colSpan="9" className="muted">No employees found.</td></tr> : null}

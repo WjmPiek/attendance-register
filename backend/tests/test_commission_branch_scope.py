@@ -91,7 +91,7 @@ def test_editing_one_branch_preserves_other_branch_permissions(database):
 def test_managers_have_the_same_branch_specific_commission_controls(database):
     configure(database)
     database.execute(text("INSERT INTO users VALUES(13,'Morgan Example',NULL,TRUE)"))
-    database.execute(text("INSERT INTO manager_users VALUES(13,13,2,'Morgan','Example','13',TRUE)"))
+    database.execute(text("INSERT INTO manager_users(id,user_id,franchise_user_id,name,surname,employee_number,is_active) VALUES(13,13,2,'Morgan','Example','13',TRUE)"))
     database.execute(text('INSERT INTO employee_branch_assignments VALUES(2,13,101,FALSE)'))
     save_branch_options(database,2,13,{102:{'enabled_types':['invoice_commission'],'receipt_percentage':'4'}},1);database.commit()
     q=paired_at(database,'EXAMPLE SOUTH',recipients=(13,))

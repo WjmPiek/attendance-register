@@ -60,7 +60,7 @@ export default function MortuaryBook({ franchiseId }) {
     <div className="form-card">
       <h2>Mortuary Book</h2>
       <p>Import removal commissions from printed Mortuary Book PDFs. Review the employees, roles and fees before saving to their Work Hubs.</p>
-      <p className="muted">Service date uses Date Generated. Fee classification uses Date In and Time In, in South African local time. Sundays and public holidays always use out-of-hours fees. End times are exclusive: 17:00 is out of hours when a shift ends at 17:00.</p>
+      <p className="muted">Service date uses Date Generated. Fee classification uses Date In and Time In, in South African local time. Working hours come from the staff register. Sundays and public holidays use their separate removal fee when configured. End times are exclusive: 17:00 is out of hours when a shift ends at 17:00.</p>
     </div>
     {error && <div role="alert" className="error-message">{error}</div>}
     {notice && <div role="status" className="success-message">{notice}</div>}
@@ -80,14 +80,14 @@ export default function MortuaryBook({ franchiseId }) {
         {allocations.map((a, n) => a.record !== i ? null : <div className="mortuary-allocation" key={n}>
           <strong>{r.names[a.name_index]}</strong>
           <label>Employee<select required value={a.employee_user_id || ''} disabled={busy} onChange={e => changeAllocation(n, 'employee_user_id', e.target.value)}><option value="">Select employee — no unique match</option>{settings.employees.map(p => <option key={p.user_id} value={p.user_id}>{p.full_name}{p.employee_number ? ` · ${p.employee_number}` : ''}</option>)}</select></label>
-          <label>Removal role<select value={a.role} disabled={busy} onChange={e => changeAllocation(n, 'role', e.target.value)}><option value="driver">Driver</option><option value="assistant">Assistant</option></select></label>
+          <label>Removal role<select value={a.role} disabled={busy} onChange={e => changeAllocation(n, 'role', e.target.value)}><option value="driver">Employee</option><option value="assistant">Assistant</option></select></label>
         </div>)}
       </article>)}
       <button type="button" className="primary-button" disabled={busy || !allocations.length || allocations.some(a => !a.employee_user_id)} onClick={calculate}>Calculate commissions</button>
     </div>}
     {quote && <div className="form-card">
       <h3>3. Save Mortuary Book evidence</h3>
-      <div className="table-wrap"><table><thead><tr><th>MF / Branch</th><th>Employee</th><th>Role / Fee</th><th>Quantity</th><th>Amount</th></tr></thead><tbody>{quote.items.map((r, i) => <tr key={i}><td>{r.record_data.reference}<br/>{r.record_data.branch}</td><td>{r.employee_name}</td><td>{r.role} · {r.band === 'in' ? 'Business hours' : 'Out of hours'}</td><td>{r.duplicate ? 'Already recorded — skipped' : '1'}</td><td>{r.duplicate ? 'Skipped' : money(r.amount)}</td></tr>)}</tbody></table></div>
+      <div className="table-wrap"><table><thead><tr><th>MF / Branch</th><th>Employee</th><th>Role / Fee</th><th>Quantity</th><th>Amount</th></tr></thead><tbody>{quote.items.map((r, i) => <tr key={i}><td>{r.record_data.reference}<br/>{r.record_data.branch}</td><td>{r.employee_name}</td><td>{r.role === 'driver' ? 'Employee' : 'Assistant'} · {r.fee_label || (r.band === 'in' ? 'Business hours' : 'After hours')}{Number(r.additional_fee) > 0 && <small className="commission-branch-summary">Base: {money(r.removal_base_fee)} + Other branch: {money(r.additional_fee)}</small>}</td><td>{r.duplicate ? 'Already recorded — skipped' : '1'}</td><td>{r.duplicate ? 'Skipped' : money(r.amount)}</td></tr>)}</tbody></table></div>
       <h4>Indicative fees per employee</h4>
       <div className="mortuary-rates">{totals.map(r => <div className="mortuary-total" key={r.name}><strong>{r.name}</strong><span>{r.quantity} removal(s)</span><strong>{r.missing ? 'Configure missing fees' : money(r.total)}</strong></div>)}</div>
       <p><strong>Indicative removal fees: {money(quote.total)}</strong></p><p>No commission is earned by saving a book. A matching MF Invoice, receipts covering the full invoice, and an enabled employee category are required.</p>

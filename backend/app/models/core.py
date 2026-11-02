@@ -109,6 +109,7 @@ class ManagerUser(Base, TimestampMixin):
     office_address_assigned: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     work_start_time: Mapped[Optional[str]] = mapped_column(String(5), default="08:00")
     work_end_time: Mapped[Optional[str]] = mapped_column(String(5), default="17:00")
+    work_week: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
 class EmployeeUser(Base, TimestampMixin):
@@ -128,6 +129,7 @@ class EmployeeUser(Base, TimestampMixin):
     office_address_assigned: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     work_start_time: Mapped[Optional[str]] = mapped_column(String(5), default="08:00")
     work_end_time: Mapped[Optional[str]] = mapped_column(String(5), default="17:00")
+    work_week: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
 

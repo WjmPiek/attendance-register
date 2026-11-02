@@ -2098,26 +2098,20 @@ def _assert_office_area_access(db: Session, current_user: User, area: dict, writ
         if write:
             raise HTTPException(status_code=403, detail='Only the franchise user can change office GPS settings')
 
-def _get_user_office_hours(db: Session, user_id: int) -> tuple[str, str]:
-    # Returns the staff-specific office hours if configured. Falls back to 08:00-17:00.
-    try:
-        db.execute(text("ALTER TABLE manager_users ADD COLUMN IF NOT EXISTS work_start_time VARCHAR(5) DEFAULT '08:00'"))
-        db.execute(text("ALTER TABLE manager_users ADD COLUMN IF NOT EXISTS work_end_time VARCHAR(5) DEFAULT '17:00'"))
-        db.execute(text("ALTER TABLE employee_users ADD COLUMN IF NOT EXISTS work_start_time VARCHAR(5) DEFAULT '08:00'"))
-        db.execute(text("ALTER TABLE employee_users ADD COLUMN IF NOT EXISTS work_end_time VARCHAR(5) DEFAULT '17:00'"))
-        row = db.execute(text("""
-            SELECT COALESCE(work_start_time, '08:00') AS work_start_time,
-                   COALESCE(work_end_time, '17:00') AS work_end_time
-            FROM employee_users WHERE user_id = :user_id
-            UNION ALL
-            SELECT COALESCE(work_start_time, '08:00') AS work_start_time,
-                   COALESCE(work_end_time, '17:00') AS work_end_time
-            FROM manager_users WHERE user_id = :user_id
-            LIMIT 1
-        """), {"user_id": user_id}).mappings().first()
-        return ((row.get('work_start_time') if row else None) or '08:00', (row.get('work_end_time') if row else None) or '17:00')
-    except Exception:
+def _get_user_office_hours(db: Session, user_id: int) -> tuple[str | None, str | None]:
+    from app.services.staff_hours import work_window
+    row = db.execute(text("""
+        SELECT work_start_time,work_end_time,work_week FROM employee_users WHERE user_id=:uid
+        UNION ALL SELECT work_start_time,work_end_time,work_week FROM manager_users WHERE user_id=:uid
+        LIMIT 1
+    """), {'uid': user_id}).mappings().first()
+    if row is None:
         return ('08:00', '17:00')
+    try:
+        window = work_window(row, now_sa_naive().weekday())
+    except (ValueError, TypeError):
+        raise HTTPException(400, 'Correct saved working hours in Edit Staff before recording attendance.')
+    return (window['start'], window['end']) if window else (None, None)
 
 
 def _time_on_today(now: datetime, hhmm: str, fallback_hour: int) -> datetime:
@@ -2184,7 +2178,7 @@ def sign_in(payload: AttendanceActionRequest, current_user: User = Depends(get_c
     shift_start = _time_on_today(now, work_start_time, 8)
     is_late = False
     late_minutes = 0
-    if rule:
+    if rule and work_start_time is not None:
         diff = (now - shift_start).total_seconds() / 60
         if diff > rule.late_after_minutes:
             is_late = True
@@ -2226,7 +2220,7 @@ def sign_out(payload: AttendanceActionRequest, current_user: User = Depends(get_
     shift_end = _time_on_today(now, work_end_time, 17)
     left_early = False
     early_minutes = 0
-    if rule:
+    if rule and work_end_time is not None:
         diff = (shift_end - now).total_seconds() / 60
         if diff > rule.early_leave_before_minutes:
             left_early = True

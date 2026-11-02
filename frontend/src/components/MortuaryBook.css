@@ -69,8 +69,18 @@
 .staff-commission-detail > .form-card { width:100%; max-width:none; }
 .staff-pdf-page iframe { width:100%; min-height:680px; border:1px solid #ded6ea; border-radius:10px; }
 .staff-download-link { color:#673388; font-weight:700; }
-.staff-upload-proof { display:grid; grid-column:1 / -1; gap:12px; padding:18px; border:1px solid #ded6ea; border-radius:14px; background:#fff; min-width:0; }
-.staff-upload-proof p { margin:0; font-size:.875rem; }
+.removal-settings-form { display:grid; gap:20px; min-width:0; }
+.removal-fee-table { width:100%; min-width:420px; }
+.removal-fee-table th:first-child { width:40%; }
+.commission-rate-list { display:grid; gap:16px; }
+.staff-form-single > .staff-weekly-hours { grid-column:1 / -1; display:grid; grid-template-columns:minmax(0,1fr); gap:16px; width:100%; min-width:0; padding:18px; border:1px solid #ded6ea; border-radius:12px; box-sizing:border-box; }
+.staff-weekly-hours legend { font-weight:700; padding:0 8px; }
+.staff-working-day { display:grid; grid-template-columns:minmax(130px,1fr) repeat(2,minmax(0,1fr)); gap:14px; align-items:end; }
+.staff-weekly-hours .staff-working-day > label { grid-column:auto!important; min-width:0; }
+.staff-weekly-hours label.staff-working-day-toggle { display:flex!important; flex-direction:row!important; align-items:center; gap:10px; align-self:center; }
+@media(max-width:600px) { .staff-working-day { grid-template-columns:repeat(2,minmax(0,1fr)); } .staff-weekly-hours .staff-working-day > label:first-child { grid-column:1 / -1!important; } }
+.commission-rate-row { display:grid; grid-template-columns:minmax(180px,2fr) minmax(100px,1fr) auto auto; align-items:end; gap:16px; padding:16px 0; border-top:1px solid #ded6ea; }
+@media(max-width:760px) { .commission-rate-row { grid-template-columns:minmax(0,1fr); } }
 .staff-proof-links { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
 .staff-proof-card { display:grid; gap:10px; padding:14px; border:1px solid #ded6ea; border-radius:10px; min-width:0; }
 .staff-proof-card .link-button { width:auto; justify-self:start; text-align:left; }
