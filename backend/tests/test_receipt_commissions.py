@@ -44,8 +44,25 @@ def configure(db, registered=True):
     db.commit()
 
 
-def stage_receipt(db, records=None, people=(11,12)):
+def stage_invoice(db, source=None, total=None):
+    source = source or receipt()
+    invoice = {**source, 'invoice_total': str(total if total is not None else source['gross_received'])}
+    bid = api.require_branch(db, 2, source['branch'])
+    tax = api.receipt_settings(db, 2, bid)
+    base = receipt_base(invoice['invoice_total'], tax['vat_registered'], tax['vat_rate']) if tax['vat_registered'] is not None else None
+    invoice.update(vat_registered=tax['vat_registered'], vat_number=tax.get('vat_number'), vat_rate=str(tax['vat_rate']),
+                   commission_base=str(base) if base is not None else None, vat_amount=str(Decimal(invoice['invoice_total']) - base) if base is not None else None,
+                   vat_issue=None if base is not None else 'Unclear printed VAT')
+    return api.save_document(db, 2, 'invoice', invoice, [], 1)[0]
+
+
+def stage_receipt(db, records=None, people=(11,12), with_invoice=True):
     records=records or [receipt()]
+    if with_invoice:
+        for row in records:
+            exists = db.execute(text("SELECT id FROM commission_documents WHERE kind='invoice' AND franchise_user_id=2 AND branch_key=:branch AND mf_key=:mf"), {'branch': branch_key(row['branch']), 'mf': mf_key(row['reference'])}).scalar()
+            if not exists and db.execute(text('SELECT 1 FROM attendance_branches WHERE franchise_user_id=2 AND name=:name'), {'name': row['branch']}).scalar():
+                stage_invoice(db, row)
     token=api.signer().dumps({'kind':'receipts','user_id':1,'franchise_user_id':2,'records':records})
     return api.stage(api.StageIn(preview_token=token,confirmed_franchise=True,allocations=[{'record':i,'employee_user_ids':list(people)} for i in range(len(records))]),OWNER,db)
 
@@ -115,7 +132,7 @@ def test_paired_docs_create_separate_categories_cross_branch_staff_and_totals(da
     invoice=next(r for r in rows if r['commission_type']=='invoice_commission')
     assert Decimal(str(invoice['invoice_value_before_tax']))==Decimal('20504.88')
     assert 'Example Person' in invoice['notes'] and '0000000000000' in invoice['notes']
-    assert 'TEST-1315' in invoice['reference'] and 'TEST-1492' in invoice['reference']
+    assert 'TEST-1315' in invoice['reference'] and '1309' in invoice['reference']
     # Both import stages and approval are repeat-safe.
     stage_receipt(database)
     quote_and_import(database,import_payload())
@@ -136,15 +153,15 @@ def test_receipt_can_arrive_first_and_nonregistered_receipts_use_full_payment(da
     assert api.settle(payload,OWNER,database)['created']==4
 
 
-def test_disabled_categories_never_receive_awards_and_vat_unknown_blocks_receipts(database):
+def test_disabled_categories_stay_blocked_but_branch_vat_can_resolve_invoice(database):
     configure(database)
     ids=stage_both(database)
     database.execute(text("UPDATE employee_commission_options SET enabled=FALSE WHERE employee_user_id=11 AND commission_type='removals'"))
     database.execute(text('DELETE FROM receipt_commission_settings'));database.commit()
     payload,q=calculate(database,ids)
-    assert sum(r['state']=='ready' for r in q['items'])==1
-    assert api.settle(payload,OWNER,database)['created']==1
-    assert database.execute(text("SELECT COUNT(*) FROM commission_entries WHERE commission_type='invoice_commission'")).scalar()==0
+    assert sum(r['state']=='ready' for r in q['items'])==2
+    assert api.settle(payload,OWNER,database)['created']==2
+    assert database.execute(text("SELECT COUNT(*) FROM commission_entries WHERE commission_type='invoice_commission'")).scalar()==1
 
 
 def test_receipt_recipient_must_be_enabled_and_belong_to_holder(database):
@@ -182,13 +199,13 @@ def test_same_receipt_with_changed_payment_is_rejected(database):
         stage_receipt(database,[dict(receipt(),gross_received='99999.00')])
 
 
-def test_two_payments_pay_receipt_commission_twice_but_removal_only_once(database):
+def test_additional_payment_does_not_award_the_same_invoice_twice(database):
     configure(database)
     ids=stage_both(database)
     payload,_=calculate(database,ids);api.settle(payload,OWNER,database)
     result=stage_receipt(database,[dict(receipt(),receipt_number='TEST-1493',gross_received='1150.00')])
     payload,_=calculate(database,result['document_ids'])
-    assert api.settle(payload,OWNER,database)['created']==2
+    assert api.settle(payload,OWNER,database)['created']==0
     assert database.execute(text("SELECT COUNT(*) FROM commission_entries WHERE commission_type='removals'")).scalar()==2
 
 
@@ -256,7 +273,7 @@ def test_twenty_matched_files_pay_eighty_separate_category_entries(database):
     configure(database)
     books=[dict(record(),reference=f'TEST-{i}') for i in range(20)]
     quote_and_import(database,import_payload(books))
-    receipts=[dict(receipt(),reference=f'TEST-{i}',receipt_number=f'PAY-{i}',gross_received='1150.00') for i in range(20)]
+    receipts=[dict(receipt(),reference=f'TEST-{i}',invoice_number=f'INV-{i}',receipt_number=f'PAY-{i}',gross_received='1150.00') for i in range(20)]
     result=stage_receipt(database,receipts)
     payload,q=calculate(database,result['document_ids'])
     assert len(q['items'])==80
@@ -265,16 +282,16 @@ def test_twenty_matched_files_pay_eighty_separate_category_entries(database):
     assert database.execute(text('SELECT SUM(calculated_amount) FROM commission_entries WHERE employee_user_id=12')).scalar()==3600
 
 
-def test_different_recorded_branch_vat_requires_confirmation(database):
+def test_system_branch_vat_registration_resolves_unclear_invoice(database):
     configure(database)
     database.execute(text("UPDATE attendance_branches SET vat_number='4000000001' WHERE id=102"));database.commit()
     quote_and_import(database,import_payload([dict(record(),branch='EXAMPLE SOUTH')]))
     result=stage_receipt(database,[dict(receipt(),branch='EXAMPLE SOUTH')])
     _,q=calculate(database,result['document_ids'])
-    assert all(r['state']=='blocked' for r in q['items'] if r['category']=='invoice_commission')
+    assert all(r['state']=='ready' and r['vat_source']=='System branch VAT registration' and r['base_amount']=='20504.88' for r in q['items'] if r['category']=='invoice_commission')
     api.save_settings(api.SettingsIn(branch_id=102,vat_registered=False,receipt_percentage=None),OWNER,database)
     _,q=calculate(database,result['document_ids'])
-    assert all(r['base_amount']=='23580.61' and r['state']=='ready' for r in q['items'] if r['category']=='invoice_commission')
+    assert all(r['base_amount']=='20504.88' and r['state']=='ready' for r in q['items'] if r['category']=='invoice_commission')
 
 
 def test_http_import_delegate_cannot_change_rates_or_print_group_reports(database):

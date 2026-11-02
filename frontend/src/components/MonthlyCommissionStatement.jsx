@@ -17,13 +17,13 @@ export default function MonthlyCommissionStatement({ employeeUserId, franchiseId
     let active = true
     setItems([]); setError(''); setLoading(true)
     getCommissionEntries({ employeeUserId, earningBranchId: earningBranchId || branch, franchiseUserId: franchiseId || '', fromDate: `${month}-01`, toDate: end, status: 'approved' })
-      .then(data => { if (active) { setItems(data.items || []); setLoading(false) } }).catch(e => { if (active) { setItems([]); setError(e.message); setLoading(false) } })
+      .then(data => { if (active) { setItems((data.items || []).filter(r => r.payment_eligible)); setLoading(false) } }).catch(e => { if (active) { setItems([]); setError(e.message); setLoading(false) } })
     return () => { active = false }
   }, [employeeUserId, franchiseId, month, earningBranchId, branch])
   return <section className="monthly-commission-statement">
     <h3>Monthly commission statement</h3><label>Month<input type="month" value={month} onChange={e => setMonth(e.target.value)}/></label>
     {!earningBranchId && <label>Commission branch<select value={branch} onChange={e=>setBranch(e.target.value)}><option value="">All linked branches</option>{branches.map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</select></label>}
-    <p className="muted">Approved commissions only, grouped by category using their service dates. Waiting or unmatched documents do not contribute to earnings.</p>
+    <p className="muted">Approved commissions with matching Mortuary Book, MF Invoice and fully paid receipt proof only, grouped by service date. Missing or unmatched proof does not contribute to earnings.</p>
     {error && <p role="alert" className="error-message">{error}</p>}
     {Object.entries(commissionLabels).map(([category, label]) => {
       const rows = items.filter(r => r.commission_type === category)

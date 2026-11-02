@@ -159,10 +159,13 @@ def database(monkeypatch):
         ]
         for schema in schemas:
             db.execute(text(schema))
-        for column in ('mortuary_document_id INT', 'receipt_document_id INT', 'source_metadata TEXT', 'invoice_value_before_tax NUMERIC', 'hours NUMERIC', 'hourly_rate NUMERIC', 'earning_branch_id INT'):
+        schemas_files = 'CREATE TABLE commission_document_files(franchise_user_id INT,source_hash TEXT,filename TEXT,file_content BLOB,uploaded_by_user_id INT,created_at TEXT DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(franchise_user_id,source_hash))'
+        db.execute(text(schemas_files))
+        for column in ('mortuary_document_id INT', 'receipt_document_id INT', 'invoice_document_id INT', 'source_metadata TEXT', 'invoice_value_before_tax NUMERIC', 'hours NUMERIC', 'hourly_rate NUMERIC', 'earning_branch_id INT', 'review_notes TEXT', 'updated_at TEXT'):
             db.execute(text('ALTER TABLE commission_entries ADD COLUMN ' + column))
         db.execute(text("CREATE UNIQUE INDEX uq_receipt_award ON commission_entries(receipt_document_id,employee_user_id) WHERE commission_type='invoice_commission' AND receipt_document_id IS NOT NULL"))
         db.execute(text("CREATE UNIQUE INDEX uq_book_award ON commission_entries(mortuary_document_id,employee_user_id) WHERE commission_type='removals' AND mortuary_document_id IS NOT NULL"))
+        db.execute(text("CREATE UNIQUE INDEX uq_invoice_award ON commission_entries(invoice_document_id,employee_user_id) WHERE commission_type='invoice_commission' AND invoice_document_id IS NOT NULL"))
         for uid,name in ((1,'Owner'),(11,'Ewald Example'),(12,'Aubrey Example'),(99,'Foreign Staff')):
             db.execute(text('INSERT INTO users VALUES(:uid,:name,NULL,TRUE)'), {'uid':uid,'name':name})
         db.execute(text("INSERT INTO franchise_users VALUES(2,1,'EXAMPLE','EXAMPLE',NULL,NULL,TRUE),(99,99,'FOREIGN','FOREIGN',NULL,NULL,TRUE)"))

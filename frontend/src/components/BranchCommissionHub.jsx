@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { apiRequest, apiBlob } from '../api/client'
+import { apiRequest, apiBlob, getCommissionEntries } from '../api/client'
 import MonthlyCommissionStatement from './MonthlyCommissionStatement'
 import CommissionCheckboxes, { commissionLabels } from './CommissionCheckboxes'
 
@@ -30,6 +30,7 @@ function EmployeePdfPage({ franchiseId, employee, branch, month, onMonthChange }
 export default function BranchCommissionHub({ franchiseId, branchId = '', onBranchChange, route = {}, onNavigate }) {
   const [data, setData] = useState(null), [error, setError] = useState(''), [month, setMonth] = useState(currentMonth)
   const [editor, setEditor] = useState(null), [busy, setBusy] = useState(false), [saved, setSaved] = useState('')
+  const [earnings, setEarnings] = useState(null), [earningsError, setEarningsError] = useState('')
   const activeBranch = String(branchId || '')
   const suffix = franchiseId ? `?franchise_user_id=${franchiseId}` : ''
   const action = route.action
@@ -37,6 +38,23 @@ export default function BranchCommissionHub({ franchiseId, branchId = '', onBran
   const employee = data?.employees.find(e => String(e.user_id) === route.employee)
   const load = async () => setData(await apiRequest(`/receipt-commissions/settings${suffix}`))
   useEffect(() => { let active = true; setData(null); setError(''); apiRequest(`/receipt-commissions/settings${suffix}`).then(d => { if (active) setData(d) }).catch(e => { if (active) setError(e.message) }); return () => { active = false } }, [suffix])
+  useEffect(() => {
+    let active = true
+    setEarnings(null); setEarningsError('')
+    if (!/^\d{4}-\d{2}$/.test(month)) return undefined
+    const [year, number] = month.split('-').map(Number)
+    getCommissionEntries({ franchiseUserId: franchiseId, earningBranchId: activeBranch, fromDate: `${month}-01`, toDate: new Date(Date.UTC(year, number, 0)).toISOString().slice(0, 10), status: 'approved' })
+      .then(result => { if (active) setEarnings(result.items.filter(r => r.payment_eligible)) })
+      .catch(e => { if (active) setEarningsError(e.message) })
+    return () => { active = false }
+  }, [franchiseId, activeBranch, month])
+  const commissionSummary = (person, branch) => {
+    if (earningsError) return 'Commissions unavailable'
+    if (!earnings) return 'Loading commissions…'
+    const rows = earnings.filter(r => Number(r.employee_user_id) === Number(person.user_id) && Number(r.earning_branch_id) === Number(branch.id))
+    const total = rows.reduce((sum, row) => sum + Number(row.calculated_amount || 0), 0)
+    return `Approved with payment proof: R ${total.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  }
   useEffect(() => {
     let active = true
     setEditor(null); setError(''); setSaved('')
@@ -85,15 +103,16 @@ export default function BranchCommissionHub({ franchiseId, branchId = '', onBran
   </section>
 
   return <section className="mortuary-book">
-    <div className="form-card"><h2>All Branches &amp; Commissions</h2><p>Choose an employee or manager below. Commission permissions, monthly statements and employee PDFs each open on their own page.</p>
+    <div className="form-card"><h2>All Branches &amp; Commissions</h2><p>All managers and employees are listed below with their commissions for the selected month. Only approved entries with both service and payment proof contribute to totals.</p>
       <div className="mortuary-rates"><label>Branch view<select value={activeBranch} onChange={e => onBranchChange?.(e.target.value)}><option value="">All linked branches</option>{data?.branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label>
         <label>Report month<input type="month" value={month} onChange={e => { if (e.target.value) setMonth(e.target.value) }}/></label></div>
       <button type="button" className="glass-button" onClick={() => download(activeBranch)}>Download {activeBranch ? 'selected branch' : 'all branches'} PDF</button>
       {error && <p role="alert" className="error-message">{error}</p>}{!data && !error && <p role="status">Loading linked branches…</p>}
+      {earningsError && <p role="alert" className="error-message">{earningsError}</p>}
     </div>
     {data?.branches.filter(b => !activeBranch || String(b.id) === activeBranch).map(b => <section className="form-card" key={b.id}>
       <div className="section-heading"><h3>{b.name}</h3><div className="button-row">{!activeBranch && <button type="button" className="glass-button" onClick={() => onBranchChange?.(String(b.id))}>Open this branch</button>}<button type="button" onClick={() => download(b.id)}>Branch commission PDF</button></div></div>
-      {members(b).map(e => <div className="branch-staff-row" key={e.user_id}><div><strong>{e.full_name} · {e.employee_role}</strong><small className="commission-branch-summary">Home branch: {e.branch_name}<br/>Enabled here: {enabled(e, b.id).map(c => commissionLabels[c]).join(', ') || 'No commissions enabled'}</small></div>
+      {members(b).map(e => <div className="branch-staff-row" key={e.user_id}><div><strong>{e.full_name} · {e.employee_role}</strong><small className="commission-branch-summary">Home branch: {e.branch_name}<br/>Enabled here: {enabled(e, b.id).map(c => commissionLabels[c]).join(', ') || 'No commissions enabled'}<br/><strong>{commissionSummary(e, b)}</strong></small></div>
         <button type="button" className="glass-button" onClick={() => open('permissions', e, b)}>Commission permissions</button>
         <button type="button" className="glass-button" onClick={() => open('monthly', e, b)}>Monthly commissions</button>
         <button type="button" className="glass-button" onClick={() => open('pdf', e, b)}>Employee PDF</button></div>)}
