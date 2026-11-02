@@ -79,16 +79,16 @@ function readHistoryLocation() {
 
 function AttendanceRecords({ records, loading, openPhoto }) {
   return <div className="table-wrap"><table className="history-table attendance-events-table">
-    <thead><tr><th>Time</th><th>Manager / employee</th><th>Action</th><th>Session duration</th><th>Status</th><th>GPS</th><th>Rules</th><th>Evidence</th><th>Location</th></tr></thead>
+    <thead><tr><th>Time</th><th>Manager / employee</th><th>Action</th><th>Time signed in</th><th>Status</th><th>GPS</th><th>Rules</th><th>Evidence</th><th>Location</th></tr></thead>
     <tbody>{records.map(row => {
       const status = eventStatus(row), session = row.session
       const late = row.is_late || (row.action !== 'sign_out' && session?.is_late)
       const early = row.left_early || (row.action === 'sign_out' && session?.left_early)
       const missing = row.missing_sign_out || (row.action !== 'sign_out' && session?.missing_sign_out)
       return <tr key={row.id} className={`status-row status-${status}`}>
-        <td>{formatTime(row.created_at)}{row.contextOnly && <small className="history-context-note">Session started outside the event list</small>}</td>
+        <td>{formatTime(row.created_at)}{row.contextOnly && <small className="history-context-note">Earlier attendance carried forward</small>}</td>
         <td><UserCell row={row}/></td>
-        <td>{row.contextOnly ? 'Session context' : row.action === 'sign_in' ? 'Sign in' : row.action === 'sign_out' ? 'Sign out' : row.action}</td>
+        <td>{row.contextOnly ? 'Carried-forward attendance' : row.action === 'sign_in' ? 'Sign in' : row.action === 'sign_out' ? 'Sign out' : row.action}</td>
         <td>{formatAttendanceDuration(row.duration_minutes)}{session && !session.sign_out_at && !session.missing_sign_out && <small className="history-context-note">Still signed in</small>}{session && !session.sign_in_at && <small className="history-context-note">Sign-in not recorded</small>}</td>
         <td><span className={statusClass(status)}>{attendanceStatusLabel(status)}</span></td>
         <td><strong>{gpsStatusLabel(row.gps_status)}</strong>
@@ -165,12 +165,13 @@ export default function AttendanceHistoryPage({ me }) {
     finally { setExporting(false) }
   }
   const metricCard = metric => <a key={metric.key} className="history-metric-card" href={typeof window === 'undefined' ? '#' : locationUrl(metric.key).toString()} onClick={event => { if (!event.ctrlKey && !event.metaKey && !event.shiftKey && event.button === 0) { event.preventDefault(); navigate(metric.key) } }}>
-    <strong>{loading ? '…' : metric.value}</strong><span>{metric.label}</span><small>View records →</small>
+    <strong>{loading ? '…' : metric.value}</strong><span>{metric.label}</span><small className="history-metric-description">{metric.description}</small><small>View records →</small>
   </a>
   if (detail) return <Card title={detail.label} className="attendance-history-page attendance-history-detail">
     <button type="button" className="glass-button history-back" onClick={() => navigate('')}>← Attendance history</button>
+    <p>{detail.description}</p>
     <p className="muted">{filters.fromDate || 'All dates'}{filters.toDate ? ` to ${filters.toDate}` : ''}{filters.userId ? ` · ${visibleUsers.find(user => String(user.user_id) === filters.userId)?.label || 'Selected staff member'}` : ' · Current staff scope'}</p>
-    {!loading && !error && <p>{typeof detail.value === 'string' && <><strong>{detail.value}</strong> · </>}{detail.count} {detail.unit}{detail.unit === 'sessions' && ` · ${detail.rows.filter(row => !row.contextOnly).length} attendance events`}</p>}
+    {!loading && !error && <p>{typeof detail.value === 'string' && <><strong>{detail.value}</strong> · </>}{detail.count} {detail.unit}{detail.sessionBased && ` · ${detail.rows.filter(row => !row.contextOnly).length} attendance events`}</p>}
     {error && <p role="alert" className="error-message">{error}</p>}
     <AttendanceRecords records={detail.rows} loading={loading} openPhoto={openPhoto}/>
   </Card>
@@ -182,7 +183,7 @@ export default function AttendanceHistoryPage({ me }) {
       <label>To<input type="date" value={filters.toDate} onChange={event => updateFilters({ toDate: event.target.value })}/></label>
     </div>
     <div className="attendance-history-actions"><button type="button" onClick={() => loadAll()} disabled={loading}>{loading ? 'Loading…' : 'Refresh'}</button><button type="button" className="glass-button" onClick={() => setExportOpen(value => !value)}>Export attendance PDF</button></div>
-    {exportOpen && <section className="history-export-panel"><h4>Export attendance</h4><label>Report contents<select value={exportView} onChange={event => setExportView(event.target.value)}><option value="events">Attendance events — full details</option><option value="sessions">Session durations</option></select></label><p className="muted">Uses the staff and date filters above. Multiple staff members download as a ZIP of individual PDFs.</p>
+    {exportOpen && <section className="history-export-panel"><h4>Export attendance</h4><label>Report contents<select value={exportView} onChange={event => setExportView(event.target.value)}><option value="events">Attendance events — full details</option><option value="sessions">Time between sign-in and sign-out</option></select></label><p className="muted">Uses the staff and date filters above. Multiple staff members download as a ZIP of individual PDFs.</p>
       {isManagerView && <><div className="attendance-history-actions"><button type="button" className="glass-button" onClick={() => setExportUserIds(visibleUsers.map(user => String(user.user_id)))}>Select all staff</button><button type="button" className="glass-button" onClick={() => setExportUserIds([])}>Clear selection</button></div><div className="history-export-users">{visibleUsers.map(user => <label key={user.user_id}><input type="checkbox" checked={exportUserIds.includes(String(user.user_id))} onChange={() => setExportUserIds(ids => ids.includes(String(user.user_id)) ? ids.filter(id => id !== String(user.user_id)) : [...ids, String(user.user_id)])}/><span>{user.label}{user.detail && <small>{user.detail}</small>}</span></label>)}</div><p className="muted">{exportUserIds.length ? `${exportUserIds.length} staff selected.` : 'No individual selection: exports the current staff/date scope.'}</p></>}
       <div className="attendance-history-actions"><button type="button" disabled={exporting || loading} onClick={handleExport}>{exporting ? 'Preparing…' : 'Download PDF'}</button><button type="button" className="glass-button" onClick={() => setExportOpen(false)}>Close</button></div>
     </section>}
