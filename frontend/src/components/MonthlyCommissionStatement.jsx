@@ -7,13 +7,15 @@ const source = row => { try { return JSON.parse(row.source_metadata || '{}') } c
 export default function MonthlyCommissionStatement({ employeeUserId, franchiseId }) {
   const [month, setMonth] = useState(new Date(Date.now() + 7200000).toISOString().slice(0, 7))
   const [items, setItems] = useState([]), [error, setError] = useState('')
+  const [loading, setLoading] = useState(true)
   useEffect(() => {
     if (!/^\d{4}-\d{2}$/.test(month)) return
     const [y, m] = month.split('-').map(Number)
     const end = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10)
     let active = true
+    setItems([]); setError(''); setLoading(true)
     getCommissionEntries({ employeeUserId, franchiseUserId: franchiseId || '', fromDate: `${month}-01`, toDate: end, status: 'approved' })
-      .then(data => { if (active) { setItems(data.items || []); setError('') } }).catch(e => { if (active) setError(e.message) })
+      .then(data => { if (active) { setItems(data.items || []); setLoading(false) } }).catch(e => { if (active) { setItems([]); setError(e.message); setLoading(false) } })
     return () => { active = false }
   }, [employeeUserId, franchiseId, month])
   return <section className="monthly-commission-statement">
@@ -26,7 +28,7 @@ export default function MonthlyCommissionStatement({ employeeUserId, franchiseId
       const subtotal = rows.reduce((n, r) => n + Number(r.calculated_amount), 0)
       return <section className="mortuary-record" key={category}><h4>{label}</h4><div className="table-wrap"><table><thead><tr><th>Date / MF / Branch</th><th>Deceased / ID</th><th>Commissionable amount</th><th>Fee / Rate</th><th>Commission</th></tr></thead><tbody>{rows.map(r => { const meta = source(r); return <tr key={r.id}><td>{r.service_date}<br/>{r.reference}<br/>{r.branch_name}</td><td>{meta.deceased || '—'}<br/>{meta.id_number || '—'}</td><td>{r.invoice_value_before_tax == null ? '—' : money(r.invoice_value_before_tax)}{meta.vat_registered === false && <small> · Not VAT registered</small>}</td><td>{category === 'invoice_commission' ? `${r.applied_rate}%` : category === 'overtime' ? `${r.applied_rate}×` : money(r.applied_rate)}</td><td>{money(r.calculated_amount)}</td></tr> })}</tbody></table></div><strong>{label} subtotal: {money(subtotal)}</strong></section>
     })}
-    {!items.length && <p>No approved commissions for this month.</p>}
-    <strong>Monthly total: {money(items.reduce((n, r) => n + Number(r.calculated_amount), 0))}</strong>
+    {!loading && !error && !items.length && <p>No approved commissions for this month.</p>}
+    <strong>Monthly total: {loading ? 'Loading…' : error ? 'Unavailable' : money(items.reduce((n, r) => n + Number(r.calculated_amount), 0))}</strong>
   </section>
 }
