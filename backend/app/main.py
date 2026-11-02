@@ -3,7 +3,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import auth, users, roles, meta, attendance, franchise, franchise_staff, franchise_dashboard, user_management, alerts, irp5, leave, payroll, audit, commission, martins_launch, mortuary
+from app.api import auth, users, roles, meta, attendance, franchise, franchise_staff, franchise_dashboard, user_management, alerts, irp5, leave, payroll, audit, commission, martins_launch, mortuary, receipt_commissions
 from app import models  # noqa: F401
 from app.db.session import engine
 from app.services.seed import seed_initial_data
@@ -121,3 +121,5 @@ app.include_router(audit.router, prefix="/api/audit", tags=["audit-logs"])
 app.include_router(commission.router, prefix="/api/commission", tags=["commission-overtime"])
 
 app.include_router(mortuary.router, prefix="/api/mortuary", tags=["mortuary-book"])
+
+app.include_router(receipt_commissions.router, prefix="/api/receipt-commissions", tags=["receipt-commissions"])

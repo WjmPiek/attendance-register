@@ -19,6 +19,9 @@ import DragDropFileInput from '../components/DragDropFileInput.jsx'
 import StaffIdCard from '../components/StaffIdCard.jsx'
 import StaffWorkHub from '../components/StaffWorkHub.jsx'
 import MortuaryBook from '../components/MortuaryBook.jsx'
+import MFFileReceipt from '../components/MFFileReceipt.jsx'
+import BranchCommissionHub from '../components/BranchCommissionHub.jsx'
+import CommissionCheckboxes from '../components/CommissionCheckboxes.jsx'
 import { getCurrentLocation } from "../utils/location";
 import { getDistance } from "../utils/distance";
 
@@ -37,6 +40,10 @@ const staffRoles = [
 ]
 
 const emptyStaff = {
+  commission_types: [],
+  receipt_commission_percentage: '',
+  branch_id: '',
+  can_import_commissions: false,
   role: 'Manager',
   franchise_user_id: '',
   manager_user_id: '',
@@ -234,11 +241,20 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
   )
   const canManageStaff = isSuperUser || Boolean(me?.roles?.includes('FranchiseUser'))
   const canSeeManagerList = isSuperUser || (!isManagerView && !isEmployeeView)
-  const [activeSubTab, setActiveSubTab] = useState('view')
+  const [activeSubTab, setActiveSubTab] = useState(canManageStaff ? 'branches' : 'view')
+  const [canImportDocuments, setCanImportDocuments] = useState(false)
+  const [holderBranches, setHolderBranches] = useState([])
   const [managers, setManagers] = useState([])
   const [employees, setEmployees] = useState([])
   const [franchiseUsers, setFranchiseUsers] = useState([])
   const [selectedFranchiseId, setSelectedFranchiseId] = useState('')
+  useEffect(() => {
+    if (isSuperUser && !selectedFranchiseId) return
+    const suffix = isSuperUser ? `?franchise_user_id=${selectedFranchiseId}` : ''
+    apiFetch('/receipt-commissions/access').then(d => setCanImportDocuments(d.can_import)).catch(() => setCanImportDocuments(false))
+    if (canManageStaff) apiFetch(`/receipt-commissions/branches${suffix}`).then(setHolderBranches).catch(e => setErr(e.message))
+  }, [selectedFranchiseId])
+
   const [myPayslips, setMyPayslips] = useState([])
   const [msg, setMsg] = useState('')
   const [err, setErr] = useState('')
@@ -492,10 +508,19 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
     }
   }
 
-  const editStaff = (type, item) => {
+  const editStaff = async (type, item) => {
+    let preferences
+    try { preferences = await apiFetch(`/receipt-commissions/options/${item.user_id}`) }
+    catch (e) { setErr(e.message); return }
+
     setEditing({ type, id: item.id })
     setStaff({
       role: type === 'managers' ? 'Manager' : (item.employee_role || 'Finance'),
+      commission_types: Object.values(preferences.options).filter(o => o.enabled).map(o => o.commission_type),
+      receipt_commission_percentage: preferences.options.invoice_commission?.rate ?? '',
+      branch_id: preferences.assignment?.branch_id || '',
+      can_import_commissions: preferences.assignment?.can_import_commissions || false,
+
       franchise_user_id: item.franchise_user_id || selectedFranchiseId || '',
       manager_user_id: item.manager_user_id || '',
       office_area_id: item.office_area_id || '',
@@ -839,7 +864,10 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
       ) : null}
 
       <div className="sub-tabs">
-        {canManageStaff && <button className={activeSubTab === 'mortuary' ? 'active' : ''} onClick={() => setActiveSubTab('mortuary')}>Mortuary Book</button>}
+        {canManageStaff && <button className={activeSubTab === 'branches' ? 'active' : ''} onClick={() => setActiveSubTab('branches')}>All Branches &amp; Commissions</button>}
+        {(canManageStaff || canImportDocuments) && <button className={activeSubTab === 'receipts' ? 'active' : ''} onClick={() => setActiveSubTab('receipts')}>MF File Receipt</button>}
+
+        {(canManageStaff || canImportDocuments) && <button className={activeSubTab === 'mortuary' ? 'active' : ''} onClick={() => setActiveSubTab('mortuary')}>Mortuary Book</button>}
 
         <button
           className={activeSubTab === 'view' ? 'active' : ''}
@@ -874,7 +902,9 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
 
       </div>
 
-      {activeSubTab === 'mortuary' && canManageStaff && <MortuaryBook key={selectedFranchiseId || 'own'} franchiseId={isSuperUser ? selectedFranchiseId : ''} />}
+      {activeSubTab === 'branches' && canManageStaff && <BranchCommissionHub key={selectedFranchiseId || 'own'} franchiseId={isSuperUser ? selectedFranchiseId : ''} />}
+      {activeSubTab === 'receipts' && (canManageStaff || canImportDocuments) && <MFFileReceipt key={selectedFranchiseId || 'own'} franchiseId={isSuperUser ? selectedFranchiseId : ''} canManage={canManageStaff} />}
+      {activeSubTab === 'mortuary' && (canManageStaff || canImportDocuments) && <MortuaryBook canManage={canManageStaff} key={selectedFranchiseId || 'own'} franchiseId={isSuperUser ? selectedFranchiseId : ''} />}
 
       {activeSubTab === 'payslips' ? (
         <section className="form-card staff-list-card">
@@ -999,6 +1029,12 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
             {editing ? <button type="button" className="link-button" onClick={resetForm}>Cancel edit</button> : null}
           </div>
           <form onSubmit={saveStaff} className="staff-form-single">
+            {canManageStaff && <>
+              <label>Home branch<select required value={staff.branch_id || ''} onChange={e => setStaff(v => ({ ...v, branch_id: e.target.value }))}><option value="">Select branch</option>{holderBranches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label>
+              <CommissionCheckboxes value={staff.commission_types || []} onChange={value => setStaff(v => ({ ...v, commission_types: value }))} percentage={staff.receipt_commission_percentage} onPercentageChange={value => setStaff(v => ({ ...v, receipt_commission_percentage: value }))}/>
+              <label className="mortuary-confirm"><input type="checkbox" checked={staff.can_import_commissions || false} onChange={e => setStaff(v => ({ ...v, can_import_commissions: e.target.checked }))}/>Allow this employee to import commission documents and allocate eligible staff across this holder’s branches</label>
+            </>}
+
             <label>Assign to / Role<select value={staff.role} onChange={(e) => setStaff({ ...staff, role: e.target.value, manager_user_id: e.target.value === 'Manager' ? '' : staff.manager_user_id })}>{staffRoles.filter((role) => !isManagerView || role !== 'Manager').map((role) => <option key={role}>{role}</option>)}</select></label>
             {!isManagerRole && !isManagerView ? <label>Manager optional<select value={staff.manager_user_id || ''} onChange={(e) => setStaff({ ...staff, manager_user_id: e.target.value })}><option value="">No manager selected</option>{activeManagers.map((m) => <option key={m.id} value={m.id}>{m.name} {m.surname}</option>)}</select></label> : null}
             <label>Username <span className="optional-note">login name if no email</span><input value={staff.username || ''} onChange={(e) => setStaff({ ...staff, username: e.target.value })} placeholder="e.g. manager_northcliff" /></label>

@@ -134,6 +134,7 @@ def database(monkeypatch):
     connection = engine.raw_connection()
     connection.create_function('NOW', 0, lambda: '2026-11-02 12:00:00')
     connection.create_function('pg_advisory_xact_lock', 2, lambda *a: 1)
+    connection.create_function('CONCAT', -1, lambda *parts: ''.join(str(p) for p in parts if p is not None))
     connection.close()
     with Session(engine) as db:
         schemas = [
@@ -143,18 +144,48 @@ def database(monkeypatch):
             'CREATE TABLE commission_entry_audit(id INTEGER PRIMARY KEY,entry_id INT,action TEXT,actor_user_id INT,old_values TEXT,new_values TEXT,note TEXT)',
             '''CREATE TABLE notifications(id INTEGER PRIMARY KEY,user_id INT,recipient_user_id INT,notification_type TEXT,subject TEXT,message TEXT,status TEXT,is_read BOOLEAN,severity TEXT,target_tab TEXT,related_table TEXT,related_id INT,created_at TEXT)''',
         ]
+        schemas += [
+            'CREATE TABLE users(id INTEGER PRIMARY KEY,full_name TEXT,email TEXT,is_active BOOLEAN)',
+            'CREATE TABLE franchise_users(id INTEGER PRIMARY KEY,user_id INT,franchise_name TEXT,business_name TEXT,trading_as TEXT,vat_number TEXT,is_active BOOLEAN)',
+            'CREATE TABLE employee_users(id INTEGER PRIMARY KEY,user_id INT,franchise_user_id INT,manager_user_id INT,name TEXT,surname TEXT,employee_number TEXT,employee_role TEXT,is_active BOOLEAN)',
+            'CREATE TABLE manager_users(id INTEGER PRIMARY KEY,user_id INT,franchise_user_id INT,name TEXT,surname TEXT,employee_number TEXT,is_active BOOLEAN)',
+            'CREATE TABLE attendance_branches(id INTEGER PRIMARY KEY,franchise_user_id INT,main_franchise_id INT,name TEXT,vat_number TEXT,is_active BOOLEAN DEFAULT TRUE,main_synced BOOLEAN DEFAULT FALSE)',
+            'CREATE TABLE employee_branch_assignments(franchise_user_id INT,employee_user_id INT PRIMARY KEY,branch_id INT,can_import_commissions BOOLEAN DEFAULT FALSE)',
+            'CREATE TABLE employee_commission_options(franchise_user_id INT,employee_user_id INT,commission_type TEXT,enabled BOOLEAN,rate NUMERIC,updated_by_user_id INT,updated_at TEXT DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(franchise_user_id,employee_user_id,commission_type))',
+            'CREATE TABLE receipt_commission_settings(franchise_user_id INT,branch_id INT DEFAULT 0,vat_registered BOOLEAN,vat_number TEXT,vat_rate NUMERIC,receipt_percentage NUMERIC,updated_by_user_id INT,updated_at TEXT DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(franchise_user_id,branch_id))',
+            'CREATE TABLE commission_documents(id INTEGER PRIMARY KEY,franchise_user_id INT,kind TEXT,branch_key TEXT,mf_key TEXT,document_key TEXT,source_data TEXT,source_hash TEXT,created_by_user_id INT,created_at TEXT DEFAULT CURRENT_TIMESTAMP,UNIQUE(franchise_user_id,kind,branch_key,document_key))',
+            'CREATE TABLE commission_document_staff(document_id INT,employee_user_id INT,removal_role TEXT,PRIMARY KEY(document_id,employee_user_id))',
+        ]
         for schema in schemas:
             db.execute(text(schema))
+        for column in ('mortuary_document_id INT', 'receipt_document_id INT', 'source_metadata TEXT', 'invoice_value_before_tax NUMERIC', 'hours NUMERIC', 'hourly_rate NUMERIC'):
+            db.execute(text('ALTER TABLE commission_entries ADD COLUMN ' + column))
+        db.execute(text("CREATE UNIQUE INDEX uq_receipt_award ON commission_entries(receipt_document_id,employee_user_id) WHERE commission_type='invoice_commission' AND receipt_document_id IS NOT NULL"))
+        db.execute(text("CREATE UNIQUE INDEX uq_book_award ON commission_entries(mortuary_document_id,employee_user_id) WHERE commission_type='removals' AND mortuary_document_id IS NOT NULL"))
+        for uid,name in ((1,'Owner'),(11,'Ewald Example'),(12,'Aubrey Example'),(99,'Foreign Staff')):
+            db.execute(text('INSERT INTO users VALUES(:uid,:name,NULL,TRUE)'), {'uid':uid,'name':name})
+        db.execute(text("INSERT INTO franchise_users VALUES(2,1,'EXAMPLE','EXAMPLE',NULL,NULL,TRUE),(99,99,'FOREIGN','FOREIGN',NULL,NULL,TRUE)"))
+        db.execute(text("INSERT INTO employee_users VALUES(11,11,2,NULL,'Ewald','Example','11','Driver',TRUE),(12,12,2,NULL,'Aubrey','Example','12','Employee',TRUE),(99,99,99,NULL,'Foreign','Staff','99','Employee',TRUE)"))
+        db.execute(text("INSERT INTO attendance_branches VALUES(101,2,1,'EXAMPLE',NULL,TRUE,TRUE),(102,2,2,'EXAMPLE SOUTH',NULL,TRUE,TRUE),(900,99,9,'FOREIGN',NULL,TRUE,TRUE)"))
+        db.execute(text('INSERT INTO employee_branch_assignments VALUES(2,11,101,FALSE),(2,12,102,FALSE),(99,99,900,FALSE)'))
         db.execute(text('INSERT INTO mortuary_policies VALUES(2,0,:p,1,NOW())'), {'p': json.dumps(policy())})
         db.commit()
         def scope(db, user, fid):
             if user.id != 1 or fid not in (2, None):
                 raise HTTPException(403, 'Outside scope')
             return 2
+        monkeypatch.setattr(franchise_staff, '_staff_franchise_id', scope)
         monkeypatch.setattr(mortuary, '_staff_franchise_id', scope)
-        monkeypatch.setattr(mortuary, '_participant', lambda db, user, uid, write=True: {
-            'franchise_user_id': 99 if uid == 99 else 2,
-            'full_name': {11: 'Ewald Example', 12: 'Aubrey Example'}.get(uid, 'Outside')})
+        from app.api import commission, receipt_commissions
+        monkeypatch.setattr(receipt_commissions, '_staff_franchise_id', scope)
+        monkeypatch.setattr(commission, '_profile', lambda db, user: ({'FranchiseUser'} if user.id==1 else {'EmployeeUser'}, 2 if user.id!=99 else 99, None, user.id, 'franchise' if user.id==1 else 'employee'))
+        def participant(db,user,uid,write=False):
+            if uid not in (11,12) or (user.id!=1 and uid!=user.id):
+                raise HTTPException(403,'Outside scope')
+            return {'user_id':uid,'franchise_user_id':2,'full_name': 'Ewald Example' if uid==11 else 'Aubrey Example'}
+        monkeypatch.setattr(mortuary, '_participant', participant)
+        monkeypatch.setattr(receipt_commissions, '_participant', participant)
+        monkeypatch.setattr(commission, '_participant', participant)
         yield db
     engine.dispose()
 
@@ -174,39 +205,29 @@ def quote_and_import(db, payload):
     return mortuary.import_books(payload, SimpleNamespace(id=1), db)
 
 
-def test_import_twenty_books_workhub_entries_totals_notes_and_idempotence(database):
+def test_twenty_books_are_evidence_only_until_receipts_are_matched(database):
     records = [dict(record(), reference=f'TEST-{i}') for i in range(20)]
     payload = import_payload(records)
     result = quote_and_import(database, payload)
-    assert result['created'] == 40
-    assert result['totals']['11']['total'] == Decimal('4000')
-    assert result['totals']['12']['total'] == Decimal('3000')
-    rows = database.execute(text('SELECT * FROM commission_entries')).mappings().all()
-    assert all(r['commission_type'] == 'removals' and r['quantity'] == 1 and r['status'] == 'approved' for r in rows)
-    assert all(r['service_date'] == '2026-11-02' and r['branch_name'] == 'EXAMPLE' for r in rows)
-    assert 'Driver In: Ewald and Aubrey' in rows[0]['notes']
-    assert 'ID Number: 0000000000000' in rows[0]['notes']
-    assert 'Collected At: Example location' in rows[0]['notes']
-    assert 'Time In: 23:45' in rows[0]['notes']
-    assert database.execute(text('SELECT COUNT(*) FROM commission_entry_audit')).scalar() == 40
+    assert result['created'] == 0 and result['saved_books'] == 20
+    assert database.execute(text('SELECT COUNT(*) FROM commission_entries')).scalar() == 0
+    assert database.execute(text('SELECT COUNT(*) FROM commission_document_staff')).scalar() == 40
     again = quote_and_import(database, payload)
-    assert again['created'] == 0 and again['skipped_duplicates'] == 40
-    # Even a regenerated document with another service date cannot duplicate the MF.
+    assert again['saved_books'] == 0 and again['skipped_duplicates'] == 20
     changed = import_payload([dict(records[0], service_date='2026-11-05')])
-    assert quote_and_import(database, changed)['created'] == 0
+    assert quote_and_import(database, changed)['saved_books'] == 0
 
 
-def test_missing_fees_and_changed_quotes_prevent_writes(database):
+def test_changed_quote_is_rejected_but_books_can_wait_for_missing_fees(database):
     payload = import_payload()
-    quote = mortuary.quote(payload, SimpleNamespace(id=1), database)
-    payload.quote_token = quote['quote_token']
+    q = mortuary.quote(payload, SimpleNamespace(id=1), database)
+    payload.quote_token = q['quote_token']
     changed = policy(); changed['rates']['driver_out'] = None
     database.execute(text('UPDATE mortuary_policies SET policy=:p'), {'p': json.dumps(changed)})
     database.commit()
     with pytest.raises(HTTPException, match='changed'):
         mortuary.import_books(payload, SimpleNamespace(id=1), database)
-    with pytest.raises(HTTPException, match='missing'):
-        quote_and_import(database, payload)
+    assert quote_and_import(database, payload)['saved_books'] == 1
     assert database.execute(text('SELECT COUNT(*) FROM commission_entries')).scalar() == 0
 
 
@@ -216,7 +237,7 @@ def test_ambiguous_or_foreign_allocations_and_unsigned_sources_are_blocked(datab
     with pytest.raises(HTTPException, match='different employees'):
         mortuary.quote(payload, SimpleNamespace(id=1), database)
     payload.allocations[1].employee_user_id = 99
-    with pytest.raises(HTTPException, match='outside this franchise'):
+    with pytest.raises(HTTPException, match='outside the holder'):
         mortuary.quote(payload, SimpleNamespace(id=1), database)
     payload = import_payload(); payload.allocations.pop()
     with pytest.raises(HTTPException, match='exactly once'):
@@ -227,17 +248,19 @@ def test_ambiguous_or_foreign_allocations_and_unsigned_sources_are_blocked(datab
         mortuary.read_preview('tampered', 1)
 
 
-def test_partial_failure_rolls_back_the_whole_import(database, monkeypatch):
-    calls = []
+def test_partial_book_stage_failure_rolls_back_the_batch(database, monkeypatch):
+    from app.api import receipt_commissions
+    original=receipt_commissions.save_document
+    calls=[]
     def fail_second(*args, **kwargs):
         calls.append(True)
-        if len(calls) == 2:
-            raise RuntimeError('Simulated write failure')
-    monkeypatch.setattr(mortuary, '_notify', fail_second)
+        if len(calls)==2: raise RuntimeError('Simulated failure')
+        return original(*args,**kwargs)
+    monkeypatch.setattr(receipt_commissions,'save_document',fail_second)
     with pytest.raises(RuntimeError):
-        quote_and_import(database, import_payload())
+        quote_and_import(database, import_payload([record(),dict(record(),reference='TEST-2')]))
+    assert database.execute(text('SELECT COUNT(*) FROM commission_documents')).scalar() == 0
     assert database.execute(text('SELECT COUNT(*) FROM commission_entries')).scalar() == 0
-    assert database.execute(text('SELECT COUNT(*) FROM mortuary_import_allocations')).scalar() == 0
 
 
 def test_http_upload_settings_quote_and_import(database, monkeypatch):
@@ -270,7 +293,8 @@ def test_http_upload_settings_quote_and_import(database, monkeypatch):
     payload['quote_token'] = quote.json()['quote_token']
     saved = client.post('/api/mortuary/import', json=payload)
     assert saved.status_code == 200, saved.text
-    assert saved.json()['created'] == 2
+    assert saved.json()['created'] == 0
+    assert saved.json()['saved_books'] == 1
 
 
 def test_staff_scope_rejects_employees_managers_and_foreign_franchises(monkeypatch):

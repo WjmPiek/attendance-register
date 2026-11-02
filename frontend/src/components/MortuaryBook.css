@@ -18,3 +18,13 @@
 .mortuary-book td,.mortuary-book th { white-space:normal; padding:12px; }
 @media(max-width:900px) { .mortuary-week { grid-template-columns:minmax(0,1fr); } }
 @media(max-width:600px) { .mortuary-book .form-card { padding:18px; } .mortuary-rates,.mortuary-record dl,.mortuary-allocation { grid-template-columns:minmax(0,1fr); } .mortuary-day { grid-template-columns:minmax(90px,1fr) repeat(2,minmax(0,1fr)); gap:8px; } }
+
+.employee-commission-picker { border:1px solid #ddd5e8; border-radius:12px; padding:18px; display:grid; gap:14px; min-width:0; }
+.commission-checkbox-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr)); gap:12px; }
+.commission-checkbox-grid label { display:flex!important; flex-direction:row!important; align-items:center; justify-content:flex-start!important; text-align:left; gap:10px; border:1px solid #ddd5e8; border-radius:10px; padding:12px; min-width:0; overflow-wrap:anywhere; }
+.commission-checkbox-grid input[type=checkbox] { width:18px!important; height:18px!important; flex-shrink:0; }
+.monthly-commission-statement { display:grid; gap:18px; min-width:0; }
+.monthly-commission-statement .table-wrap { min-width:0; overflow:auto; }
+.monthly-commission-statement td { white-space:normal; overflow-wrap:anywhere; }
+.staff-form-single label.mortuary-confirm { display:flex!important; flex-direction:row!important; text-align:left!important; align-items:flex-start; gap:10px; }
+.staff-form-single label.mortuary-confirm input { width:18px!important; flex-shrink:0; }

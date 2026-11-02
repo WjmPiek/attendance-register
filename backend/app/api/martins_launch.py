@@ -102,9 +102,18 @@ def martins_launch(payload: MartinsLaunchRequest, db: Session = Depends(get_db))
         if not profile:
             profile = FranchiseUser(user_id=user.id)
             db.add(profile)
-        profile.franchise_name = franchises[0]
-        profile.business_name = franchises[0]
+        if not profile.franchise_name:
+            profile.franchise_name = franchises[0]
+        if not profile.business_name:
+            profile.business_name = franchises[0]
         profile.is_active = True
+        db.flush()
+        if handoff.get('branch_scope'):
+            from app.services.attendance_branches import sync_branches
+            sync_branches(db, profile.id, handoff['branch_scope'])
+        else:
+            from app.services.attendance_branches import ensure_default_branch
+            ensure_default_branch(db, profile.id)
 
     db.commit()
     db.refresh(user)

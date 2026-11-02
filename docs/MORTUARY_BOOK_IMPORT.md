@@ -1,7 +1,7 @@
 # Mortuary Book removal commissions
 
 Franchise holders open **HR Staff → Mortuary Book**. Head Office must select the
-franchise first. Managers and employees cannot import books or change policies.
+franchise first. A selected employee may import when the holder explicitly enables document-import access; only the holder/Head Office can change policies.
 Normal central module licence checks still apply.
 
 1. Open **Configure hours and removal rates**. Enter the four franchise default
@@ -22,10 +22,12 @@ Normal central module licence checks still apply.
    Ambiguous or missing matches require manual selection. Two source names on a
    record cannot be allocated to the same employee. A driver explicitly identified
    by the printed Driver field is suggested as Driver; roles remain editable.
-6. Calculate, check per-record fees and totals per employee, and confirm ownership
-   and the staff/role allocation. Missing fees block saving; rates are never guessed.
-7. Add the approved entries. They appear in the normal employee Work Hub commission
-   history, reports and totals, with an audit event and employee notification.
+6. Review the staff/role allocations and save the books as waiting evidence. Saving
+   a book alone earns no commission, even when its removal rate is configured.
+7. Import MF File Receipts, select enabled receipt recipients and review matched
+   commissions. Matching branch and MF number, enabled employee categories, valid
+   fees and applicable VAT settings are required before approved entries are added.
+   See MF_RECEIPT_COMMISSIONS.md for the full paired-document workflow.
 
 ## Field mapping
 
@@ -44,7 +46,7 @@ The printed generation date is deliberately separate from the removal date.
 
 ## Integrity and deployment
 
-Run `python -m alembic upgrade head` in `backend` (revision `015_mortuary_book`).
+Run `python -m alembic upgrade head` in `backend` (revision `016_receipt_commissions`).
 The migration only adds tables and a nullable branch column; it changes no existing
 commission amounts. The Render backend already runs migrations during its build.
 

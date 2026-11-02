@@ -1,4 +1,6 @@
 from datetime import datetime
+from decimal import Decimal
+from typing import Literal
 import base64
 import io
 import zipfile
@@ -34,7 +36,24 @@ EMPLOYEE_ROLES = [
 PRESERVE_IF_BLANK_ON_EDIT = {"id_number", "username", "password", "employee_number", "email"}
 
 
-class CreateManagerRequest(BaseModel):
+class CommissionSetup(BaseModel):
+    branch_id: int | None = None
+    can_import_commissions: bool | None = None
+    commission_types: list[Literal['removals','invoice_commission','grave_service','full_funeral_service','cremation_service','church_service','joinings','overtime']] | None = None
+    receipt_commission_percentage: Decimal | None = Field(default=None, ge=0, le=100, decimal_places=4)
+
+
+def _save_staff_commissions(db, payload, fid, uid, actor, creating=False):
+    from app.services.receipt_commissions import set_enabled_types
+    from app.services.attendance_branches import assign_staff
+    assign_staff(db, fid, uid, payload.branch_id, payload.can_import_commissions, creating)
+    if creating or payload.commission_types is not None:
+        set_enabled_types(db, fid, uid, payload.commission_types or [], actor)
+    if creating or 'receipt_commission_percentage' in payload.model_fields_set:
+        db.execute(text("UPDATE employee_commission_options SET rate=:rate WHERE franchise_user_id=:fid AND employee_user_id=:uid AND commission_type='invoice_commission'"), {'fid': fid, 'uid': uid, 'rate': payload.receipt_commission_percentage})
+
+
+class CreateManagerRequest(CommissionSetup):
     franchise_user_id: int | None = None
     employee_number: str | None = None
     username: str | None = None
@@ -50,7 +69,7 @@ class CreateManagerRequest(BaseModel):
     password: str | None = None
 
 
-class CreateEmployeeRequest(BaseModel):
+class CreateEmployeeRequest(CommissionSetup):
     franchise_user_id: int | None = None
     username: str | None = None
     employee_number: str | None = None
@@ -68,7 +87,7 @@ class CreateEmployeeRequest(BaseModel):
     password: str | None = None
 
 
-class UpdateManagerRequest(BaseModel):
+class UpdateManagerRequest(CommissionSetup):
     employee_number: str | None = None
     username: str | None = None
     name: str | None = None
@@ -88,7 +107,7 @@ class ResetPasswordRequest(BaseModel):
     password: str = Field(min_length=8)
 
 
-class UpdateEmployeeRequest(BaseModel):
+class UpdateEmployeeRequest(CommissionSetup):
     username: str | None = None
     employee_number: str | None = None
     employee_role: str | None = None
@@ -1649,6 +1668,7 @@ def create_manager(payload: CreateManagerRequest, current_user: User = Depends(g
         office_area_id=payload.office_area_id,
         require_office_assignment=True,
     )
+    _save_staff_commissions(db, payload, franchise_user_id, user_id, current_user.id, creating=True)
     write_audit_log(db, actor_user_id=current_user.id, action="create", entity_type="manager", entity_id=manager_id, franchise_user_id=franchise_user_id, new_values=payload.model_dump(exclude={"password"}), note="Manager created")
     db.commit()
     return {"message": "Manager created", "manager_id": manager_id, "user_id": user_id, "username": login_username, "login_name": login_username if not payload.email else login_email}
@@ -1752,6 +1772,7 @@ def create_employee(payload: CreateEmployeeRequest, current_user: User = Depends
         manager_user_id=payload.manager_user_id,
         require_office_assignment=True,
     )
+    _save_staff_commissions(db, payload, franchise_user_id, user_id, current_user.id, creating=True)
     write_audit_log(db, actor_user_id=current_user.id, action="create", entity_type="employee", entity_id=employee_id, franchise_user_id=franchise_user_id, new_values=payload.model_dump(exclude={"password"}), note="Employee created")
     db.commit()
     return {"message": "Employee created", "employee_id": employee_id, "user_id": user_id, "username": login_username, "login_name": login_username if not payload.email else login_email}
@@ -1945,6 +1966,7 @@ def update_manager(manager_id: int, payload: UpdateManagerRequest, current_user:
         office_area_id=values.get("office_area_id") if "office_area_id" in values else None,
         require_office_assignment=True,
     )
+    _save_staff_commissions(db, payload, row["franchise_user_id"], row["user_id"], current_user.id)
     write_audit_log(db, actor_user_id=current_user.id, action="update", entity_type="manager", entity_id=manager_id, franchise_user_id=row["franchise_user_id"], old_values=dict(row), new_values=values, note="Manager edited")
     db.commit()
     return {"message": "Manager updated", "manager_id": manager_id}
@@ -2013,6 +2035,7 @@ def update_employee(employee_id: int, payload: UpdateEmployeeRequest, current_us
         manager_user_id=values.get("manager_user_id", row.get("manager_user_id")),
         require_office_assignment=True,
     )
+    _save_staff_commissions(db, payload, row["franchise_user_id"], row["user_id"], current_user.id)
     write_audit_log(db, actor_user_id=current_user.id, action="update", entity_type="employee", entity_id=employee_id, franchise_user_id=row["franchise_user_id"], old_values=dict(row), new_values=values, note="Employee edited")
     db.commit()
     return {"message": "Employee updated", "employee_id": employee_id}
