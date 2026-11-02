@@ -924,7 +924,7 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
                             try {
                               const blob = await fetch(
                                 `${import.meta.env.VITE_API_BASE_URL || 'https://attendance-register-backend.onrender.com/api'}/payroll/payslips/${p.id}`,
-                                { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
+                                { headers: { Authorization: `Bearer ${getAccessToken()}` } }
                               ).then((r) => r.blob())
                               const url = window.URL.createObjectURL(blob)
                               window.open(url, '_blank', 'noopener,noreferrer')
@@ -942,7 +942,7 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
                             try {
                               const blob = await fetch(
                                 `${import.meta.env.VITE_API_BASE_URL || 'https://attendance-register-backend.onrender.com/api'}/payroll/payslips/${p.id}`,
-                                { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
+                                { headers: { Authorization: `Bearer ${getAccessToken()}` } }
                               ).then((r) => r.blob())
                               const url = window.URL.createObjectURL(blob)
                               const a = document.createElement('a')
@@ -1264,3 +1264,4 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
     </div>
   )
 }
+import {getAccessToken} from '../api/authSession'

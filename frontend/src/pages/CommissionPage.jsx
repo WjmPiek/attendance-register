@@ -86,7 +86,7 @@ export default function CommissionPage({ me }) {
   }
 
   useEffect(()=>{
-    const id=Number(sessionStorage.getItem('commissionFocusId')||0)
+    const id=Number(getSessionValue('commissionFocusId')||0)
     if(!id||isSuper||!employees.length||!canReview)return
     let activeRequest=true
     ;(async()=>{
@@ -96,7 +96,7 @@ export default function CommissionPage({ me }) {
         const employee=employees.find(item=>Number(item.user_id)===Number(entry.employee_user_id))
         if(isFranchiseScope&&employee)await openEmployee(employee)
         if(!activeRequest)return
-        sessionStorage.removeItem('commissionFocusId')
+        removeSessionValue('commissionFocusId')
         await openReview(entry)
       }catch(x){
         if(activeRequest)setError(x.message||'The commission notification could not be opened.')
@@ -139,3 +139,4 @@ export default function CommissionPage({ me }) {
     {history&&<div className="tab-page-section"><div className="section-heading"><h2>Audit history — {history.entry.reference}</h2><button className="glass-button" onClick={()=>setHistory(null)}>Close</button></div><div className="table-wrap"><table><thead><tr><th>Date</th><th>Action</th><th>Actor</th><th>Note</th></tr></thead><tbody>{history.items.map(x=><tr key={x.id}><td>{new Date(x.created_at).toLocaleString('en-ZA')}</td><td>{x.action.replaceAll('_',' ')}</td><td>{x.actor_name}</td><td>{x.note||'—'}</td></tr>)}</tbody></table></div></div>}
   </section>
 }
+import {getSessionValue,removeSessionValue} from '../api/sessionContext'

@@ -24,15 +24,15 @@ export async function consumeMartinsLaunch(token) {
   }
 
   if (payload.main_app_url) {
-    window.sessionStorage.setItem(RETURN_URL_KEY, payload.main_app_url);
+    setSessionValue(RETURN_URL_KEY, payload.main_app_url);
   }
 
   return payload;
 }
 
 export function returnToMartinsIfLaunched() {
-  const returnUrl = window.sessionStorage.getItem(RETURN_URL_KEY);
-  window.sessionStorage.removeItem(RETURN_URL_KEY);
+  const returnUrl = getSessionValue(RETURN_URL_KEY);
+  removeSessionValue(RETURN_URL_KEY);
 
   if (!returnUrl) return false;
   window.location.assign(returnUrl);
@@ -55,14 +55,14 @@ export function profileSwitchUrl(mainAppUrl) {
 }
 
 export function getProfileSwitchUrl() {
-  try { return profileSwitchUrl(window.sessionStorage.getItem(RETURN_URL_KEY)); }
+  try { return profileSwitchUrl(getSessionValue(RETURN_URL_KEY)); }
   catch { return profileSwitchUrl(); }
 }
 
 export function getMartinsReturnUrl() {
   const fallback = 'https://martinssystem.co.za/';
   try {
-    const url = new URL(window.sessionStorage.getItem(RETURN_URL_KEY) || fallback);
+    const url = new URL(getSessionValue(RETURN_URL_KEY) || fallback);
     if (url.protocol === 'https:' || (url.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(url.hostname))) {
       return url.toString();
     }
@@ -71,3 +71,4 @@ export function getMartinsReturnUrl() {
   }
   return fallback;
 }
+import {getSessionValue,setSessionValue,removeSessionValue} from './api/sessionContext.js';

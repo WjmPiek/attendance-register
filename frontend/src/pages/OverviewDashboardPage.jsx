@@ -405,7 +405,7 @@ export default function OverviewDashboardPage({ onNavigate }) {
 
   const openNotification = async (notification) => {
     if (notification.related_table === 'commission_entries' && notification.related_id) {
-      sessionStorage.setItem('commissionFocusId', String(notification.related_id))
+      setSessionValue('commissionFocusId', String(notification.related_id))
     }
     if (!notification.is_read) {
       try {
@@ -523,3 +523,4 @@ export default function OverviewDashboardPage({ onNavigate }) {
     </div>
   )
 }
+import {setSessionValue} from '../api/sessionContext'
