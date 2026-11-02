@@ -12,6 +12,7 @@ import CommissionPage from './CommissionPage'
 import BusinessPage from './BusinessPage'
 import MyProfilePage from './MyProfilePage'
 import UploadProofPage from './UploadProofPage'
+import { getProfileSwitchUrl } from '../martinsLaunch'
 import DigitalIdCard from '../components/DigitalIdCard'
 import { getNotifications, markNotificationRead, apiRequest } from '../api/client'
 import { formatJohannesburgDateTime } from '../utils/dateTime'
@@ -222,6 +223,7 @@ export default function DashboardPage({ me, roles, entities, onLogout }) {
               <span>Logged in as</span>
               <strong>{me.full_name || me.email || 'User'}</strong>
               <small>{me.roles?.join(', ') || 'Attendance User'}</small>
+              {(isFranchiseUser || isSuperUser) && <a className="glass-button attendance-profile-switch" href={getProfileSwitchUrl()}>Switch user / branch</a>}
               <button className="logout-button glass-button" onClick={onLogout}>Logout</button>
             </div>
           </header>

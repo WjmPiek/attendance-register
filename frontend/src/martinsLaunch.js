@@ -38,3 +38,23 @@ export function returnToMartinsIfLaunched() {
   window.location.assign(returnUrl);
   return true;
 }
+
+export function profileSwitchUrl(mainAppUrl) {
+  const fallback = 'https://martinssystem.co.za';
+  try {
+    const origin = new URL(mainAppUrl || fallback);
+    if (origin.protocol !== 'https:' && !(origin.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(origin.hostname))) {
+      return `${fallback}/profiles?module=attendance`;
+    }
+    const url = new URL('/profiles', origin);
+    url.searchParams.set('module', 'attendance');
+    return url.toString();
+  } catch {
+    return `${fallback}/profiles?module=attendance`;
+  }
+}
+
+export function getProfileSwitchUrl() {
+  try { return profileSwitchUrl(window.sessionStorage.getItem(RETURN_URL_KEY)); }
+  catch { return profileSwitchUrl(); }
+}
