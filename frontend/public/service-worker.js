@@ -1,4 +1,4 @@
-const CACHE_NAME = 'attendance-pwa-v25-staff-commission-totals-20261102';
+const CACHE_NAME = 'attendance-pwa-v26-attendance-history-events-20261102';
 const APP_SHELL = [
   '/',
   '/index.html',
