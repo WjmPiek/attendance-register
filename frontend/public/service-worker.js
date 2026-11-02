@@ -1,4 +1,4 @@
-const CACHE_NAME = 'attendance-pwa-v36-consistent-module-sidebars-20261102';
+const CACHE_NAME = 'attendance-pwa-v37-aligned-purple-logo-block-20261102';
 const APP_SHELL = [
   '/',
   '/index.html',
