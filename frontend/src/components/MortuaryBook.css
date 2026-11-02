@@ -91,3 +91,41 @@
 .staff-proof-card { display:grid; gap:10px; padding:14px; border:1px solid #ded6ea; border-radius:10px; min-width:0; }
 .staff-proof-card .link-button { width:auto; justify-self:start; text-align:left; }
 @media(max-width:600px) { .staff-proof-links { grid-template-columns:minmax(0,1fr); } }
+
+/* Commission settings and staff workspaces follow one vertical reading order. */
+.commission-settings .form-grid,
+.commission-settings .mortuary-rates,
+.commission-settings .commission-checkbox-grid,
+.staff-commission-page .form-grid,
+.staff-commission-page .stats-grid,
+.staff-commission-page .commission-review-decision,
+.staff-commission-detail .commission-checkbox-grid,
+.staff-commission-detail .mortuary-rates { display:grid; grid-template-columns:minmax(0,1fr); gap:16px; }
+.commission-settings .form-grid > *,
+.staff-commission-page .form-grid > * { grid-column:1!important; min-width:0; }
+.commission-settings .form-card > button,
+.commission-settings .form-grid > button,
+.staff-commission-page .form-card > button { justify-self:start; width:auto; max-width:100%; }
+.staff-commission-page .section-heading,
+.staff-commission-page .commission-employee-list { display:grid; grid-template-columns:minmax(0,1fr); gap:16px; }
+.staff-commission-overview { display:grid; gap:16px; }
+.staff-commission-overview h3 { font-size:1rem; }
+.commission-blocked-notice { color:#991b1b; }
+.commission-add-claim { border:1px solid #ded6ea; border-radius:14px; background:#fff; min-width:0; overflow:hidden; }
+.commission-add-claim > summary { cursor:pointer; padding:22px 24px; font-weight:700; }
+.commission-add-claim[open] > summary { border-bottom:1px solid #ded6ea; }
+.commission-add-claim .form-card { border:0; border-radius:0; box-shadow:none; margin:0; }
+.commission-entry-details { min-width:0; }
+.commission-entry-details > summary { cursor:pointer; font-weight:600; }
+.commission-entry-details[open] { display:grid; gap:12px; }
+.commission-entry-details > button { display:block; margin-top:12px; max-width:100%; }
+.commission-entry-notes { white-space:pre-wrap; overflow-wrap:anywhere; }
+.commission-closed-claim { display:grid; gap:8px; padding:16px; border:1px solid #ded6ea; border-radius:12px; background:#f6f5f8; }
+
+.staff-commission-page .commission-manager-heading,
+.staff-commission-page .commission-employee-row,
+.commission-branch-hub .section-heading,
+.commission-branch-hub .branch-staff-row,
+.commission-branch-hub .mortuary-rates { display:grid; grid-template-columns:minmax(0,1fr); gap:12px; justify-items:stretch; }
+.staff-commission-page .commission-employee-row > div { display:grid; gap:4px; }
+.staff-commission-page .commission-open-label { justify-self:start; }

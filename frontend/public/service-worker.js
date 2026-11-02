@@ -1,4 +1,4 @@
-const CACHE_NAME = 'attendance-pwa-v23-auto-commissions-20261102';
+const CACHE_NAME = 'attendance-pwa-v24-streamlined-commissions-20261102';
 const APP_SHELL = [
   '/',
   '/index.html',
