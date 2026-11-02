@@ -189,7 +189,6 @@ export default function AttendanceHistoryPage({ me }) {
     {error && <p role="alert" className="error-message">{error}</p>}
     <section className="history-summary-section"><h4>Today</h4><div className="history-metric-grid">{model.todayMetrics.map(metricCard)}</div></section>
     <section className="history-summary-section"><h4>Selected period</h4><div className="history-metric-grid">{model.metrics.map(metricCard)}</div></section>
-    <section className="history-records"><h4>Attendance events</h4><p className="muted">{model.records.filter(row => !row.contextOnly).length} events · {model.realSessions.length} sessions. Each event appears once; completed session duration appears on its sign-out event. Location links remain beside each event.</p><AttendanceRecords records={model.records} loading={loading} openPhoto={openPhoto}/></section>
   </Card>
 }
 

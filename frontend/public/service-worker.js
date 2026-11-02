@@ -1,4 +1,4 @@
-const CACHE_NAME = 'attendance-pwa-v26-attendance-history-events-20261102';
+const CACHE_NAME = 'attendance-pwa-v27-history-cards-only-20261102';
 const APP_SHELL = [
   '/',
   '/index.html',
