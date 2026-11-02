@@ -1,0 +1,20 @@
+.mortuary-book { display:grid; gap:20px; min-width:0; }
+.mortuary-book .form-card { width:100%; box-sizing:border-box; min-width:0; padding:24px; display:grid; gap:16px; }
+.mortuary-book h2,.mortuary-book h3,.mortuary-book h4,.mortuary-book p { margin:0; }
+.mortuary-book label { display:grid; gap:6px; min-width:0; }
+.mortuary-book input:not([type=checkbox]),.mortuary-book select,.mortuary-book textarea { width:100%; min-width:0; box-sizing:border-box; }
+.mortuary-week,.mortuary-rates { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
+.mortuary-day { display:grid; grid-template-columns:minmax(110px,1fr) repeat(2,minmax(0,1fr)); gap:12px; align-items:end; }
+.mortuary-day > label:first-child,.mortuary-confirm { display:flex!important; align-items:center; gap:10px; }
+.mortuary-book input[type=checkbox] { width:18px; height:18px; flex-shrink:0; }
+.mortuary-book label.mortuary-confirm,.mortuary-day > label:first-child { flex-direction:row!important; text-align:left!important; justify-content:flex-start!important; }
+.mortuary-record { border:1px solid #dcd4e8; border-radius:12px; padding:20px; display:grid; gap:16px; min-width:0; overflow-wrap:anywhere; }
+.mortuary-record dl { margin:0; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; }
+.mortuary-record dt { font-size:.85rem; opacity:.75; }
+.mortuary-record dd { margin:4px 0 0; }
+.mortuary-allocation { display:grid; grid-template-columns:minmax(100px,1fr) minmax(0,2fr) minmax(0,1fr); align-items:center; gap:16px; }
+.mortuary-total { display:grid; gap:8px; padding:16px; border:1px solid #dcd4e8; border-radius:12px; }
+.mortuary-book .table-wrap { min-width:0; overflow-x:auto; }
+.mortuary-book td,.mortuary-book th { white-space:normal; padding:12px; }
+@media(max-width:900px) { .mortuary-week { grid-template-columns:minmax(0,1fr); } }
+@media(max-width:600px) { .mortuary-book .form-card { padding:18px; } .mortuary-rates,.mortuary-record dl,.mortuary-allocation { grid-template-columns:minmax(0,1fr); } .mortuary-day { grid-template-columns:minmax(90px,1fr) repeat(2,minmax(0,1fr)); gap:8px; } }

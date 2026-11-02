@@ -511,3 +511,12 @@ export async function downloadCommissionReport(filters = {}) {
 }
 
 export async function createOffice(payload) { return apiRequest('/attendance/office-qr/offices', { method: 'POST', body: JSON.stringify(payload) }) }
+
+export async function uploadMortuaryBooks(files, franchiseId) {
+  const form = new FormData()
+  files.forEach(file => form.append('files', file))
+  const suffix = franchiseId ? `?franchise_user_id=${encodeURIComponent(franchiseId)}` : ''
+  const response = await fetch(`${API_BASE_URL}/mortuary/preview${suffix}`, { method: 'POST', headers: buildHeaders({}, false), body: form })
+  if (!response.ok) throw await parseApiError(response)
+  return response.json()
+}

@@ -18,6 +18,7 @@ import OfficeLocationMap from '../components/OfficeLocationMap'
 import DragDropFileInput from '../components/DragDropFileInput.jsx'
 import StaffIdCard from '../components/StaffIdCard.jsx'
 import StaffWorkHub from '../components/StaffWorkHub.jsx'
+import MortuaryBook from '../components/MortuaryBook.jsx'
 import { getCurrentLocation } from "../utils/location";
 import { getDistance } from "../utils/distance";
 
@@ -838,6 +839,8 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
       ) : null}
 
       <div className="sub-tabs">
+        {canManageStaff && <button className={activeSubTab === 'mortuary' ? 'active' : ''} onClick={() => setActiveSubTab('mortuary')}>Mortuary Book</button>}
+
         <button
           className={activeSubTab === 'view' ? 'active' : ''}
           onClick={() => setActiveSubTab('view')}
@@ -870,6 +873,8 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
         </button>
 
       </div>
+
+      {activeSubTab === 'mortuary' && canManageStaff && <MortuaryBook key={selectedFranchiseId || 'own'} franchiseId={isSuperUser ? selectedFranchiseId : ''} />}
 
       {activeSubTab === 'payslips' ? (
         <section className="form-card staff-list-card">
