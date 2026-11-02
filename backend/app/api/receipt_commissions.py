@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import Response
 from itsdangerous import BadSignature
 from pydantic import BaseModel, Field, model_validator
+from typing import Literal
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -57,6 +58,7 @@ class SettingsIn(BaseModel):
 
 
 class ReceiptAllocation(BaseModel):
+    employee_roles: dict[int, Literal["driver", "assistant"]] = Field(default_factory=dict)
     record: int = Field(ge=0)
     employee_user_ids: list[int] = Field(max_length=100)
 
@@ -73,13 +75,85 @@ class CalculateIn(BaseModel):
     quote_token: str | None = Field(default=None, max_length=2000000)
 
 
+class ExternalBranchIn(BaseModel):
+    franchise_user_id: int | None = None
+    name: str = Field(min_length=2, max_length=255)
+    vat_number: str | None = Field(default=None, pattern=r'^\d{10}$')
+
+
+@router.get('/external-branches')
+def list_external_branches(franchise_user_id: int | None = None, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    from app.api.commission import _profile, _franchise_scope
+    from app.services.external_commissions import external_branches
+    roles, _, _, _, _ = _profile(db, current_user)
+    fid = _franchise_scope(db, current_user, franchise_user_id)
+    return {'branches': external_branches(db, fid) if fid else [], 'can_manage': bool({'FranchiseUser', 'SuperUser'} & roles)}
+
+
+class UploadersIn(BaseModel):
+    franchise_user_id: int | None = None
+    employee_user_ids: list[int] = Field(max_length=1000)
+
+
+@router.get('/uploaders')
+def get_uploaders(franchise_user_id: int | None = None, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    from app.api.commission import _profile
+    roles, _, _, _, _ = _profile(db, current_user)
+    if not {'FranchiseUser', 'SuperUser'} & roles:
+        raise HTTPException(403, 'Only the holder can manage document uploaders.')
+    fid = _staff_franchise_id(db, current_user, franchise_user_id)
+    return import_staff(db, fid)
+
+
+@router.put('/uploaders')
+def set_uploaders(payload: UploadersIn, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    people = get_uploaders(payload.franchise_user_id, current_user, db)
+    selected = set(payload.employee_user_ids)
+    if selected - {p['user_id'] for p in people}:
+        raise HTTPException(403, 'Choose only active staff belonging to this holder.')
+    fid = _staff_franchise_id(db, current_user, payload.franchise_user_id)
+    for person in people:
+        db.execute(text('UPDATE employee_branch_assignments SET can_import_commissions=:enabled WHERE franchise_user_id=:fid AND employee_user_id=:uid'), {'enabled': person['user_id'] in selected, 'fid': fid, 'uid': person['user_id']})
+    write_audit_log(db, actor_user_id=current_user.id, franchise_user_id=fid, action='commission_uploaders_updated', entity_type='employee_branch_assignments', new_values={'employee_user_ids': sorted(selected)})
+    db.commit()
+    return {'saved': True}
+
+
+@router.post('/external-branches')
+def declare_external_branch(payload: ExternalBranchIn, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    from app.api.commission import _profile
+    from app.services.external_commissions import external_branches, outside_group
+    roles, _, _, _, _ = _profile(db, current_user)
+    if not {'FranchiseUser', 'SuperUser'} & roles:
+        raise HTTPException(403, 'Only the franchise holder may declare an outside service branch.')
+    fid = _staff_franchise_id(db, current_user, payload.franchise_user_id)
+    name = payload.name.strip()
+    if not branch_key(name) or not outside_group(db, fid, name):
+        raise HTTPException(400, 'This is a linked branch. Use the linked branch import option.')
+    db.execute(text('SELECT pg_advisory_xact_lock(:namespace,:fid)'), {'namespace': 15015, 'fid': fid})
+    existing = next((b for b in external_branches(db, fid) if branch_key(b['name']) == branch_key(name)), None)
+    if existing:
+        return existing
+    bid = db.execute(text('INSERT INTO attendance_branches(franchise_user_id,name,vat_number,is_active,main_synced) VALUES(:fid,:name,:vat,TRUE,FALSE) RETURNING id'), {'fid': fid, 'name': name, 'vat': payload.vat_number}).scalar_one()
+    db.execute(text('INSERT INTO external_commission_branches(branch_id,franchise_user_id,branch_key,created_by_user_id) VALUES(:bid,:fid,:key,:actor)'), {'bid': bid, 'fid': fid, 'key': branch_key(name), 'actor': current_user.id})
+    write_audit_log(db, actor_user_id=current_user.id, franchise_user_id=fid, action='external_service_branch_declared', entity_type='attendance_branches', entity_id=bid, new_values={'name': name})
+    db.commit()
+    return next(b for b in external_branches(db, fid) if b['id'] == bid)
+
+
 def franchise_record(db, fid):
     return db.execute(text('SELECT id,franchise_name,business_name,trading_as,vat_number FROM franchise_users WHERE id=:fid AND COALESCE(is_active,TRUE)=TRUE'), {'fid': fid}).mappings().first()
 
 
-def require_branch(db, fid, value):
+def require_branch(db, fid, value, external_branch_id=None):
     franchise = franchise_record(db, fid)
     available = branches(db, fid)
+    if external_branch_id:
+        from app.services.external_commissions import external_branches, outside_group
+        selected = next((b for b in external_branches(db, fid) if b['id'] == external_branch_id), None)
+        if not selected or branch_key(selected['name']) != branch_key(value) or not outside_group(db, fid, value):
+            raise HTTPException(400, 'Printed branch must match the declared outside branch and be outside the linked group.')
+        return selected['id']
     aliases = {branch_key(b['name']) for b in available}
     if not available:
         aliases = {branch_key(franchise.get(k) or '') for k in ('franchise_name', 'business_name', 'trading_as')} if franchise else set()
@@ -100,10 +174,13 @@ def receipt_settings(db, fid, branch_id=0):
             result['receipt_percentage'] = default.get('receipt_percentage')
         return result
     if branch_id:
-        branch = next((b for b in branches(db, fid) if b['id'] == branch_id), None)
+        from app.services.external_commissions import external_branches, is_external
+        branch = next((b for b in branches(db, fid) + external_branches(db, fid) if b['id'] == branch_id), None)
         if not branch:
             raise HTTPException(403, 'Branch is outside this holder group.')
         recorded_number = str(branch.get('vat_number') or '').strip()
+        if is_external(db, fid, branch_id):
+            return {**default, 'vat_registered': True if recorded_number else None, 'vat_number': recorded_number or None, 'branch_id': branch_id}
         conflicting_number = recorded_number and (not bool(default.get('vat_registered')) or recorded_number != str(default.get('vat_number') or '').strip())
         unconfirmed_group_vendor = len(branches(db, fid)) > 1 and bool(default.get('vat_registered')) and not recorded_number
         if conflicting_number or unconfirmed_group_vendor:
@@ -117,7 +194,9 @@ def receipt_settings(db, fid, branch_id=0):
 def get_settings(franchise_user_id: int | None = None, branch_id: int = 0, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     fid = import_scope(db, current_user, franchise_user_id)
     people = import_staff(db, fid)
-    return {'franchise_user_id': fid, 'branches': branches(db, fid), 'franchise': dict(franchise_record(db, fid)), 'settings': receipt_settings(db, fid, branch_id),
+    from app.api.commission import _profile
+    roles, _, _, _, _ = _profile(db, current_user)
+    return {'can_approve': bool({'FranchiseUser', 'SuperUser'} & roles), 'franchise_user_id': fid, 'branches': branches(db, fid), 'franchise': dict(franchise_record(db, fid)), 'settings': receipt_settings(db, fid, branch_id),
             'employees': [{**p, 'commission_options': option_map(db, fid, p['user_id']), 'commission_branches': branch_options(db,fid,p['user_id'])} for p in people], 'categories': COMMISSION_LABELS}
 
 
@@ -170,7 +249,7 @@ def save_options(payload: OptionIn, current_user: User = Depends(get_current_use
 
 
 def save_document(db, fid, kind, record, staff, actor):
-    require_branch(db, fid, record['branch'])
+    require_branch(db, fid, record['branch'], record.get('external_branch_id'))
     bk, mf = branch_key(record['branch']), mf_key(record['reference'])
     if not mf:
         raise HTTPException(400, 'MF number is missing.')
@@ -201,7 +280,7 @@ class InvoiceStageIn(BaseModel):
 
 
 @router.post('/invoices/preview')
-def preview_invoices(franchise_user_id: int | None = None, files: list[UploadFile] = File(...), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def preview_invoices(franchise_user_id: int | None = None, external_branch_id: int | None = None, files: list[UploadFile] = File(...), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     fid = import_scope(db, current_user, franchise_user_id)
     if not 1 <= len(files) <= 30:
         raise HTTPException(400, 'Upload 1–30 MF Invoice PDFs per batch.')
@@ -220,7 +299,8 @@ def preview_invoices(franchise_user_id: int | None = None, files: list[UploadFil
             accepted = []
             for record in parsed:
                 try:
-                    record['earning_branch_id'] = require_branch(db, fid, record['branch'])
+                    record['earning_branch_id'] = require_branch(db, fid, record['branch'], external_branch_id)
+                    record['external_branch_id'] = external_branch_id
                 except HTTPException as exc:
                     errors.append({'filename': name, 'page': record['page'], 'error': exc.detail}); continue
                 record.update(filename=name, source_hash=digest); accepted.append(record)
@@ -276,7 +356,7 @@ def download_invoice(document_id: int, franchise_user_id: int | None = None, cur
 
 
 @router.post('/preview')
-def preview(franchise_user_id: int | None = None, files: list[UploadFile] = File(...), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def preview(franchise_user_id: int | None = None, external_branch_id: int | None = None, files: list[UploadFile] = File(...), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     fid = import_scope(db, current_user, franchise_user_id)
     if not 1 <= len(files) <= 30:
         raise HTTPException(400, 'Upload 1–30 receipt PDFs per batch.')
@@ -292,7 +372,8 @@ def preview(franchise_user_id: int | None = None, files: list[UploadFile] = File
             errors.append({'filename': name, 'error': 'Cannot read this receipt PDF.'}); continue
         for record in parsed:
             try:
-                record['earning_branch_id'] = require_branch(db, fid, record['branch'])
+                record['earning_branch_id'] = require_branch(db, fid, record['branch'], external_branch_id)
+                record['external_branch_id'] = external_branch_id
             except HTTPException as exc:
                 errors.append({'filename': name, 'page': record['page'], 'error': exc.detail}); continue
             record.update(filename=name, source_hash=sha256(content).hexdigest()); records.append(record)
@@ -323,9 +404,11 @@ def stage(payload: StageIn, current_user: User = Depends(get_current_user), db: 
             staff = []
             for uid in set(allocation.employee_user_ids):
                 person = import_participant(db, current_user, uid, fid)
-                if person['franchise_user_id'] != fid or not enabled_for_branch(db, fid, uid, 'invoice_commission', require_branch(db,fid,records[allocation.record]['branch'])):
+                from app.services.external_commissions import permission_branch
+                bid = require_branch(db, fid, records[allocation.record]['branch'], records[allocation.record].get('external_branch_id'))
+                if person['franchise_user_id'] != fid or not enabled_for_branch(db, fid, uid, 'invoice_commission', permission_branch(db, fid, uid, bid)):
                     raise HTTPException(403, 'Select only active franchise employees enabled for MF File Receipts.')
-                staff.append((uid, None))
+                staff.append((uid, allocation.employee_roles.get(uid, 'driver')))
             doc_id, duplicate = save_document(db, fid, 'receipt', records[allocation.record], staff, current_user.id)
             ids.append(doc_id); duplicates += duplicate
         write_audit_log(db, actor_user_id=current_user.id, franchise_user_id=fid, action='mf_receipts_staged', entity_type='commission_documents', new_values={'document_ids': ids})
@@ -351,7 +434,8 @@ def calculate_plan(db, fid, ids, user):
     policies = policy_map(db, fid)
     result = []
     for bk, mf in sorted(cases):
-        matching_branches = [b for b in branches(db, fid) if branch_key(b['name']) == bk]
+        from app.services.external_commissions import external_branches, permission_branch, is_external
+        matching_branches = [b for b in [*branches(db, fid), *external_branches(db, fid)] if branch_key(b['name']) == bk]
         if len(matching_branches) != 1:
             result.append({'mf': mf, 'branch': bk, 'state': 'blocked', 'reason': 'Document branch is no longer active in this holder group'})
             continue
@@ -376,7 +460,7 @@ def calculate_plan(db, fid, ids, user):
         for doc in [book, invoice]:
             data = json.loads(doc['source_data'])
             if doc['kind'] == 'invoice':
-                people = db.execute(text('SELECT DISTINCT employee_user_id,NULL AS removal_role FROM commission_document_staff WHERE document_id IN :ids ORDER BY employee_user_id').bindparams(bindparam('ids', expanding=True)), {'ids': proof['receipt_document_ids']}).mappings().all()
+                people = db.execute(text("SELECT employee_user_id,CASE WHEN SUM(CASE WHEN removal_role='assistant' THEN 1 ELSE 0 END)>0 THEN 'assistant' ELSE 'driver' END AS removal_role FROM commission_document_staff WHERE document_id IN :ids GROUP BY employee_user_id ORDER BY employee_user_id").bindparams(bindparam('ids', expanding=True)), {'ids': proof['receipt_document_ids']}).mappings().all()
             else:
                 people = db.execute(text('SELECT * FROM commission_document_staff WHERE document_id=:id ORDER BY employee_user_id'), {'id': doc['id']}).mappings().all()
             category = 'removals' if doc['kind'] == 'mortuary' else 'invoice_commission'
@@ -415,7 +499,7 @@ def calculate_plan(db, fid, ids, user):
                     line.update(state='already_recorded', reason='Commission already recorded')
                 elif not options.get(category, {}).get('enabled'):
                     line.update(state='blocked', reason='Commission category disabled for this employee')
-                elif not enabled_for_branch(db,fid,uid,category,matched_branch['id']):
+                elif not enabled_for_branch(db,fid,uid,category,permission_branch(db,fid,uid,matched_branch['id'])):
                     line.update(state='blocked',reason='Commission category disabled for this employee at this branch')
                 elif identity_error:
                     line.update(state='blocked', reason='MF matches but deceased ID numbers differ')
@@ -429,9 +513,9 @@ def calculate_plan(db, fid, ids, user):
                         line.update(state='already_recorded', reason='Matching commission already recorded manually')
                 if category == 'removals':
                     policy = effective_policy(policies, uid)
-                    other_branch = bool(line.get('employee_branch_id') and line['employee_branch_id'] != matched_branch['id'])
+                    other_branch = branch_key(book_data['branch']) not in {branch_key(b['name']) for b in branches(db, fid)}
                     try:
-                        fee = price_removal(book_data, staff['removal_role'] or 'driver', policy, effective_policy(policies, 0).get('extra_holidays', []), other_branch=other_branch, staff_hours=person)
+                        fee = price_removal(book_data, staff['removal_role'] or 'driver', policy, effective_policy(policies, 0).get('extra_holidays', []), other_branch=False, staff_hours=person)
                     except (ValueError, TypeError):
                         line.update(state='blocked', reason='Correct the employee’s working hours in Edit Staff before calculating commission')
                         result.append(line)
@@ -440,9 +524,14 @@ def calculate_plan(db, fid, ids, user):
                     if line['amount'] is None and line['state'] == 'ready':
                         line.update(state='blocked', reason='Removal fee not configured')
                 else:
-                    rate = branch_options(db,fid,uid).get(str(matched_branch['id']),{}).get('receipt_percentage')
+                    role = staff['removal_role'] or 'driver'
+                    rate = policies.get(uid, {}).get('rates', {}).get(f'{role}_invoice_commission')
+                    if rate is None:
+                        rate = branch_options(db,fid,uid).get(str(permission_branch(db,fid,uid,matched_branch['id'])),{}).get('receipt_percentage')
                     if rate is None:
                         rate = options.get(category, {}).get('rate')
+                    if rate is None:
+                        rate = effective_policy(policies,uid)['rates'].get(f'{role}_invoice_commission')
                     if rate is None:
                         rate = settings.get('receipt_percentage')
                     line.update(rate=str(rate) if rate is not None else None, vat_registered=proof['vat_registered'], vat_rate=proof['vat_rate'], vat_source=proof['vat_source'], vat_notice=proof['vat_notice'])
@@ -451,6 +540,22 @@ def calculate_plan(db, fid, ids, user):
                     if rate is None and line['state'] == 'ready':
                         line.update(state='blocked', reason='Receipt commission percentage not configured')
                 result.append(line)
+    from app.services.service_claims import surcharge_line
+    seen_surcharges = set()
+    for source in list(result):
+        if source.get('category') not in {'removals', 'invoice_commission'} or source.get('state') not in {'ready', 'already_recorded'}:
+            continue
+        key = (source['employee_user_id'], source['invoice_document_id'])
+        if key in seen_surcharges:
+            continue
+        seen_surcharges.add(key)
+        try:
+            extra = surcharge_line(db, user, fid, source['employee_user_id'], source.get('role') or 'driver', source['earning_branch_id'], source, source['service_date'], source['reference'])
+            if extra:
+                extra.update(employee_name=source.get('employee_name'), employee_branch_name=source.get('employee_branch_name'))
+                result.append(extra)
+        except HTTPException as exc:
+            result.append({**source, 'category': 'service_other_branch', 'state': 'blocked', 'reason': exc.detail, 'amount': None})
     return result
 
 
@@ -468,6 +573,10 @@ def calculate(payload: CalculateIn, current_user: User = Depends(get_current_use
 
 @router.post('/settle')
 def settle(payload: CalculateIn, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    from app.api.commission import _profile
+    roles, _, _, _, _ = _profile(db, current_user)
+    if not {'FranchiseUser', 'SuperUser'} & roles:
+        raise HTTPException(403, 'Only the franchise holder may approve commission payouts.')
     fid = import_scope(db, current_user, payload.franchise_user_id)
     try:
         saved = signer().loads(payload.quote_token or '', max_age=3600)

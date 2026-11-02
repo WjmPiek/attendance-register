@@ -5,7 +5,7 @@ from app.services.receipt_commissions import branch_key
 
 
 def branches(db, fid, active_only=True):
-    return [dict(r) for r in db.execute(text('SELECT * FROM attendance_branches WHERE franchise_user_id=:fid' + (' AND is_active=TRUE' if active_only else '') + ' ORDER BY name,id'), {'fid': fid}).mappings().all()]
+    return [dict(r) for r in db.execute(text('SELECT * FROM attendance_branches WHERE franchise_user_id=:fid AND NOT EXISTS (SELECT 1 FROM external_commission_branches x WHERE x.branch_id=attendance_branches.id)' + (' AND is_active=TRUE' if active_only else '') + ' ORDER BY name,id'), {'fid': fid}).mappings().all()]
 
 
 def ensure_default_branch(db, fid):

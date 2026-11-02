@@ -2,7 +2,7 @@ import './MortuaryBook.css'
 export const commissionLabels = {
   removals: 'Removals', invoice_commission: 'MF File Receipts', grave_service: 'Grave Service',
   full_funeral_service: 'Full Funeral Service', cremation_service: 'Cremation Service',
-  church_service: 'Church Service', joinings: 'Joinings', overtime: 'Overtime',
+  church_service: 'Church Service', joinings: 'Joinings', overtime: 'Overtime', service_other_branch: 'Service for Other Branch (additional fee)',
 }
 export default function CommissionCheckboxes({ branches = [], branchOptions = {}, onBranchOptionsChange }) {
   const change = (branch, category, checked) => {
@@ -18,7 +18,7 @@ export default function CommissionCheckboxes({ branches = [], branchOptions = {}
       return <section className="commission-branch-card" key={branch.id} aria-label={`${branch.name} commission permissions`}>
         <h3>{branch.name}</h3>
         <div className="commission-checkbox-grid">{Object.entries(commissionLabels).map(([key,label]) => <label key={key}><input type="checkbox" aria-label={`${branch.name} · ${label}`} checked={selected.enabled_types.includes(key)} onChange={e => change(branch,key,e.target.checked)}/><span>{label}</span></label>)}</div>
-        <label className="commission-receipt-rate">MF File Receipt commission for {branch.name} (%)<input type="number" min="0" max="100" step="0.0001" placeholder="Use employee / branch default" disabled={!selected.enabled_types.includes('invoice_commission')} value={selected.receipt_percentage ?? ''} onChange={e => onBranchOptionsChange({ ...branchOptions, [branch.id]: { ...selected, receipt_percentage: e.target.value === '' ? null : e.target.value } })}/><small>Enable MF File Receipts for this branch to set a rate. Blank uses the configured defaults.</small></label>
+
       </section>
     })}
   </fieldset>

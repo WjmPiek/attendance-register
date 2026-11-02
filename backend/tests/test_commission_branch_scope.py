@@ -109,7 +109,7 @@ def test_manual_categories_require_the_selected_branch_and_store_it(database):
     database.execute(text("INSERT INTO commission_structures VALUES(1,2,'joinings','Joinings',25,NULL,TRUE)"));database.commit()
     quote_and_import(database,import_payload([dict(record(),branch='EXAMPLE SOUTH',reference='JOIN-BRANCH')]))
     stage_receipt(database,[dict(receipt(),branch='EXAMPLE SOUTH',reference='JOIN-BRANCH')],people=())
-    saved=commission.create_entry(commission.EntryIn(employee_user_id=11,commission_type='joinings',service_date='2026-11-02',reference='JOIN-BRANCH',earning_branch_id=102),OWNER,database)
+    saved=commission.create_entry(commission.EntryIn(employee_user_id=11,commission_type='joinings',service_date='2026-11-02',reference='JOIN-BRANCH',earning_branch_id=102,claim_deceased='Example Person'),OWNER,database)
     assert saved['earning_branch_id']==102 and saved['branch_name']=='EXAMPLE SOUTH'
 
 

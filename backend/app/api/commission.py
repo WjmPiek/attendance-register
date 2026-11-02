@@ -7,6 +7,7 @@ import json
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+from typing import Literal
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -15,7 +16,7 @@ from app.db.session import get_db
 from app.models.core import User
 
 router = APIRouter()
-COMMISSION_TYPES = {"removals","grave_service","full_funeral_service","cremation_service","church_service","invoice_commission","joinings","overtime"}
+COMMISSION_TYPES = {"removals","grave_service","full_funeral_service","cremation_service","church_service","invoice_commission","joinings","overtime","service_other_branch"}
 
 class StructureIn(BaseModel):
     franchise_user_id: int | None = None
@@ -27,6 +28,8 @@ class StructureIn(BaseModel):
     is_active: bool = True
 
 class EntryIn(BaseModel):
+    claim_deceased: str | None = Field(default=None, max_length=255)
+    commission_role: Literal['driver', 'assistant'] = 'driver'
     employee_user_id: int | None = None
     commission_type: str
     service_date: date
@@ -130,11 +133,6 @@ def _reviewer_ids(db, participant):
     franchise_login = db.execute(text("SELECT user_id FROM franchise_users WHERE id=:id"), {"id": participant["franchise_user_id"]}).scalar()
     if franchise_login:
         ids.append(int(franchise_login))
-    manager_profile_id = participant.get("manager_user_id")
-    if manager_profile_id:
-        manager_login = db.execute(text("SELECT user_id FROM manager_users WHERE id=:id"), {"id": manager_profile_id}).scalar()
-        if manager_login:
-            ids.append(int(manager_login))
     return list(dict.fromkeys(ids))
 
 
@@ -161,7 +159,7 @@ def _assert_review_allowed(db: Session, current_user: User, entry, participant):
     roles, _, manager_profile_id, _, kind = _profile(db, current_user)
     if entry["status"] != "pending" or entry.get("is_cancelled"):
         raise HTTPException(409, "Only a pending submission can be reviewed")
-    if int(entry["created_by_user_id"]) == int(current_user.id) or int(entry["employee_user_id"]) == int(current_user.id):
+    if int(entry["employee_user_id"]) == int(current_user.id) or (kind not in {"franchise", "super"} and int(entry["created_by_user_id"]) == int(current_user.id)):
         raise HTTPException(403, "You cannot approve or reject your own submission")
     if kind == "manager":
         if participant["staff_type"] != "employee" or int(participant["manager_user_id"] or 0) != int(manager_profile_id or 0):
@@ -276,52 +274,60 @@ def save_structure(payload: StructureIn, current_user: User = Depends(get_curren
     db.commit()
     return dict(row)
 
+@router.post('/claim-quote')
+def claim_quote(payload: EntryIn, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    roles, _, _, _, kind = _profile(db, current_user)
+    uid = current_user.id if kind in {'employee', 'manager'} else payload.employee_user_id
+    if not uid:
+        raise HTTPException(400, 'Select a staff member.')
+    participant = _participant(db, current_user, uid, write=kind not in {'employee', 'manager'})
+    from app.services.service_claims import calculate_claim
+    return calculate_claim(db, current_user, payload, participant)
+
+
 @router.post('/entries')
 def create_entry(payload: EntryIn, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    roles, _, _, own_user_id, kind = _profile(db, current_user)
-    self_submit = kind in {"employee", "manager"}
-    if self_submit:
-        if payload.rate_override is not None:
-            raise HTTPException(403, "Staff submissions cannot override configured commission rates")
-        participant_user_id = current_user.id
-        status = "pending"
-    elif "FranchiseUser" in roles or "SuperUser" in roles:
-        if not payload.employee_user_id:
-            raise HTTPException(400, "Staff member is required")
-        participant_user_id = payload.employee_user_id
-        status = "approved"
-    else:
-        raise HTTPException(403, "Staff may submit and franchise users may add entries")
-    participant = _participant(db, current_user, participant_user_id, write=not self_submit)
-    from app.services.receipt_commissions import require_manual_eligibility
-    earning_branch = require_manual_eligibility(db, participant, payload.commission_type, payload.earning_branch_id)
-    payload.branch_name = db.execute(text('SELECT name FROM attendance_branches WHERE id=:id'), {'id':earning_branch}).scalar_one()
-    structure = db.execute(text("SELECT * FROM commission_structures WHERE franchise_user_id=:fid AND commission_type=:type AND is_active=TRUE"), {"fid": participant["franchise_user_id"], "type": payload.commission_type}).mappings().first()
-    if not structure:
-        raise HTTPException(400, "This commission type is not active. Ask the franchise user to configure it.")
-    db.execute(text('SELECT pg_advisory_xact_lock(:namespace,:fid)'), {'namespace': 15015, 'fid': int(participant['franchise_user_id'])})
-    _assert_not_duplicate(db, int(participant["franchise_user_id"]), int(participant_user_id), payload)
-    rate, amount = _calculate(structure, payload)
-    proof = {}
-    if status == 'approved':
-        from app.services.receipt_commissions import require_payment_proof
-        proof = require_payment_proof(db, participant['franchise_user_id'], earning_branch, payload.reference)
-    reviewed_at = datetime.now() if status == "approved" else None
-    reviewed_by_user_id = current_user.id if status == "approved" else None
-    row = db.execute(text("""INSERT INTO commission_entries(franchise_user_id,employee_user_id,commission_type,service_date,reference,quantity,invoice_value_before_tax,hours,hourly_rate,applied_rate,calculated_amount,notes,branch_name,created_by_user_id,status,submitted_at,reviewed_at,reviewed_by_user_id,last_edited_by_user_id,earning_branch_id)
-      VALUES(:fid,:employee,:type,:date,:ref,:qty,:invoice,:hours,:hourly,:rate,:amount,:notes,:branch,:uid,:status,NOW(),:reviewed_at,:reviewed_by,:uid,:earning_branch) RETURNING *"""),
-      {"fid":participant["franchise_user_id"],"employee":participant_user_id,"type":payload.commission_type,"date":payload.service_date,"ref":payload.reference.strip(),"qty":payload.quantity,"invoice":payload.invoice_value_before_tax,"hours":payload.hours,"hourly":payload.hourly_rate,"rate":rate,"amount":amount,"notes":payload.notes,"branch":payload.branch_name,"uid":current_user.id,"status":status,"reviewed_at":reviewed_at,"reviewed_by":reviewed_by_user_id,"earning_branch":earning_branch}).mappings().first()
-    if proof:
-        db.execute(text('UPDATE commission_entries SET mortuary_document_id=:mortuary_document_id,receipt_document_id=:receipt_document_id,invoice_document_id=:invoice_document_id WHERE id=:id'), {**proof, 'id': row['id']})
-    row = {**dict(row), **{key: proof[key] for key in ('mortuary_document_id', 'receipt_document_id', 'invoice_document_id') if key in proof}}
-    _audit(db, row["id"], "submitted" if status == "pending" else "created_approved", current_user.id, new=dict(row))
-    if status == "pending":
-        for uid in _reviewer_ids(db, participant):
-            _notify(db, uid, "New commission submitted", f"{participant['full_name']} submitted {structure['label']} reference {payload.reference}.", row["id"], "warning")
-    else:
-        _notify(db, participant_user_id, "Commission entry added", f"{structure['label']} reference {payload.reference} was added and approved.", row["id"], "success")
+    roles, _, _, _, kind = _profile(db, current_user)
+    own = kind in {'employee', 'manager'}
+    uid = current_user.id if own else payload.employee_user_id
+    if not uid:
+        raise HTTPException(400, 'Staff member is required')
+    participant = _participant(db, current_user, uid, write=not own)
+    fid = participant['franchise_user_id']
+    db.execute(text('SELECT pg_advisory_xact_lock(:namespace,:fid)'), {'namespace': 15015, 'fid': fid})
+    from app.services.service_claims import calculate_claim, insert_surcharge
+    quote = calculate_claim(db, current_user, payload, participant)
+    status = 'pending' if own or not quote['documents_valid'] else 'approved'
+    proof = quote['proof'] if quote['documents_valid'] else {}
+    metadata = {**proof, 'claim_deceased': payload.claim_deceased, 'commission_role': payload.commission_role,
+                'claim_notice': quote['notice'], 'calculation_type': 'fixed', 'deceased': payload.claim_deceased}
+    reviewed_at = datetime.now() if status == 'approved' else None
+    reviewed_by = current_user.id if status == 'approved' else None
+    row = db.execute(text("""INSERT INTO commission_entries(franchise_user_id,employee_user_id,commission_type,service_date,
+        reference,quantity,applied_rate,calculated_amount,notes,branch_name,created_by_user_id,status,submitted_at,
+        reviewed_at,reviewed_by_user_id,last_edited_by_user_id,earning_branch_id,mortuary_document_id,receipt_document_id,invoice_document_id,source_metadata)
+        VALUES(:fid,:uid,:type,:day,:ref,1,:rate,:rate,:notes,:branch,:actor,:status,NOW(),:reviewed_at,:reviewed_by,:actor,:bid,:book,:receipt,:invoice,:meta) RETURNING *"""),
+        {'fid': fid, 'uid': uid, 'type': payload.commission_type, 'day': payload.service_date, 'ref': payload.reference.strip(),
+         'rate': Decimal(quote['rate']), 'notes': payload.notes, 'branch': quote['branch_name'], 'actor': current_user.id,
+         'status': status, 'reviewed_at': reviewed_at, 'reviewed_by': reviewed_by, 'bid': quote['branch_id'],
+         'book': proof.get('mortuary_document_id'), 'receipt': proof.get('receipt_document_id'), 'invoice': proof.get('invoice_document_id'), 'meta': json.dumps(metadata, default=str)}).mappings().first()
+    _audit(db, row['id'], 'service_claim_submitted' if status == 'pending' else 'service_claim_approved', current_user.id, new=dict(row))
+    if status == 'pending':
+        for recipient in _reviewer_ids(db, participant):
+            _notify(db, recipient, 'Service commission awaiting holder approval', f"{participant['full_name']} · {payload.commission_type} · MF {payload.reference}", row['id'], 'warning')
+        if not quote['documents_valid']:
+            notify_document_uploaders(db, fid, row['id'], payload.reference, quote['notice'])
+    elif quote['additional_fee']:
+        insert_surcharge(db, current_user, quote['additional_fee'])
     db.commit()
-    return dict(row)
+    return {**dict(row), 'documents_valid': quote['documents_valid'], 'notice': quote['notice']}
+
+
+def notify_document_uploaders(db, fid, entry_id, reference, reason):
+    from app.services.attendance_branches import import_staff
+    ids = [person['user_id'] for person in import_staff(db, fid) if person.get('can_import_commissions')]
+    for uid in set(ids):
+        _notify(db, uid, 'Document uploads required', f'MF {reference}: {reason}. Upload the closed file documents under Upload proof.', entry_id, 'warning')
 
 
 def _rows(db, user, employee_user_id=None, from_date=None, to_date=None, status=None, search=None, franchise_user_id=None, earning_branch_id=None):
@@ -372,7 +378,11 @@ def _rows(db, user, employee_user_id=None, from_date=None, to_date=None, status=
       LEFT JOIN users rv ON rv.id=c.reviewed_by_user_id
       WHERE {' AND '.join(where)} ORDER BY CASE WHEN c.status='pending' THEN 0 ELSE 1 END,c.service_date DESC,c.id DESC"""), params).mappings().all()
     from app.services.receipt_commissions import payment_eligibility
-    return [{**dict(row), **payment_eligibility(db, row)} for row in rows]
+    result = []
+    for row in rows:
+        meta = json.loads(row.get('source_metadata') or '{}')
+        result.append({**dict(row), **payment_eligibility(db, row), 'claim_deceased': meta.get('claim_deceased'), 'commission_role': meta.get('commission_role', 'driver')})
+    return result
 
 @router.get('/entries')
 def entries(employee_user_id:int|None=None,from_date:date|None=None,to_date:date|None=None,status:str|None=None,search:str|None=None,franchise_user_id:int|None=None,current_user:User=Depends(get_current_user),db:Session=Depends(get_db),earning_branch_id:int|None=None):
@@ -401,54 +411,70 @@ def entry_detail(entry_id:int,current_user:User=Depends(get_current_user),db:Ses
     return dict(selected)
 
 
+def _review_service(entry_id, payload, user, db):
+    roles, _, _, _, _ = _profile(db, user)
+    if not {'FranchiseUser', 'SuperUser'} & roles:
+        raise HTTPException(403, 'Only the franchise holder may approve or reject service claims.')
+    old = db.execute(text('SELECT * FROM commission_entries WHERE id=:id'), {'id': entry_id}).mappings().first()
+    if not old:
+        raise HTTPException(404, 'Claim not found')
+    participant = _participant(db, user, int(old['employee_user_id']), write=True)
+    _assert_review_allowed(db, user, old, participant)
+    db.execute(text('SELECT pg_advisory_xact_lock(:namespace,:fid)'), {'namespace': 15015, 'fid': old['franchise_user_id']})
+    if payload.status == 'rejected':
+        db.execute(text("UPDATE commission_entries SET status='rejected',review_notes=:note,reviewed_at=NOW(),reviewed_by_user_id=:actor WHERE id=:id"), {'note': payload.review_notes, 'actor': user.id, 'id': entry_id})
+        _audit(db, entry_id, 'service_claim_rejected', user.id, old=dict(old), note=payload.review_notes)
+    else:
+        from app.services.service_claims import calculate_claim, insert_surcharge
+        quote = calculate_claim(db, user, payload, participant, exclude_id=entry_id)
+        if not quote['documents_valid']:
+            raise HTTPException(400, quote['notice'])
+        proof = quote['proof']
+        meta = {**proof, 'claim_deceased': payload.claim_deceased, 'commission_role': payload.commission_role,
+                'calculation_type': 'fixed', 'deceased': payload.claim_deceased}
+        updated = db.execute(text("""UPDATE commission_entries SET commission_type=:type,service_date=:day,reference=:ref,
+            quantity=1,applied_rate=:rate,calculated_amount=:rate,notes=:notes,branch_name=:branch,earning_branch_id=:bid,
+            status='approved',review_notes=:note,reviewed_at=NOW(),reviewed_by_user_id=:actor,last_edited_by_user_id=:actor,updated_at=NOW(),
+            mortuary_document_id=:book,receipt_document_id=:receipt,invoice_document_id=:invoice,source_metadata=:meta WHERE id=:id RETURNING *"""),
+            {'type': payload.commission_type, 'day': payload.service_date, 'ref': payload.reference.strip(), 'rate': Decimal(quote['rate']),
+             'notes': payload.notes, 'branch': quote['branch_name'], 'bid': quote['branch_id'], 'note': payload.review_notes,
+             'actor': user.id, 'book': proof['mortuary_document_id'], 'receipt': proof['receipt_document_id'], 'invoice': proof['invoice_document_id'], 'meta': json.dumps(meta, default=str), 'id': entry_id}).mappings().first()
+        _audit(db, entry_id, 'service_claim_approved', user.id, old=dict(old), new=dict(updated), note=payload.review_notes)
+        if quote['additional_fee']:
+            insert_surcharge(db, user, quote['additional_fee'])
+    _notify(db, int(old['employee_user_id']), 'Service claim reviewed', f'MF {payload.reference}: {payload.status}.', entry_id, 'success' if payload.status == 'approved' else 'warning')
+    return dict(db.execute(text('SELECT * FROM commission_entries WHERE id=:id'), {'id': entry_id}).mappings().one())
+
+
 @router.put('/entries/{entry_id}/review')
-def review(entry_id:int,payload:ReviewIn,current_user:User=Depends(get_current_user),db:Session=Depends(get_db)):
-    roles,_,_,_,_ = _profile(db,current_user)
-    if not ({"FranchiseUser","ManagerUser","SuperUser"} & roles):
-        raise HTTPException(403,"Review access required")
-    old = db.execute(text("SELECT * FROM commission_entries WHERE id=:id"),{"id":entry_id}).mappings().first()
-    if not old: raise HTTPException(404,"Entry not found")
-    participant = _participant(db,current_user,int(old["employee_user_id"]),write=True)
-    _assert_review_allowed(db, current_user, old, participant)
-    earning_branch = payload.earning_branch_id or old.get('earning_branch_id')
-    if payload.status == 'approved':
-        from app.services.receipt_commissions import require_manual_eligibility
-        earning_branch = require_manual_eligibility(db, participant, payload.commission_type, earning_branch)
-        from app.services.receipt_commissions import require_payment_proof
-        proof = require_payment_proof(db, participant['franchise_user_id'], earning_branch, payload.reference)
-        db.execute(text('UPDATE commission_entries SET mortuary_document_id=:mortuary_document_id,receipt_document_id=:receipt_document_id,invoice_document_id=:invoice_document_id WHERE id=:id'), {**proof, 'id': entry_id})
-    db.execute(text('SELECT pg_advisory_xact_lock(:namespace,:fid)'), {'namespace': 15015, 'fid': int(old['franchise_user_id'])})
-    _assert_not_duplicate(db, int(old["franchise_user_id"]), int(old["employee_user_id"]), payload, entry_id)
-    structure = db.execute(text("SELECT * FROM commission_structures WHERE franchise_user_id=:fid AND commission_type=:type AND is_active=TRUE"),{"fid":participant["franchise_user_id"],"type":payload.commission_type}).mappings().first()
-    if not structure: raise HTTPException(400,"This commission type is not active")
-    rate,amount = _calculate(structure,payload)
-    row = db.execute(text("""UPDATE commission_entries SET commission_type=:type,service_date=:date,reference=:ref,quantity=:qty,invoice_value_before_tax=:invoice,hours=:hours,hourly_rate=:hourly,applied_rate=:rate,calculated_amount=:amount,notes=:notes,branch_name=:branch,earning_branch_id=:earning_branch,status=:status,review_notes=:review_notes,reviewed_at=NOW(),reviewed_by_user_id=:uid,last_edited_by_user_id=:uid,updated_at=NOW() WHERE id=:id RETURNING *"""),
-      {"type":payload.commission_type,"date":payload.service_date,"ref":payload.reference.strip(),"qty":payload.quantity,"invoice":payload.invoice_value_before_tax,"hours":payload.hours,"hourly":payload.hourly_rate,"rate":rate,"amount":amount,"notes":payload.notes,"branch":payload.branch_name,"status":payload.status,"review_notes":payload.review_notes,"earning_branch":earning_branch,"uid":current_user.id,"id":entry_id}).mappings().first()
-    _audit(db,entry_id,payload.status,current_user.id,dict(old),dict(row),payload.review_notes)
-    _notify(db,int(row["employee_user_id"]),"Commission approved" if payload.status=="approved" else "Commission rejected",f"Your commission reference {row['reference']} was {payload.status}.",entry_id,"success" if payload.status=="approved" else "danger")
-    db.commit(); return dict(row)
+def review(entry_id: int, payload: ReviewIn, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    try:
+        result = _review_service(entry_id, payload, current_user, db)
+        db.commit()
+        return result
+    except Exception:
+        db.rollback(); raise
+
 
 @router.post('/entries/bulk-review')
-def bulk_review(payload:BulkReviewIn,current_user:User=Depends(get_current_user),db:Session=Depends(get_db)):
-    roles,_,_,_,_ = _profile(db,current_user)
-    if not ({"FranchiseUser","ManagerUser","SuperUser"} & roles): raise HTTPException(403,"Review access required")
-    done=[]
-    for eid in payload.entry_ids:
-        row=db.execute(text("SELECT * FROM commission_entries WHERE id=:id"),{"id":eid}).mappings().first()
-        if not row: continue
-        participant = _participant(db,current_user,int(row["employee_user_id"]),write=True)
-        _assert_review_allowed(db, current_user, row, participant)
-        if payload.status == 'approved':
-            from app.services.receipt_commissions import require_manual_eligibility
-            branch = require_manual_eligibility(db, participant, row['commission_type'], row.get('earning_branch_id'))
-            from app.services.receipt_commissions import require_payment_proof
-            proof = require_payment_proof(db, participant['franchise_user_id'], branch, row['reference'])
-            db.execute(text('UPDATE commission_entries SET mortuary_document_id=:mortuary_document_id,receipt_document_id=:receipt_document_id,invoice_document_id=:invoice_document_id WHERE id=:id'), {**proof, 'id': eid})
-        db.execute(text("UPDATE commission_entries SET status=:s,review_notes=:n,reviewed_at=NOW(),reviewed_by_user_id=:u,last_edited_by_user_id=:u,updated_at=NOW() WHERE id=:id"),{"s":payload.status,"n":payload.review_notes,"u":current_user.id,"id":eid})
-        _audit(db,eid,f"bulk_{payload.status}",current_user.id,note=payload.review_notes)
-        _notify(db,int(row["employee_user_id"]),"Commission approved" if payload.status=="approved" else "Commission rejected",f"Your commission reference {row['reference']} was {payload.status}.",eid,"success" if payload.status=="approved" else "danger")
-        done.append(eid)
-    db.commit(); return {"updated":done}
+def bulk_review(payload: BulkReviewIn, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    try:
+        done = []
+        for entry_id in dict.fromkeys(payload.entry_ids):
+            row = db.execute(text('SELECT * FROM commission_entries WHERE id=:id'), {'id': entry_id}).mappings().first()
+            if not row:
+                raise HTTPException(404, 'A selected claim no longer exists.')
+            meta = json.loads(row.get('source_metadata') or '{}')
+            values = {key: row[key] for key in EntryIn.model_fields if key in row}
+            values.update(claim_deceased=meta.get('claim_deceased'), commission_role=meta.get('commission_role', 'driver'))
+            request = ReviewIn(**values, status=payload.status, review_notes=payload.review_notes)
+            _review_service(entry_id, request, current_user, db)
+            done.append(entry_id)
+        db.commit()
+        return {'updated': done}
+    except Exception:
+        db.rollback(); raise
+
 
 @router.delete('/entries/{entry_id}')
 def delete_entry(entry_id:int,current_user:User=Depends(get_current_user),db:Session=Depends(get_db)):
@@ -494,10 +520,17 @@ def _pdf(rows,title):
     for r in rows:
         amount=Decimal(r['calculated_amount'] or 0)
         if r['status']=='approved' and r.get('payment_eligible'): total+=amount
-        details=f"{r['hours']} hrs x R{r['hourly_rate']} x {r['applied_rate']}" if r['commission_type']=='overtime' else (f"Invoice R{r['invoice_value_before_tax']} @ {r['applied_rate']}%" if r['commission_type']=='invoice_commission' else f"Qty {r['quantity']} @ R{r['applied_rate']}")
-        data.append([str(r['service_date']),r.get('employee_name',''),r['commission_type'].replace('_',' ').title(),(r['reference'] or '') + (' / ' + r['branch_name'] if r.get('branch_name') else ''),('Blocked: missing payment proof' if r['status']=='approved' and not r.get('payment_eligible') else r['status'].title()),details,f"R {amount:,.2f}"])
+        metadata = json.loads(r.get('source_metadata') or '{}')
+        details=f"{r['hours']} hrs x R{r['hourly_rate']} x {r['applied_rate']}" if r['commission_type']=='overtime' and metadata.get('calculation_type') != 'fixed' else (f"Invoice R{r['invoice_value_before_tax']} @ {r['applied_rate']}%" if r['commission_type']=='invoice_commission' else f"Qty {r['quantity']} @ R{r['applied_rate']}")
+        if metadata.get('claim_deceased'):
+            details += f" / {metadata['claim_deceased']} / {'Assistant' if metadata.get('commission_role') == 'assistant' else 'Employee'}"
+        data.append([str(r['service_date']),r.get('employee_name',''),r['commission_type'].replace('_',' ').title(),(r['reference'] or '') + (' / ' + r['branch_name'] if r.get('branch_name') else ''),('Blocked: documents required' if r['status'] in {'approved','pending'} and not r.get('payment_eligible') else r['status'].title()),details,f"R {amount:,.2f}"])
     data.append(["","","","","","APPROVED TOTAL",f"R {total:,.2f}"])
-    table=Table(data,colWidths=[20*mm,31*mm,28*mm,27*mm,20*mm,42*mm,22*mm],repeatRows=1)
+    from xml.sax.saxutils import escape
+    styles['BodyText'].fontSize = 7
+    styles['BodyText'].leading = 9
+    data = [[Paragraph(escape(str(cell)), styles['BodyText']) for cell in row] for row in data]
+    table=Table(data,colWidths=[18*mm,25*mm,25*mm,26*mm,22*mm,49*mm,21*mm],repeatRows=1)
     table.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.HexColor('#e8edf3')),('GRID',(0,0),(-1,-1),.35,colors.grey),('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),('FONTNAME',(-2,-1),(-1,-1),'Helvetica-Bold'),('FONTSIZE',(0,0),(-1,-1),7),('VALIGN',(0,0),(-1,-1),'TOP'),('ALIGN',(-1,1),(-1,-1),'RIGHT')]))
     story.extend([table,Spacer(1,8*mm),Paragraph('Authorisation',styles['Heading3']),Paragraph('Approved by: ______________________________    Date: ____________________',styles['Normal'])]);doc.build(story);buf.seek(0);return buf
 
