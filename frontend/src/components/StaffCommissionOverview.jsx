@@ -29,6 +29,7 @@ export default function StaffCommissionOverview({ employeeId, franchiseId, refre
   const active = rows.filter(row => ['pending', 'approved'].includes(row.status))
   const approved = active.filter(row => row.status === 'approved' && row.payment_eligible).reduce((sum, row) => sum + Number(row.calculated_amount), 0)
   const blocked = active.filter(row => !row.payment_eligible)
+  const awaitingDocuments = blocked.reduce((sum, row) => sum + Number(row.expected_amount ?? row.calculated_amount ?? 0), 0)
   const visible = rows.filter(row => showClosed || ['pending', 'approved'].includes(row.status))
   const closedCount = rows.length - active.length
   const cancel = row => run(async () => {
@@ -40,7 +41,7 @@ export default function StaffCommissionOverview({ employeeId, franchiseId, refre
     <p className="muted">Green means the documents match and the invoice is fully paid. Red means uploads or corrections are required.</p>
     {loading ? <p role="status">Loading commissions…</p> : !error && <>
       <div className="claim-validated"><span>Approved total</span><strong>{money(approved)}</strong></div>
-      {blocked.length > 0 && <p className="commission-blocked-notice">{blocked.length} claim{blocked.length === 1 ? '' : 's'} awaiting documents or correction. These amounts are excluded from the approved total.</p>}
+      <div className="claim-blocked commission-awaiting-total"><span>Total awaiting document checks</span><strong>{money(awaitingDocuments)}</strong><p>{blocked.length} submitted claim{blocked.length === 1 ? '' : 's'} awaiting documents or correction. Not approved for payment.</p></div>
     </>}
     {error && <p role="alert" className="error-message">{error}</p>}
     <button type="button" className="glass-button" disabled={busy || loading || !rows.length} onClick={() => run(async () => saveBlob(await downloadCommissionReport(filters), `commissions-${month}.pdf`))}>Download monthly PDF</button>

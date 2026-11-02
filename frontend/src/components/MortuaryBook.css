@@ -129,3 +129,20 @@
 .commission-branch-hub .mortuary-rates { display:grid; grid-template-columns:minmax(0,1fr); gap:12px; justify-items:stretch; }
 .staff-commission-page .commission-employee-row > div { display:grid; gap:4px; }
 .staff-commission-page .commission-open-label { justify-self:start; }
+
+/* Equal-width staff cards override the generic narrow form-card width. */
+.staff-commission-page { display:grid; grid-template-columns:minmax(0,1fr); gap:24px; width:100%; min-width:0; }
+.staff-commission-page > .form-card,
+.staff-commission-page > .glass-card,
+.staff-commission-page > .commission-add-claim,
+.staff-commission-page .staff-commission-overview,
+.staff-commission-page .service-claim-panel,
+.staff-commission-page .service-claim-panel > .form-card { width:100%; max-width:none; min-width:0; box-sizing:border-box; margin:0; justify-self:stretch; }
+.staff-commission-overview h2,.staff-commission-overview h3,.staff-commission-overview p { margin:0; }
+.staff-commission-overview .claim-status-list { gap:16px; }
+.commission-awaiting-badge { display:block; margin-top:10px; padding:10px 12px; border:1px solid #f3a2a2; border-radius:8px; background:#fff1f2; color:#991b1b; }
+.commission-branch-hub .branch-staff-row { grid-template-columns:minmax(0,1fr) minmax(520px,1.3fr); gap:24px; align-items:center; margin-top:20px; padding:20px; border:1px solid #e1e6ef; border-radius:12px; }
+.branch-staff-actions { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; min-width:0; }
+.commission-branch-hub .branch-staff-actions > button { width:100%!important; max-width:none; min-width:0; box-sizing:border-box; white-space:normal; }
+@media(max-width:1100px) { .commission-branch-hub .branch-staff-row { grid-template-columns:minmax(0,1fr); } }
+@media(max-width:600px) { .branch-staff-actions { grid-template-columns:minmax(0,1fr); } .staff-commission-page { gap:18px; } }
