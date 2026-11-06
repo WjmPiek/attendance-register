@@ -235,6 +235,20 @@ def require_manual_eligibility(db, participant, category, branch_id=None):
     return branch_id
 
 
+def invoice_commission_rate(db, fid, uid, role, branch_id, policies, settings):
+    from app.api.mortuary import effective_policy
+    from app.services.external_commissions import permission_branch
+    selected=permission_branch(db,fid,uid,branch_id)
+    preference=branch_options(db,fid,uid).get(str(selected),{})
+    options=option_map(db,fid,uid)
+    candidates=[preference.get('rates',{}).get(f'{role}_invoice_commission'),preference.get('receipt_percentage'),
+                effective_branch_rates(db,fid,uid,selected).get(f'{role}_invoice_commission'),
+                policies.get(uid,{}).get('rates',{}).get(f'{role}_invoice_commission'),
+                options.get('invoice_commission',{}).get('rate'),
+                effective_policy(policies,uid)['rates'].get(f'{role}_invoice_commission'),settings.get('receipt_percentage')]
+    return next((rate for rate in candidates if rate is not None),None)
+
+
 def resolve_commission_vat(db, fid, branch_id, invoice):
     """Cross-check printed VAT against the branch record; do not infer exempt from unknown."""
     branch = db.execute(text('SELECT vat_number FROM attendance_branches WHERE id=:id AND franchise_user_id=:fid'), {'id': branch_id, 'fid': fid}).mappings().first()

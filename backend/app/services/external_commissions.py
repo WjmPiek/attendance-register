@@ -4,9 +4,12 @@ from sqlalchemy import text
 
 
 def external_branches(db, fid):
+    from app.services.attendance_branches import branches
+    from app.services.receipt_commissions import branch_key
+    linked_keys = {branch_key(b['name']) for b in branches(db, fid)}
     return [dict(r) for r in db.execute(text('''SELECT b.* FROM attendance_branches b
         JOIN external_commission_branches x ON x.branch_id=b.id AND x.franchise_user_id=b.franchise_user_id
-        WHERE b.franchise_user_id=:fid AND b.is_active=TRUE ORDER BY b.name,b.id'''), {'fid': fid}).mappings().all()]
+        WHERE b.franchise_user_id=:fid AND b.is_active=TRUE ORDER BY b.name,b.id'''), {'fid': fid}).mappings().all() if branch_key(r['name']) not in linked_keys]
 
 
 def is_external(db, fid, bid):

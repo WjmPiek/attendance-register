@@ -455,11 +455,13 @@ def _rows(db, user, employee_user_id=None, from_date=None, to_date=None, status=
 @router.get('/entries')
 def entries(employee_user_id:int|None=None,from_date:date|None=None,to_date:date|None=None,status:str|None=None,search:str|None=None,franchise_user_id:int|None=None,current_user:User=Depends(get_current_user),db:Session=Depends(get_db),earning_branch_id:int|None=None):
     rows = _rows(db,current_user,employee_user_id,from_date,to_date,status,search,franchise_user_id,earning_branch_id)
+    from app.services.pending_removals import pending_rows
+    pending_imports = pending_rows(db,_franchise_scope(db,current_user,franchise_user_id),current_user,employee_user_id,from_date,to_date,status,search,earning_branch_id)
     approved = [r for r in rows if r["status"] == "approved" and r["payment_eligible"]]
     total = sum((Decimal(r["calculated_amount"] or 0) for r in approved), Decimal(0))
     overtime = sum((Decimal(r["calculated_amount"] or 0) for r in approved if r["commission_type"] == "overtime"), Decimal(0))
     counts = {x: sum(1 for r in rows if r["status"] == x) for x in ["pending","approved","rejected","cancelled"]}
-    return {"items":[dict(r) for r in rows],"total":total,"commission_total":total-overtime,"overtime_total":overtime,"counts":counts}
+    return {"items":[dict(r) for r in rows],"pending_imports":pending_imports,"total":total,"commission_total":total-overtime,"overtime_total":overtime,"counts":counts}
 
 
 @router.get('/entries/{entry_id}')
@@ -593,6 +595,8 @@ def _pdf(rows,title):
         if metadata.get('claim_deceased'):
             details += f" / {metadata['claim_deceased']} / {'Assistant' if metadata.get('commission_role') == 'assistant' else 'Employee'}"
         data.append([str(r['service_date']),r.get('employee_name',''),r['commission_type'].replace('_',' ').title(),(r['reference'] or '') + (' / ' + r['branch_name'] if r.get('branch_name') else ''),('Blocked: documents required' if r['status'] in {'approved','pending'} and not r.get('payment_eligible') else r['status'].title()),details,f"R {amount:,.2f}"])
+    awaiting=sum((Decimal(str(r.get('expected_amount',r.get('calculated_amount')) or 0)) for r in rows if r['status'] in {'pending','approved'} and not r.get('payment_eligible')))
+    data.append(["","","","","","AWAITING DOCUMENT CHECKS",f"R {awaiting:,.2f}"])
     data.append(["","","","","","APPROVED TOTAL",f"R {total:,.2f}"])
     from xml.sax.saxutils import escape
     styles['BodyText'].fontSize = 7
@@ -604,7 +608,10 @@ def _pdf(rows,title):
 
 @router.get('/report.pdf')
 def report_pdf(employee_user_id:int|None=Query(default=None),from_date:date|None=None,to_date:date|None=None,status:str|None=None,franchise_user_id:int|None=None,current_user:User=Depends(get_current_user),db:Session=Depends(get_db)):
-    return StreamingResponse(_pdf(_rows(db,current_user,employee_user_id,from_date,to_date,status,franchise_user_id=franchise_user_id),"Staff Commission & Overtime Report"),media_type='application/pdf',headers={'Content-Disposition':'attachment; filename=commission-overtime-report.pdf'})
+    rows=_rows(db,current_user,employee_user_id,from_date,to_date,status,franchise_user_id=franchise_user_id)
+    from app.services.pending_removals import pending_rows
+    rows+=pending_rows(db,_franchise_scope(db,current_user,franchise_user_id),current_user,employee_user_id,from_date,to_date,status)
+    return StreamingResponse(_pdf(rows,"Staff Commission & Overtime Report"),media_type='application/pdf',headers={'Content-Disposition':'attachment; filename=commission-overtime-report.pdf'})
 
 @router.get('/entries/{entry_id}/form.pdf')
 def form_pdf(entry_id:int,current_user:User=Depends(get_current_user),db:Session=Depends(get_db)):

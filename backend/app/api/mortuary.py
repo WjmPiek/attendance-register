@@ -223,11 +223,17 @@ def evaluate_import(db, user, payload):
         if not branch_key or not reference_key:
             raise HTTPException(400, 'Branch and MF Number are required.')
         policy = effective_policy(policies, a.employee_user_id)
+        from app.services.pending_removals import removal_estimate
+        from app.services.attendance_branches import branches
+        from app.services.external_commissions import external_branches
+        from app.services.receipt_commissions import branch_key as canonical_branch_key
+        linked_choices=[*branches(db,fid),*external_branches(db,fid)]
+        selected_branch=next((b for b in linked_choices if canonical_branch_key(b['name'])==canonical_branch_key(record['branch'])),None)
         from app.services.receipt_commissions import branch_key as earning_branch_key
         from app.services.attendance_branches import branches
         other_branch = earning_branch_key(record['branch']) not in {earning_branch_key(b['name']) for b in branches(db, fid)}
         try:
-            quote = price_removal(record, a.role, policy, effective_policy(policies, 0).get('extra_holidays', []), other_branch=False, staff_hours=participant)
+            quote = removal_estimate(db,fid,a.employee_user_id,record,a.role,participant,policies,selected_branch['id']) if selected_branch else price_removal(record, a.role, policy, effective_policy(policies, 0).get('extra_holidays', []), other_branch=False, staff_hours=participant)
         except (ValueError, TypeError) as exc:
             raise HTTPException(400, f"Check saved working hours for {participant['full_name']} in Edit Staff: {exc}")
         duplicate = identity in seen or bool(db.execute(text('''SELECT 1 FROM mortuary_import_allocations
