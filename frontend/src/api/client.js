@@ -513,12 +513,19 @@ export async function downloadCommissionReport(filters = {}) {
 
 export async function createOffice(payload) { return apiRequest('/attendance/office-qr/offices', { method: 'POST', body: JSON.stringify(payload) }) }
 
+function importBranchParams(params, selection) {
+  if (!selection) return
+  const value=String(selection)
+  if(value.startsWith('linked:')) params.set('expected_branch_id',value.slice(7))
+  else params.set('external_branch_id',value.startsWith('external:')?value.slice(9):value)
+}
+
 export async function uploadMortuaryBooks(files, franchiseId, externalBranchId) {
   const form = new FormData()
   files.forEach(file => form.append('files', file))
   const params = new URLSearchParams()
   if (franchiseId) params.set('franchise_user_id', franchiseId)
-  if (externalBranchId) params.set('external_branch_id', externalBranchId)
+  importBranchParams(params,externalBranchId)
   const suffix = params.size ? `?${params}` : ''
   const response = await fetch(`${API_BASE_URL}/mortuary/preview${suffix}`, { method: 'POST', headers: buildHeaders({}, false), body: form })
   if (!response.ok) throw await parseApiError(response)
@@ -530,7 +537,7 @@ export async function uploadMFReceipts(files, franchiseId, externalBranchId) {
   files.forEach(file => form.append('files', file))
   const params = new URLSearchParams()
   if (franchiseId) params.set('franchise_user_id', franchiseId)
-  if (externalBranchId) params.set('external_branch_id', externalBranchId)
+  importBranchParams(params,externalBranchId)
   const suffix = params.size ? `?${params}` : ''
   const response = await fetch(`${API_BASE_URL}/receipt-commissions/preview${suffix}`, { method: 'POST', headers: buildHeaders({}, false), body: form })
   if (!response.ok) throw await parseApiError(response)
@@ -542,7 +549,7 @@ export async function uploadMFInvoices(files, franchiseId, externalBranchId) {
   files.forEach(file => form.append('files', file))
   const params = new URLSearchParams()
   if (franchiseId) params.set('franchise_user_id', franchiseId)
-  if (externalBranchId) params.set('external_branch_id', externalBranchId)
+  importBranchParams(params,externalBranchId)
   const suffix = params.size ? `?${params}` : ''
   const response = await fetch(`${API_BASE_URL}/receipt-commissions/invoices/preview${suffix}`, { method: 'POST', headers: buildHeaders({}, false), body: form })
   if (!response.ok) throw await parseApiError(response)

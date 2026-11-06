@@ -1,4 +1,5 @@
 import ImportBranchScope from './ImportBranchScope'
+import ImportFeedback, {detectedImportBranch,scrollImportTop} from './ImportFeedback'
 import { useEffect, useState } from 'react'
 import { apiRequest, uploadMortuaryBooks } from '../api/client'
 import './MortuaryBook.css'
@@ -7,6 +8,7 @@ const money = value => value === null || value === undefined ? 'Rate not configu
 
 export default function MortuaryBook({ franchiseId }) {
   const [externalBranchId, setExternalBranchId] = useState('')
+  const [branchManual,setBranchManual]=useState(false)
   const [settings, setSettings] = useState(null)
   const [files, setFiles] = useState([])
   const [preview, setPreview] = useState(null)
@@ -27,13 +29,14 @@ export default function MortuaryBook({ franchiseId }) {
     return () => { active = false }
   }, [suffix])
 
-  const upload = async e => {
-    e.preventDefault(); setBusy(true); setError(''); setNotice(''); setPreview(null); setQuote(null); setResult(null); setConfirmed(false)
+  const readBooks = async selectedFiles => {
+    setBusy(true); setError(''); setNotice(''); setPreview(null); setQuote(null); setResult(null); setConfirmed(false)
     try {
-      const data = await uploadMortuaryBooks(files, franchiseId, externalBranchId)
-      setPreview(data); setAllocations(data.allocations)
+      const data = await uploadMortuaryBooks(selectedFiles, franchiseId, branchManual?externalBranchId:'')
+      setPreview(data); setAllocations(data.allocations);setExternalBranchId(detectedImportBranch(data,externalBranchId))
     } catch (e) { setError(e.message) } finally { setBusy(false) }
   }
+  const upload=e=>{e.preventDefault();readBooks(files)}
   const changeAllocation = (index, key, value) => {
     setAllocations(old => old.map((a, i) => i === index ? { ...a, [key]: key === 'employee_user_id' ? Number(value) || null : value } : a))
     setQuote(null); setConfirmed(false)
@@ -49,6 +52,7 @@ export default function MortuaryBook({ franchiseId }) {
     try {
       const data = await apiRequest('/mortuary/import', { method: 'POST', body: JSON.stringify({ preview_token: preview.preview_token, allocations, confirmed_franchise: confirmed, quote_token: quote.quote_token }) })
       setResult(data); setPreview(null); setQuote(null); setFiles([])
+      scrollImportTop()
     } catch (e) { setError(e.message); setQuote(null); setConfirmed(false) } finally { setBusy(false) }
   }
   const totals = quote ? Object.values(quote.items.reduce((acc, item) => {
@@ -59,7 +63,8 @@ export default function MortuaryBook({ franchiseId }) {
   }, {})) : []
 
   return <section className="mortuary-book">
-    <ImportBranchScope franchiseId={franchiseId} value={externalBranchId} onChange={value => { setExternalBranchId(value); setPreview(null) }}/>
+    <ImportFeedback error={error} warnings={preview?.errors} notice={result?.message||notice}/>
+    <ImportBranchScope franchiseId={franchiseId} value={externalBranchId} onChange={value => { setExternalBranchId(value);setBranchManual(Boolean(value)); setPreview(null) }}/>
     <div className="form-card">
       <h2>Mortuary Book</h2>
       <p>Import removal commissions from printed Mortuary Book PDFs. Review the employees, roles and fees before saving to their Work Hubs.</p>
@@ -69,7 +74,7 @@ export default function MortuaryBook({ franchiseId }) {
     {notice && <div role="status" className="success-message">{notice}</div>}
     {settings && <form className="form-card" onSubmit={upload}>
       <h3>1. Select Mortuary Books</h3>
-      <label>PDF files<input type="file" accept="application/pdf,.pdf" multiple required disabled={busy} onChange={e => { setFiles(Array.from(e.target.files)); setPreview(null); setQuote(null); setResult(null) }}/></label>
+      <label>PDF files<input type="file" accept="application/pdf,.pdf" multiple required disabled={busy} onChange={e => { const selected=Array.from(e.target.files);setFiles(selected);setPreview(null);setQuote(null);setResult(null);if(selected.length)readBooks(selected) }}/></label>
       <p className="muted">Select up to 30 files (10 MB per file, 50 MB per batch). Original text PDFs are supported; scanned images need a searchable PDF first.</p>
       <button className="primary-button" disabled={busy || !files.length}>{busy ? 'Working…' : 'Read books and match staff'}</button>
     </form>}

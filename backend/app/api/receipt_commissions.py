@@ -164,6 +164,41 @@ def require_branch(db, fid, value, external_branch_id=None):
     return next((b['id'] for b in available if branch_key(b['name'])==branch_key(value)), None)
 
 
+def check_import_branch(db,fid,record,external_branch_id=None,expected_branch_id=None):
+    if external_branch_id and expected_branch_id:
+        raise HTTPException(400,'Choose either a linked branch or an outside branch.')
+    if expected_branch_id and expected_branch_id not in {b['id'] for b in branches(db,fid)}:
+        raise HTTPException(403,'Selected branch is outside this holder group.')
+    actual=require_branch(db,fid,record['branch'],external_branch_id)
+    if expected_branch_id and actual!=expected_branch_id:
+        selected=next(b['name'] for b in branches(db,fid) if b['id']==expected_branch_id)
+        raise HTTPException(400,f'Printed branch "{record["branch"]}" does not match selected branch "{selected}". Choose automatic detection or the correct branch.')
+    return actual
+
+
+def suggest_receipt_allocations(db,fid,records,user):
+    from app.services.external_commissions import permission_branch
+    result=[]
+    for index,record in enumerate(records):
+        people=[];roles={}
+        books=db.execute(text("SELECT id,source_data FROM commission_documents WHERE franchise_user_id=:fid AND kind='mortuary' AND branch_key=:branch AND mf_key=:mf AND deleted_at IS NULL"),{'fid':fid,'branch':branch_key(record['branch']),'mf':mf_key(record['reference'])}).mappings().all()
+        if len(books)==1:
+            book=json.loads(books[0]['source_data'])
+            matches=normalise(book.get('deceased'))==normalise(record.get('deceased')) and bool(normalise(record.get('deceased')))
+            matches=matches and not (book.get('id_number') and record.get('id_number') and book['id_number']!=record['id_number'])
+            if matches:
+                staff=db.execute(text('SELECT employee_user_id,removal_role FROM commission_document_staff WHERE document_id=:id'),{'id':books[0]['id']}).mappings().all()
+                for person in staff:
+                    uid=person['employee_user_id']
+                    try:
+                        import_participant(db,user,uid,fid)
+                        if enabled_for_branch(db,fid,uid,'invoice_commission',permission_branch(db,fid,uid,record['earning_branch_id'])):
+                            people.append(uid);roles[uid]=person['removal_role'] or 'driver'
+                    except HTTPException: continue
+        result.append({'record':index,'employee_user_ids':people,'employee_roles':roles})
+    return result
+
+
 def receipt_settings(db, fid, branch_id=0):
     row = db.execute(text('SELECT * FROM receipt_commission_settings WHERE franchise_user_id=:fid AND branch_id=:branch'), {'fid': fid, 'branch': branch_id}).mappings().first()
     default = receipt_settings(db, fid, 0) if branch_id else None
@@ -281,7 +316,7 @@ class InvoiceStageIn(BaseModel):
 
 
 @router.post('/invoices/preview')
-def preview_invoices(franchise_user_id: int | None = None, external_branch_id: int | None = None, files: list[UploadFile] = File(...), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def preview_invoices(franchise_user_id: int | None = None, external_branch_id: int | None = None, files: list[UploadFile] = File(...), current_user: User = Depends(get_current_user), db: Session = Depends(get_db), expected_branch_id: int | None = None):
     fid = import_scope(db, current_user, franchise_user_id)
     if not 1 <= len(files) <= 30:
         raise HTTPException(400, 'Upload 1–30 MF Invoice PDFs per batch.')
@@ -300,7 +335,7 @@ def preview_invoices(franchise_user_id: int | None = None, external_branch_id: i
             accepted = []
             for record in parsed:
                 try:
-                    record['earning_branch_id'] = require_branch(db, fid, record['branch'], external_branch_id)
+                    record['earning_branch_id'] = check_import_branch(db, fid, record, external_branch_id,expected_branch_id)
                     record['external_branch_id'] = external_branch_id
                 except HTTPException as exc:
                     errors.append({'filename': name, 'page': record['page'], 'error': exc.detail}); continue
@@ -361,7 +396,7 @@ def download_invoice(document_id: int, franchise_user_id: int | None = None, cur
 
 
 @router.post('/preview')
-def preview(franchise_user_id: int | None = None, external_branch_id: int | None = None, files: list[UploadFile] = File(...), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def preview(franchise_user_id: int | None = None, external_branch_id: int | None = None, files: list[UploadFile] = File(...), current_user: User = Depends(get_current_user), db: Session = Depends(get_db), expected_branch_id: int | None = None):
     fid = import_scope(db, current_user, franchise_user_id)
     if not 1 <= len(files) <= 30:
         raise HTTPException(400, 'Upload 1–30 receipt PDFs per batch.')
@@ -378,7 +413,7 @@ def preview(franchise_user_id: int | None = None, external_branch_id: int | None
         accepted=[]
         for record in parsed:
             try:
-                record['earning_branch_id'] = require_branch(db, fid, record['branch'], external_branch_id)
+                record['earning_branch_id'] = check_import_branch(db, fid, record, external_branch_id,expected_branch_id)
                 record['external_branch_id'] = external_branch_id
             except HTTPException as exc:
                 errors.append({'filename': name, 'page': record['page'], 'error': exc.detail}); continue
@@ -390,7 +425,7 @@ def preview(franchise_user_id: int | None = None, external_branch_id: int | None
         if len(records) + len(errors) > 100:
             raise HTTPException(400, 'Import up to 100 pages per batch.')
     db.commit()
-    return {'records': records, 'errors': errors, 'preview_token': signer().dumps({'kind': 'receipts', 'user_id': current_user.id, 'franchise_user_id': fid, 'records': records})}
+    return {'records': records, 'errors': errors, 'allocations':suggest_receipt_allocations(db,fid,records,current_user), 'preview_token': signer().dumps({'kind': 'receipts', 'user_id': current_user.id, 'franchise_user_id': fid, 'records': records})}
 
 
 @router.post('/stage')
