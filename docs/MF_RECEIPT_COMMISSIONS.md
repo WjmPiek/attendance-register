@@ -1,5 +1,49 @@
 # Grouped branches and matched document commissions
 
+## Linked branches and the monthly document register
+
+Employees stay assigned to their home branch. By default, that branch's commission
+permissions and employee fees apply when they work for another linked branch. In
+the employee's branch commission card, clear **Use home-branch commission settings**
+to set different permissions, fixed fees or invoice percentages for that service
+branch. An explicit branch card with no categories enabled blocks all commissions
+there. Existing branch-specific settings are retained during upgrade; choose
+inheritance explicitly if an old override should use home settings instead.
+
+Commission Claims offers **All linked branches · commission totals** and
+**Commission documents · monthly register and activity log**. HR Staff and nominated
+uploaders' Upload Proof pages also link to the document register. Each branch has
+its own approved subtotal; the holder sees a combined total across all branches.
+Employees are never duplicated or transferred to award a linked-branch commission.
+
+The document register uses upload months in South African time and groups the
+saved Mortuary Books, invoices and receipts by service branch and MF case. It
+displays the invoice amount, all payments to date and outstanding balance; evidence
+from earlier upload months still counts towards reconciliation. All three document
+types must match branch, MF, deceased identity and invoice/receipt identifiers.
+Receipts must balance the invoice exactly: partial and excess payments both block
+commission allocation. Reprinted receipts are not extra payments, and the invoice
+commission is awarded once for the fully paid invoice rather than per instalment.
+
+Holders and currently nominated uploaders can view originals and extracted fields,
+and remove incorrect uploads with a mandatory reason. Removal archives the document
+and excludes it from every payment check, manual review and automatic reconciliation.
+The original and audit records remain private and retained. Use **Include deleted
+uploads** to restore an accidental deletion; a replacement must be removed first.
+Cases with active approved commissions are blocked from document removal and require
+Head Office financial review. The uploader's access ends when nomination is revoked.
+
+Original PDFs are retained for all three types on new uploads. Older invoices may
+already have originals; earlier books/receipts that did not retain files still show
+their extracted data and clearly identify that limitation. Uploads, confirmations,
+recipient allocations, PDF views/downloads, removals, restorations, blocked deletion
+attempts and commission allocations are recorded with actor and time in the activity
+log. The register and activity history are paginated.
+
+Migration `022_commission_document_register` adds reversible corrections, an active
+document uniqueness index and employee branch override records. It preserves source
+records and existing financial amounts. Deploy the backend before the new frontend.
+
 ## Holder setup
 
 HR Staff opens a card menu: All Branches & Commissions, MF File Receipt,
@@ -29,7 +73,8 @@ holder's profile. Branch commission VAT settings remain independent.
    are merged by matching an email, employee name or branch name.
 3. In **Add/Edit Staff**, choose the home branch and use the separate card for each
    linked branch to tick its permitted commission categories. Employees and managers
-   use the same controls. New permissions default off. Removals and MF File Receipts
+   use the same controls. Home-branch permissions default off; linked branches
+   inherit them until overridden. Removals and MF File Receipts
    are separate opt-ins, checked against the document's branch. Each branch card has
    an optional employee receipt percentage overriding employee/branch/holder defaults.
    **All Branches & Commissions** includes people who work at or may earn at each
@@ -71,9 +116,9 @@ holder's profile. Branch commission VAT settings remain independent.
   Each branch can therefore calculate independently when one is registered and
   two others are not. Confirming one branch never silently confirms another with a
   different recorded VAT number.
-- Each receipt number pays a given employee once. Multiple real payment receipts
-  can earn separate receipt commission for the same MF case; the removal is paid
-  only once. Reprinted or repeated PDFs cannot pay a second commission. Conflicting
+- Each invoice pays a given employee's invoice commission once, after its distinct
+  payment receipts balance the total. The removal is also paid only once.
+  Reprinted or repeated PDFs cannot pay a second commission. Conflicting
   details on a previously used receipt number require separate correction/review.
 - Disabled categories, missing files, missing fees and unconfirmed VAT settings do
   not earn commission. Manual entry/review endpoints cannot bypass these rules.
@@ -110,8 +155,9 @@ The main system also needs the updated signed Attendance handoff. Deploy Attenda
 first, then the main-system launch change. Existing native Attendance accounts stay
 in their original holder scope. Distinct legacy holder accounts are not merged.
 
-Uploads are parsed in memory, source fields are saved privately, and source PDFs
-are not retained. Signed previews/quotes expire in one hour and are login-bound.
+Uploads are parsed in memory; source fields and original PDFs are saved privately.
+Older imports without saved originals retain extracted details. Signed
+previews/quotes expire in one hour and are login-bound.
 Changed rates, eligibility, documents or duplicate status require recalculation.
 Saving awards is atomic and serialised per holder, with unique database indexes.
 

@@ -1,5 +1,9 @@
 import ServiceClaimPanel from '../components/ServiceClaimPanel'
 import StaffCommissionOverview from '../components/StaffCommissionOverview'
+import CommissionDocumentRegister from '../components/CommissionDocumentRegister'
+import BranchCommissionHub from '../components/BranchCommissionHub'
+import {useStaffNavigation} from '../api/staffNavigation'
+import {apiRequest} from '../api/client'
 import { useEffect, useMemo, useState } from 'react'
 import { downloadCommissionForm, getCommissionEmployees, reviewCommissionEntry,
   getFranchiseUsers, getCommissionEntryHistory, getCommissionEntry } from '../api/client'
@@ -12,6 +16,10 @@ export default function CommissionPage({ me }) {
   const isSuper = me.roles.includes('SuperUser')
   const isFranchiseScope = isFranchise || isSuper
   const canReview = me.roles.some(r => ['FranchiseUser','SuperUser'].includes(r))
+  const [route,navigate]=useStaffNavigation('commission')
+  const [canImport,setCanImport]=useState(isFranchiseScope)
+  const [reportBranch,setReportBranch]=useState('')
+  useEffect(()=>{apiRequest('/receipt-commissions/access').then(d=>setCanImport(isFranchiseScope||d.can_import)).catch(()=>setCanImport(isFranchiseScope))},[isFranchiseScope])
   const [employees,setEmployees]=useState([])
   const [franchises,setFranchises]=useState([]), [selectedFranchise,setSelectedFranchise]=useState(null)
   const [overviewKey, setOverviewKey] = useState(0)
@@ -108,6 +116,10 @@ export default function CommissionPage({ me }) {
   const staffButton=(employee,nested=false)=><button type="button" className={`commission-employee-row${nested?' nested':''}`} key={employee.user_id} onClick={()=>openEmployee(employee)}><div><strong>{employee.full_name}</strong><span>{employee.employee_role||'Employee'}{employee.employee_number?` · ${employee.employee_number}`:''}</span></div><span className="commission-open-label">Open commissions →</span></button>
   const viewingLinkedEmployee=isManager&&selectedEmployee?.staff_type==='employee'
 
+  if(route.page==='documents'&&canImport&&(!isSuper||selectedFranchise)) return <CommissionDocumentRegister franchiseId={selectedFranchise?.id} onBack={()=>navigate('menu')}/>
+  if(route.page==='branches'&&isFranchiseScope&&(!isSuper||selectedFranchise)) return <><button type="button" className="glass-button" onClick={()=>navigate('menu')}>← Commission Claims</button><BranchCommissionHub route={route} onNavigate={navigate} franchiseId={selectedFranchise?.id} branchId={reportBranch} onBranchChange={setReportBranch}/></>
+  const registerCard=canImport?<button type="button" className="glass-button" onClick={()=>navigate('documents')}>Commission documents · monthly register and activity log</button>:null
+
   if(editing){
     return <section className="stack-page staff-commission-page commission-review-page"><div className="commission-review-workspace"><div className="section-heading"><div><button type="button" className="glass-button" onClick={closeReview}>← Back to commissions</button><p className="eyebrow">Approval document</p><h1>Review commission #{editing.id}</h1><p>{editing.employee_name} · {editing.reference}</p></div></div>{error&&<div className="error-message">{error}</div>}{reviewPdfUrl?<div className="pdf-preview commission-review-pdf"><iframe src={reviewPdfUrl} title={`Commission review ${editing.id}`}/></div>:<p>Preparing review PDF...</p>}<div className="commission-review-decision"><label>Deceased name and surname<input required value={editing.claim_deceased || ''} onChange={e => setEditing(v => ({...v,claim_deceased:e.target.value}))}/></label><label>Service role<select value={editing.commission_role || 'driver'} onChange={e => setEditing(v => ({...v,commission_role:e.target.value}))}><option value="driver">Employee</option><option value="assistant">Assistant</option></select></label><label>Decision notes<textarea placeholder="Add an approval or rejection note" value={editing.review_notes||''} onChange={e=>setEditing(v=>({...v,review_notes:e.target.value}))}/></label><div className="button-row"><button className="primary-button" onClick={()=>review('approved')}>Approve claim</button><button className="danger-button" onClick={()=>review('rejected')}>Reject claim</button></div></div></div></section>
   }
@@ -119,6 +131,7 @@ export default function CommissionPage({ me }) {
   if(isFranchiseScope && !selectedEmployee){
     return <section className="card attendance-tab-panel staff-commission-page">
       <header className="tab-page-intro"><h3>Commission Claims</h3><p>Select a manager or employee to view their commissions and document status.</p></header>
+      <div className="button-row">{registerCard}<button type="button" className="glass-button" onClick={()=>navigate('branches')}>All linked branches · commission totals</button></div>
       {isSuper&&<button type="button" className="glass-button" onClick={()=>{setSelectedFranchise(null);setEmployees([])}}>← Franchise users</button>}{error&&<div className="error-message">{error}</div>}{notice&&<div className="success-message">{notice}</div>}
       <div className="tab-page-section"><div className="section-heading"><div><h2>Managers and linked employees</h2><p>Select a manager for their own commissions, or select an employee listed beneath that manager.</p></div><label className="commission-employee-search">Search staff<input value={employeeSearch} onChange={e=>setEmployeeSearch(e.target.value)} placeholder="Name, role, number or email"/></label></div>
         {loading?<p>Loading employees...</p>:<div className="commission-hierarchy-list">{staffHierarchy.groups.map(group=><section className="commission-manager-group" key={group.manager.user_id}><div className="commission-manager-heading">{staffButton(group.manager)}<span>{group.employees.length} linked employee{group.employees.length===1?'':'s'}</span></div><div className="commission-linked-employees">{group.employees.map(employee=>staffButton(employee,true))}{!group.employees.length&&<small className="muted">No linked employees.</small>}</div></section>)}{staffHierarchy.direct.length>0&&<section className="commission-manager-group"><h3>Direct employees</h3><div className="commission-linked-employees">{staffHierarchy.direct.map(employee=>staffButton(employee,true))}</div></section>}{!staffHierarchy.groups.length&&!staffHierarchy.direct.length&&<div className="empty-state">No registered staff found.</div>}</div>}
@@ -127,6 +140,7 @@ export default function CommissionPage({ me }) {
   }
 
   return <section className="card attendance-tab-panel staff-commission-page">
+    {registerCard}
     <div className="tab-page-section"><div className="section-heading"><div>{selectedEmployee&&<button type="button" className="glass-button" onClick={closeEmployee}>{isManager?'← My commissions':'← All employees'}</button>}<h1>{selectedEmployee?`${selectedEmployee.full_name} — Commissions`:'My Commissions'}</h1><p>{selectedEmployee?`${selectedEmployee.employee_role||'Employee'}${selectedEmployee.employee_number?` · ${selectedEmployee.employee_number}`:''}`:isSelfSubmitter?'View commissions and submit service claims.':'View this staff member’s commissions and document status.'}</p></div></div>{error&&<div className="error-message">{error}</div>}{notice&&<div className="success-message">{notice}</div>}</div>
 
 

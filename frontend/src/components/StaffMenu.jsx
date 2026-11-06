@@ -4,7 +4,7 @@ export default function StaffMenu({ canManage, canImport, isEmployee, onOpen }) 
   const visible = page => {
     if (['branches', 'add'].includes(page.id)) return canManage
     if (['invoices', 'receipts', 'mortuary'].includes(page.id)) return false
-    if (page.id === 'proof') return canManage || canImport
+    if (['proof','documents'].includes(page.id)) return canManage || canImport
     if (page.id === 'qr') return !isEmployee
     return true
   }
