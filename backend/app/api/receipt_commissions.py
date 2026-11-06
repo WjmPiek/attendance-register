@@ -258,7 +258,7 @@ def save_document(db, fid, kind, record, staff, actor):
         AND deleted_at IS NULL AND (document_key=:key OR (:kind IN ('mortuary','invoice') AND mf_key=:mf)) LIMIT 1'''), {'fid': fid, 'kind': kind, 'branch': bk, 'key': key, 'mf': mf}).mappings().first()
     if old:
         data = json.loads(old['source_data'])
-        immutable = ('gross_received', 'service_date', 'id_number', 'deceased', 'invoice_number') if kind == 'receipt' else ('invoice_number', 'invoice_total', 'deceased', 'id_number', 'service_date', 'vat_number', 'vat_registered', 'commission_base') if kind == 'invoice' else ('deceased','id_number','service_date','date_in','time_in','driver','driver_in')
+        immutable = ('gross_received', 'service_date', 'id_number', 'deceased', 'invoice_number') if kind == 'receipt' else ('invoice_number', 'invoice_total', 'deceased', 'id_number', 'service_date', 'vat_number', 'vat_registered', 'commission_base') if kind == 'invoice' else ('deceased','id_number','date_in','time_in','driver','driver_in')
         if old['mf_key'] != mf or any(data.get(k) != record.get(k) for k in immutable):
             raise HTTPException(409, 'This document was already imported with different details. It cannot be replaced or paid again.')
         doc_id = old['id']
