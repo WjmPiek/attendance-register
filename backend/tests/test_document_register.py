@@ -114,6 +114,13 @@ def test_overpayment_blocks_commission_until_receipts_balance_invoice(database):
     assert receipts.settle(payload,OWNER,database)['created']==0
 
 
+def test_reupload_cannot_change_removal_time_without_a_logged_correction(database):
+    partial(database)
+    with pytest.raises(HTTPException,match='different details'):
+        quote_and_import(database,import_payload([dict(record(),time_in='09:00')]))
+    assert json.loads(database.execute(text("SELECT source_data FROM commission_documents WHERE kind='mortuary'")).scalar())['time_in']==record()['time_in']
+
+
 def test_home_permissions_inherit_and_explicit_branch_overrides_can_disable_all(database):
     configure(database)
     save_branch_options(database,2,11,{101:{'enabled_types':['removals','invoice_commission'],'rates':{'driver_out':'250','driver_invoice_commission':'4'}}},1);database.commit()
