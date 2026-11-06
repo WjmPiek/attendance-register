@@ -171,13 +171,20 @@ def preview(franchise_user_id: int | None = None, external_branch_id: int | None
         except Exception:
             errors.append({'filename': filename, 'error': 'Cannot read this PDF. Use the original unprotected Mortuary Book PDF.'})
             continue
+        accepted=[]
         for item in parsed:
-            if external_branch_id:
+            try:
                 from app.api.receipt_commissions import require_branch
                 item['earning_branch_id'] = require_branch(db, fid, item['branch'], external_branch_id)
                 item['external_branch_id'] = external_branch_id
+            except HTTPException as exc:
+                errors.append({'filename':filename,'page':item.get('page'),'error':exc.detail});continue
             item.update(filename=filename, source_hash=sha256(data).hexdigest())
-        records.extend(parsed)
+            accepted.append(item)
+        records.extend(accepted)
+        if accepted:
+            from app.services.commission_files import store_file
+            store_file(db,fid,sha256(data).hexdigest(),filename,data,current_user.id,'mortuary',len(accepted))
         errors.extend(dict(f, filename=filename) for f in failures)
         if len(records) + len(errors) > 100:
             raise HTTPException(400, 'Import up to 100 pages per batch.')
@@ -189,6 +196,7 @@ def preview(franchise_user_id: int | None = None, external_branch_id: int | None
             role = 'driver' if normalise(name) == normalise(record['driver']) or len(record['names']) == 1 else 'assistant'
             suggestions.append({'record': i, 'name_index': n, 'employee_user_id': match_employee(name, people), 'role': role})
     token = signer().dumps({'kind': 'preview', 'user_id': current_user.id, 'franchise_user_id': fid, 'records': records})
+    db.commit()
     return {'records': records, 'errors': errors, 'allocations': suggestions, 'preview_token': token}
 
 

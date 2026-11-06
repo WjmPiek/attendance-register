@@ -7,6 +7,7 @@ startup and provides one actionable error when a deployment is behind.
 from sqlalchemy import inspect
 
 REQUIRED_TABLES = {
+    'employee_commission_branch_overrides',
     'commission_document_files', 'external_commission_branches', 'commission_delivery_settings', 'commission_monthly_reports', 'commission_monthly_report_items',
     'users', 'roles', 'user_roles', 'franchise_users', 'manager_users',
     'employee_users', 'areas', 'attendance_events', 'commission_structures',
@@ -25,6 +26,9 @@ def assert_operational_schema(engine) -> None:
             'Database schema is behind the application. Run '
             '`python -m alembic upgrade head`. Missing tables: ' + ', '.join(missing)
         )
+    document_columns={column['name'] for column in inspector.get_columns('commission_documents')}
+    if not {'deleted_at','deleted_by_user_id','deletion_reason'} <= document_columns:
+        raise RuntimeError('Database schema is behind the application. Run `python -m alembic upgrade head` for the document register.')
     user_columns = {column['name']: column for column in inspector.get_columns('users')}
     email_column = user_columns.get('email')
     if email_column and not email_column.get('nullable', False):

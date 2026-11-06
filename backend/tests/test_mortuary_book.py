@@ -154,11 +154,13 @@ def database(monkeypatch):
             'CREATE TABLE employee_commission_options(franchise_user_id INT,employee_user_id INT,commission_type TEXT,enabled BOOLEAN,rate NUMERIC,updated_by_user_id INT,updated_at TEXT DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(franchise_user_id,employee_user_id,commission_type))',
             'CREATE TABLE employee_commission_branch_options(franchise_user_id INT,employee_user_id INT,commission_type TEXT,branch_id INT,rate NUMERIC,PRIMARY KEY(franchise_user_id,employee_user_id,commission_type,branch_id))',
             'CREATE TABLE receipt_commission_settings(franchise_user_id INT,branch_id INT DEFAULT 0,vat_registered BOOLEAN,vat_number TEXT,vat_rate NUMERIC,receipt_percentage NUMERIC,updated_by_user_id INT,updated_at TEXT DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(franchise_user_id,branch_id))',
-            'CREATE TABLE commission_documents(id INTEGER PRIMARY KEY,franchise_user_id INT,kind TEXT,branch_key TEXT,mf_key TEXT,document_key TEXT,source_data TEXT,source_hash TEXT,created_by_user_id INT,created_at TEXT DEFAULT CURRENT_TIMESTAMP,UNIQUE(franchise_user_id,kind,branch_key,document_key))',
+            'CREATE TABLE commission_documents(id INTEGER PRIMARY KEY,franchise_user_id INT,kind TEXT,branch_key TEXT,mf_key TEXT,document_key TEXT,source_data TEXT,source_hash TEXT,created_by_user_id INT,created_at TEXT DEFAULT CURRENT_TIMESTAMP,deleted_at TEXT,deleted_by_user_id INT,deletion_reason TEXT)',
             'CREATE TABLE commission_document_staff(document_id INT,employee_user_id INT,removal_role TEXT,PRIMARY KEY(document_id,employee_user_id))',
         ]
+        schemas.append('CREATE TABLE employee_commission_branch_overrides(franchise_user_id INT,employee_user_id INT,branch_id INT,rates TEXT DEFAULT \'{}\',PRIMARY KEY(franchise_user_id,employee_user_id,branch_id))')
         for schema in schemas:
             db.execute(text(schema))
+        db.execute(text('CREATE UNIQUE INDEX uq_active_document ON commission_documents(franchise_user_id,kind,branch_key,document_key) WHERE deleted_at IS NULL'))
         schemas_files = 'CREATE TABLE commission_document_files(franchise_user_id INT,source_hash TEXT,filename TEXT,file_content BLOB,uploaded_by_user_id INT,created_at TEXT DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(franchise_user_id,source_hash))'
         db.execute(text(schemas_files))
         db.execute(text('CREATE TABLE external_commission_branches(branch_id INT PRIMARY KEY,franchise_user_id INT,branch_key TEXT,created_by_user_id INT,created_at TEXT DEFAULT CURRENT_TIMESTAMP,UNIQUE(franchise_user_id,branch_key))'))

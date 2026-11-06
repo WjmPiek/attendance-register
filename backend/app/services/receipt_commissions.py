@@ -15,6 +15,8 @@ from app.services.mortuary import normalise
 class CommissionBranchOptions(BaseModel):
     enabled_types: list[str] = Field(default_factory=list, max_length=9)
     receipt_percentage: Decimal | None = Field(default=None, ge=0, le=100, decimal_places=4)
+    inherit_home: bool = False
+    rates: dict[str, Decimal | None] = Field(default_factory=dict)
 
 
 COMMISSION_LABELS = {
@@ -139,11 +141,31 @@ def branch_options(db, fid, uid):
         group['enabled_types'].append(row['commission_type'])
         if row['commission_type']=='invoice_commission':
             group['receipt_percentage']=row['rate']
-    return result
+    from app.services.attendance_branches import assignment, branches
+    home=assignment(db,uid)
+    if not home or home['franchise_user_id']!=fid or not home['branch_active']:
+        return {}
+    overrides={str(r['branch_id']):json.loads(r['rates']) for r in db.execute(text('SELECT branch_id,rates FROM employee_commission_branch_overrides WHERE franchise_user_id=:fid AND employee_user_id=:uid'), {'fid':fid,'uid':uid}).mappings()}
+    home_key=str(home['branch_id'])
+    base=result.get(home_key,{'enabled_types':[],'receipt_percentage':None})
+    effective={}
+    for branch in branches(db,fid):
+        key=str(branch['id']);inherit=key!=home_key and key not in overrides
+        own=result.get(key,{'enabled_types':[],'receipt_percentage':None})
+        effective[key]={**(base if inherit else own),'inherit_home':inherit,'home_branch_id':home['branch_id'],
+                        'rates':overrides.get(home_key,{}) if inherit else overrides.get(key,{})}
+    return effective
 
 
 def enabled_for_branch(db, fid, uid, category, branch_id):
     return enabled(db, fid, uid, category) and category in branch_options(db,fid,uid).get(str(branch_id),{}).get('enabled_types',[])
+
+
+def effective_branch_rates(db,fid,uid,branch_id):
+    values=branch_options(db,fid,uid)
+    selected=values.get(str(branch_id),{})
+    home=values.get(str(selected.get('home_branch_id')),{})
+    return {**home.get('rates',{}),**selected.get('rates',{})}
 
 
 def save_branch_options(db, fid, uid, values, actor):
@@ -154,12 +176,32 @@ def save_branch_options(db, fid, uid, values, actor):
         raise HTTPException(403,'Commission branch is outside this holder group.')
     all_types = set()
     for value in normalised.values():
-        all_types.update(value.get('enabled_types',[]))
+        if not value.get('inherit_home'): all_types.update(value.get('enabled_types',[]))
     if all_types-set(COMMISSION_LABELS):
         raise HTTPException(400,'Invalid commission category.')
+    from app.api.mortuary import Rates
+    from pydantic import ValidationError
+    for value in normalised.values():
+        if set(value.get('rates',{}))-set(Rates.model_fields): raise HTTPException(400,'Unknown branch commission rate.')
+        try: value['rates']=Rates(**value.get('rates',{})).model_dump(mode='json',exclude_none=True)
+        except ValidationError: raise HTTPException(422,'Branch fees must be valid non-negative amounts; commission percentages must be between 0 and 100.')
+    from app.services.attendance_branches import assignment
+    home=assignment(db,uid)
+    if home and normalised.get(home['branch_id'],{}).get('inherit_home'):
+        raise HTTPException(400,'The home branch must have its own commission settings.')
     set_enabled_types(db,fid,uid,list(all_types),actor)
     db.execute(text('DELETE FROM employee_commission_branch_options WHERE franchise_user_id=:fid AND employee_user_id=:uid'), {'fid':fid,'uid':uid})
+    from app.services.attendance_branches import assignment
+    home=assignment(db,uid)
+    db.execute(text('DELETE FROM employee_commission_branch_overrides WHERE franchise_user_id=:fid AND employee_user_id=:uid'), {'fid':fid,'uid':uid})
     for bid,value in normalised.items():
+        if value.get('inherit_home'):
+            if home and bid==home['branch_id']: raise HTTPException(400,'The home branch must have its own commission settings.')
+            continue
+        from app.api.mortuary import Rates
+        if set(value.get('rates',{}))-set(Rates.model_fields): raise HTTPException(400,'Unknown branch commission rate.')
+        rates=value['rates']
+        db.execute(text('INSERT INTO employee_commission_branch_overrides(franchise_user_id,employee_user_id,branch_id,rates) VALUES(:fid,:uid,:branch,:rates)'), {'fid':fid,'uid':uid,'branch':bid,'rates':json.dumps(rates)})
         for category in set(value.get('enabled_types',[])):
             db.execute(text('''INSERT INTO employee_commission_branch_options(franchise_user_id,employee_user_id,commission_type,branch_id,rate)
                 VALUES(:fid,:uid,:type,:branch,:rate)'''), {'fid':fid,'uid':uid,'type':category,'branch':bid,
@@ -240,7 +282,7 @@ def require_payment_proof(db, fid, branch_id, reference, book_id=None, receipt_i
     if book_id and receipt_id:
         reference = reference.split(' / Receipt ', 1)[0].split(' / Invoice ', 1)[0]
     docs = db.execute(text('''SELECT id,kind,source_data FROM commission_documents
-        WHERE franchise_user_id=:fid AND branch_key=:branch AND mf_key=:mf ORDER BY id'''),
+        WHERE franchise_user_id=:fid AND branch_key=:branch AND mf_key=:mf AND deleted_at IS NULL ORDER BY id'''),
         {'fid': fid, 'branch': branch_key(branch), 'mf': mf_key(reference)}).mappings().all()
     books = [d for d in docs if d['kind'] == 'mortuary' and (not book_id or d['id'] == book_id)]
     invoices = [d for d in docs if d['kind'] == 'invoice' and (not invoice_id or d['id'] == invoice_id)]
@@ -282,6 +324,8 @@ def require_payment_proof(db, fid, branch_id, reference, book_id=None, receipt_i
         raise HTTPException(400, 'The linked receipt is outside this invoice payment evidence.')
     if paid < total:
         raise HTTPException(400, f'Invoice not fully paid: received R {paid:,.2f} of R {total:,.2f}. No commission is payable until the balance is settled.')
+    if paid > total:
+        raise HTTPException(400, f'Receipts exceed the invoice: received R {paid:,.2f} against R {total:,.2f}. Correct the payment evidence before commission is allocated.')
     return {'mortuary_document_id': book['id'], 'receipt_document_id': included[0], 'invoice_document_id': invoice['id'],
             'invoice_total': str(total), 'total_received': str(paid), 'invoice_number': invoice_data['invoice_number'],
             'receipt_document_ids': included, 'deceased': invoice_data['deceased'], **tax}

@@ -39,7 +39,7 @@ def auto_approve_holder(db, fid, document_ids=None):
         except HTTPException:
             continue  # Missing proof, changed eligibility or rate: remain blocked.
     if document_ids is None:
-        document_ids = db.execute(text('SELECT id FROM commission_documents WHERE franchise_user_id=:fid'), {'fid': fid}).scalars().all()
+        document_ids = db.execute(text('SELECT id FROM commission_documents WHERE franchise_user_id=:fid AND deleted_at IS NULL'), {'fid': fid}).scalars().all()
     if document_ids:
         plan = calculate_plan(db, fid, document_ids, actor)
         count += len(store_ready_plan(db, fid, actor, plan, automatic=True))

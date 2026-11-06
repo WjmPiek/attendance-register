@@ -255,7 +255,7 @@ def save_document(db, fid, kind, record, staff, actor):
         raise HTTPException(400, 'MF number is missing.')
     key = record['receipt_number'].strip().casefold() if kind == 'receipt' else normalise(record['invoice_number']) if kind == 'invoice' else mf
     old = db.execute(text('''SELECT * FROM commission_documents WHERE franchise_user_id=:fid AND kind=:kind AND branch_key=:branch
-        AND (document_key=:key OR (:kind IN ('mortuary','invoice') AND mf_key=:mf)) LIMIT 1'''), {'fid': fid, 'kind': kind, 'branch': bk, 'key': key, 'mf': mf}).mappings().first()
+        AND deleted_at IS NULL AND (document_key=:key OR (:kind IN ('mortuary','invoice') AND mf_key=:mf)) LIMIT 1'''), {'fid': fid, 'kind': kind, 'branch': bk, 'key': key, 'mf': mf}).mappings().first()
     if old:
         data = json.loads(old['source_data'])
         immutable = ('gross_received', 'service_date', 'id_number', 'deceased', 'invoice_number') if kind == 'receipt' else ('invoice_number', 'invoice_total', 'deceased', 'service_date', 'vat_number', 'vat_registered', 'commission_base') if kind == 'invoice' else ()
@@ -271,6 +271,7 @@ def save_document(db, fid, kind, record, staff, actor):
         # the same recipient. Existing final awards retain their recorded role.
         db.execute(text('''INSERT INTO commission_document_staff(document_id,employee_user_id,removal_role)
             VALUES(:doc,:uid,:role) ON CONFLICT(document_id,employee_user_id) DO NOTHING'''), {'doc': doc_id, 'uid': uid, 'role': role})
+    write_audit_log(db,actor_user_id=actor,franchise_user_id=fid,action='commission_document_reuploaded' if old else 'commission_document_saved',entity_type='commission_documents',entity_id=doc_id,new_values={'kind':kind,'record':record,'staff':[{'employee_user_id':uid,'role':role} for uid,role in staff]})
     return doc_id, bool(old)
 
 
@@ -305,9 +306,8 @@ def preview_invoices(franchise_user_id: int | None = None, external_branch_id: i
                     errors.append({'filename': name, 'page': record['page'], 'error': exc.detail}); continue
                 record.update(filename=name, source_hash=digest); accepted.append(record)
             if accepted:
-                db.execute(text('''INSERT INTO commission_document_files(franchise_user_id,source_hash,filename,file_content,uploaded_by_user_id)
-                    VALUES(:fid,:hash,:name,:content,:actor) ON CONFLICT(franchise_user_id,source_hash) DO NOTHING'''),
-                    {'fid': fid, 'hash': digest, 'name': name, 'content': content, 'actor': current_user.id})
+                from app.services.commission_files import store_file
+                store_file(db,fid,digest,name,content,current_user.id,'invoice',len(accepted))
                 records.extend(accepted)
             errors.extend(dict(error, filename=name) for error in failures)
             if len(records) + len(errors) > 100:
@@ -355,6 +355,8 @@ def download_invoice(document_id: int, franchise_user_id: int | None = None, cur
         WHERE d.id=:id AND d.franchise_user_id=:fid AND d.kind='invoice' '''), {'id': document_id, 'fid': fid}).mappings().first()
     if not row:
         raise HTTPException(404, 'Saved invoice PDF not found in this franchise.')
+    write_audit_log(db,actor_user_id=current_user.id,franchise_user_id=fid,action='commission_document_downloaded',entity_type='commission_documents',entity_id=document_id)
+    db.commit()
     return Response(content=bytes(row['file_content']), media_type='application/pdf', headers={'Content-Disposition': f'attachment; filename="mf-invoice-{document_id}.pdf"', 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff'})
 
 
@@ -373,16 +375,21 @@ def preview(franchise_user_id: int | None = None, external_branch_id: int | None
             parsed, failures = parse_receipt_pdf(content)
         except Exception:
             errors.append({'filename': name, 'error': 'Cannot read this receipt PDF.'}); continue
+        accepted=[]
         for record in parsed:
             try:
                 record['earning_branch_id'] = require_branch(db, fid, record['branch'], external_branch_id)
                 record['external_branch_id'] = external_branch_id
             except HTTPException as exc:
                 errors.append({'filename': name, 'page': record['page'], 'error': exc.detail}); continue
-            record.update(filename=name, source_hash=sha256(content).hexdigest()); records.append(record)
+            record.update(filename=name, source_hash=sha256(content).hexdigest()); records.append(record);accepted.append(record)
+        if accepted:
+            from app.services.commission_files import store_file
+            store_file(db,fid,sha256(content).hexdigest(),name,content,current_user.id,'receipt',len(accepted))
         errors.extend(dict(e, filename=name) for e in failures)
         if len(records) + len(errors) > 100:
             raise HTTPException(400, 'Import up to 100 pages per batch.')
+    db.commit()
     return {'records': records, 'errors': errors, 'preview_token': signer().dumps({'kind': 'receipts', 'user_id': current_user.id, 'franchise_user_id': fid, 'records': records})}
 
 
@@ -427,13 +434,13 @@ def stage(payload: StageIn, current_user: User = Depends(get_current_user), db: 
 @router.get('/documents')
 def documents(franchise_user_id: int | None = None, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     fid = import_scope(db, current_user, franchise_user_id)
-    rows = db.execute(text('SELECT id,kind,source_data,created_at FROM commission_documents WHERE franchise_user_id=:fid ORDER BY id DESC LIMIT 100'), {'fid': fid}).mappings().all()
+    rows = db.execute(text('SELECT id,kind,source_data,created_at FROM commission_documents WHERE franchise_user_id=:fid AND deleted_at IS NULL ORDER BY id DESC LIMIT 100'), {'fid': fid}).mappings().all()
     return [{'id': r['id'], 'kind': r['kind'], 'record': json.loads(r['source_data']), 'created_at': r['created_at']} for r in rows]
 
 
 def calculate_plan(db, fid, ids, user):
     from sqlalchemy import bindparam
-    selected = db.execute(text('SELECT * FROM commission_documents WHERE franchise_user_id=:fid AND id IN :ids').bindparams(bindparam('ids', expanding=True)), {'fid': fid, 'ids': list(set(ids))}).mappings().all()
+    selected = db.execute(text('SELECT * FROM commission_documents WHERE franchise_user_id=:fid AND deleted_at IS NULL AND id IN :ids').bindparams(bindparam('ids', expanding=True)), {'fid': fid, 'ids': list(set(ids))}).mappings().all()
     if len(selected) != len(set(ids)):
         raise HTTPException(403, 'Document is outside this franchise.')
     cases = {(d['branch_key'], d['mf_key']) for d in selected}
@@ -447,7 +454,7 @@ def calculate_plan(db, fid, ids, user):
             continue
         matched_branch = matching_branches[0]
         settings = receipt_settings(db, fid, matched_branch['id'])
-        docs = db.execute(text('SELECT * FROM commission_documents WHERE franchise_user_id=:fid AND branch_key=:branch AND mf_key=:mf ORDER BY id'), {'fid': fid, 'branch': bk, 'mf': mf}).mappings().all()
+        docs = db.execute(text('SELECT * FROM commission_documents WHERE franchise_user_id=:fid AND branch_key=:branch AND mf_key=:mf AND deleted_at IS NULL ORDER BY id'), {'fid': fid, 'branch': bk, 'mf': mf}).mappings().all()
         books = [d for d in docs if d['kind'] == 'mortuary' and (d['branch_key'], d['mf_key']) == (bk, mf)]
         receipts = [d for d in docs if d['kind'] == 'receipt' and (d['branch_key'], d['mf_key']) == (bk, mf)]
         if not books or not receipts:
@@ -519,6 +526,9 @@ def calculate_plan(db, fid, ids, user):
                         line.update(state='already_recorded', reason='Matching commission already recorded manually')
                 if category == 'removals':
                     policy = effective_policy(policies, uid)
+                    from app.services.receipt_commissions import effective_branch_rates
+                    overrides=effective_branch_rates(db,fid,uid,permission_branch(db,fid,uid,matched_branch['id']))
+                    policy['rates'].update(overrides)
                     other_branch = branch_key(book_data['branch']) not in {branch_key(b['name']) for b in branches(db, fid)}
                     try:
                         fee = price_removal(book_data, staff['removal_role'] or 'driver', policy, effective_policy(policies, 0).get('extra_holidays', []), other_branch=False, staff_hours=person)
@@ -531,7 +541,13 @@ def calculate_plan(db, fid, ids, user):
                         line.update(state='blocked', reason='Removal fee not configured')
                 else:
                     role = staff['removal_role'] or 'driver'
-                    rate = policies.get(uid, {}).get('rates', {}).get(f'{role}_invoice_commission')
+                    selected_options=branch_options(db,fid,uid).get(str(permission_branch(db,fid,uid,matched_branch['id'])),{})
+                    rate = selected_options.get('rates',{}).get(f'{role}_invoice_commission')
+                    if rate is None: rate=selected_options.get('receipt_percentage')
+                    if rate is None:
+                        from app.services.receipt_commissions import effective_branch_rates
+                        rate=effective_branch_rates(db,fid,uid,permission_branch(db,fid,uid,matched_branch['id'])).get(f'{role}_invoice_commission')
+                    if rate is None: rate=policies.get(uid, {}).get('rates', {}).get(f'{role}_invoice_commission')
                     if rate is None:
                         rate = branch_options(db,fid,uid).get(str(permission_branch(db,fid,uid,matched_branch['id'])),{}).get('receipt_percentage')
                     if rate is None:
@@ -601,6 +617,7 @@ def store_ready_plan(db, fid, current_user, plan, automatic=False):
         _audit(db, entry['id'], 'matched_documents_auto_approved' if automatic else 'matched_documents_commission', current_user.id, new=dict(entry))
         _notify(db, item['employee_user_id'], 'Matched commission added', f"{COMMISSION_LABELS[item['category']]} · {reference}", entry['id'], 'success')
         ids.append(entry['id'])
+        write_audit_log(db,actor_user_id=current_user.id,franchise_user_id=fid,action='commission_allocated_automatically' if automatic else 'commission_allocated',entity_type='commission_documents',entity_id=item['invoice_document_id'] if item['category']=='invoice_commission' else item['mortuary_document_id'],new_values={'entry_id':entry['id'],'employee_user_id':item['employee_user_id'],'branch_id':item['earning_branch_id'],'amount':item['amount'],'category':item['category'],'invoice_document_id':item['invoice_document_id'],'receipt_document_ids':item.get('receipt_document_ids',[])})
     return ids
 
 @router.post('/settle')
