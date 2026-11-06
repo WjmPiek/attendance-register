@@ -155,7 +155,7 @@ def save_settings(payload: SavePolicy, current_user: User = Depends(get_current_
 
 @router.post('/preview')
 def preview(franchise_user_id: int | None = None, external_branch_id: int | None = None, files: list[UploadFile] = File(...),
-            current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+            current_user: User = Depends(get_current_user), db: Session = Depends(get_db), expected_branch_id: int | None = None):
     fid = import_scope(db, current_user, franchise_user_id)
     if not 1 <= len(files) <= 30:
         raise HTTPException(400, 'Upload between 1 and 30 PDF files at a time.')
@@ -174,8 +174,8 @@ def preview(franchise_user_id: int | None = None, external_branch_id: int | None
         accepted=[]
         for item in parsed:
             try:
-                from app.api.receipt_commissions import require_branch
-                item['earning_branch_id'] = require_branch(db, fid, item['branch'], external_branch_id)
+                from app.api.receipt_commissions import check_import_branch
+                item['earning_branch_id'] = check_import_branch(db, fid, item, external_branch_id,expected_branch_id)
                 item['external_branch_id'] = external_branch_id
             except HTTPException as exc:
                 errors.append({'filename':filename,'page':item.get('page'),'error':exc.detail});continue

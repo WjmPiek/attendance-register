@@ -1,4 +1,5 @@
 import ImportBranchScope from './ImportBranchScope'
+import ImportFeedback, {detectedImportBranch,scrollImportTop} from './ImportFeedback'
 import { useEffect, useState } from 'react'
 import { apiRequest, uploadMFReceipts } from '../api/client'
 import './MortuaryBook.css'
@@ -7,6 +8,7 @@ const money = n => n == null ? '—' : `R ${Number(n).toFixed(2)}`
 const labels = { removals: 'Removals', invoice_commission: 'MF File Receipts', service_other_branch: 'Service for Other Branch (additional fee)' }
 export default function MFFileReceipt({ franchiseId }) {
   const [externalBranchId, setExternalBranchId] = useState('')
+  const [branchManual,setBranchManual]=useState(false)
   const [data, setData] = useState(null), [docs, setDocs] = useState([])
   const [files, setFiles] = useState([]), [preview, setPreview] = useState(null), [allocations, setAllocations] = useState([])
   const [confirmed, setConfirmed] = useState(false), [plan, setPlan] = useState(null), [ids, setIds] = useState([])
@@ -18,10 +20,12 @@ export default function MFFileReceipt({ franchiseId }) {
   }
   useEffect(() => { load().catch(e => setError(e.message)) }, [suffix])
   const run = async action => { setBusy(true); setError(''); try { await action() } catch (e) { setError(e.message) } finally { setBusy(false) } }
-  const upload = e => { e.preventDefault(); run(async () => {
-    const result = await uploadMFReceipts(files, franchiseId, externalBranchId)
-    setPreview(result); setAllocations(result.records.map((_, record) => ({ record, employee_user_ids: [], employee_roles: {} }))); setConfirmed(false); setPlan(null); setNotice('')
-  }) }
+  const readReceipts = selectedFiles => run(async () => {
+    setPreview(null);setPlan(null);setConfirmed(false)
+    const result = await uploadMFReceipts(selectedFiles, franchiseId, branchManual?externalBranchId:'')
+    setPreview(result);setExternalBranchId(detectedImportBranch(result,externalBranchId)); setAllocations(result.allocations || result.records.map((_, record) => ({ record, employee_user_ids: [], employee_roles: {} }))); setConfirmed(false); setPlan(null); setNotice('')
+  })
+  const upload=e=>{e.preventDefault();readReceipts(files)}
   const selectEmployee = (record, uid, checked) => {
     setAllocations(old => old.map(a => a.record === record ? { ...a, employee_user_ids: checked ? [...a.employee_user_ids, uid] : a.employee_user_ids.filter(id => id !== uid) } : a)); setConfirmed(false)
   }
@@ -32,6 +36,7 @@ export default function MFFileReceipt({ franchiseId }) {
   const stage = () => run(async () => {
     const result = await apiRequest('/receipt-commissions/stage', { method: 'POST', body: JSON.stringify({ preview_token: preview.preview_token, allocations, confirmed_franchise: confirmed }) })
     setPreview(null); await load(); setNotice(`${result.saved} receipts saved; ${result.duplicates} repeated receipts recognised. Qualifying commissions approve automatically after all three matching documents are present and the invoice is fully paid.`)
+    scrollImportTop()
     if (result.document_ids.length) await calculate(result.document_ids)
   })
   const settle = () => run(async () => {
@@ -47,10 +52,11 @@ export default function MFFileReceipt({ franchiseId }) {
     group.total += Number(row.amount); return acc
   }, {})
   return <section className="mortuary-book">
-    <ImportBranchScope franchiseId={franchiseId} value={externalBranchId} onChange={value => { setExternalBranchId(value); setPreview(null) }}/>
+    <ImportFeedback error={error} warnings={preview?.errors} notice={notice}/>
+    <ImportBranchScope franchiseId={franchiseId} value={externalBranchId} onChange={value => { setExternalBranchId(value);setBranchManual(Boolean(value)); setPreview(null) }}/>
     <div className="form-card"><h2>MF File Receipt</h2><p>Import receipt payments, select eligible employees across the holder’s branches, and review commissions only when the Mortuary Book, MF Invoice and receipts match branch, deceased name and surname, and MF number, and the invoice is fully paid.</p><p className="muted">Different MF numbers remain unmatched. Receipts are added once by receipt number. The invoice must be fully paid; commission is calculated once from its total, using the branch VAT registration checked in the system.</p></div>
     {error && <p role="alert" className="error-message">{error}</p>}{notice && <p role="status" className="success-message">{notice}</p>}
-    <form className="form-card" onSubmit={upload}><h3>1. Select receipt PDFs</h3><label>MF File Receipt PDFs<input type="file" accept=".pdf,application/pdf" multiple required disabled={busy} onChange={e => { setFiles(Array.from(e.target.files)); setPreview(null); setPlan(null) }}/></label><p className="muted">Up to 30 original searchable PDFs, 10 MB each and 50 MB total. Staff eligible for MF File Receipts are enabled in Edit Staff.</p><button className="primary-button" disabled={busy || !files.length}>Read MF File Receipts</button></form>
+    <form className="form-card" onSubmit={upload}><h3>1. Select receipt PDFs</h3><label>MF File Receipt PDFs<input type="file" accept=".pdf,application/pdf" multiple required disabled={busy} onChange={e => { const selected=Array.from(e.target.files);setFiles(selected);setPreview(null);setPlan(null);if(selected.length)readReceipts(selected) }}/></label><p className="muted">Up to 30 original searchable PDFs, 10 MB each and 50 MB total. Staff eligible for MF File Receipts are enabled in Edit Staff.</p><button className="primary-button" disabled={busy || !files.length}>Read MF File Receipts</button></form>
     {preview && <div className="form-card"><h3>2. Check receipts and select recipients</h3>{preview.errors.length > 0 && <div role="alert" className="error-message"><strong>Excluded pages</strong><ul>{preview.errors.map((e, i) => <li key={i}>{e.filename} · {e.page || ''}: {e.error}</li>)}</ul></div>}
       {preview.records.map((r, i) => <article className="mortuary-record" key={i}><h4>{r.branch} · MF {r.reference} · Receipt {r.receipt_number}</h4><p>Deceased: {r.deceased}<br/>ID Num: {r.id_number || 'Not provided'}<br/>Date: {r.service_date}<br/>Amount Received: {money(r.gross_received)}</p><p>Select each employee who should receive this receipt commission. You may leave all unticked if the receipt is only needed to qualify removals.</p><div className="commission-checkbox-grid">{eligible.filter(e => allowedFor(e, r)).map(e => <label key={e.user_id}><input type="checkbox" checked={allocations[i]?.employee_user_ids.includes(e.user_id) || false} onChange={event => selectEmployee(i, e.user_id, event.target.checked)}/>{e.full_name} · {e.branch_name}{allocations[i]?.employee_user_ids.includes(e.user_id) && <select aria-label={`Commission role for ${e.full_name}`} value={allocations[i]?.employee_roles?.[e.user_id] || 'driver'} onChange={event => setRole(i, e.user_id, event.target.value)}><option value="driver">Employee</option><option value="assistant">Assistant</option></select>}</label>)}</div>{!eligible.some(e => allowedFor(e, r)) && <p>No employees have MF File Receipt commissions enabled for this receipt’s branch.</p>}</article>)}
       <label className="mortuary-confirm"><input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)}/>I confirm the franchise, payment details and selected employees, and have reviewed any excluded pages. Saving receipts does not itself earn commission.</label><button type="button" disabled={busy || !confirmed || !preview.records.length} onClick={stage}>Save receipts and check matches</button></div>}

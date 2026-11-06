@@ -44,6 +44,31 @@ def configure(db, registered=True):
     db.commit()
 
 
+def test_import_auto_detects_linked_branch_and_rejects_wrong_selection(database):
+    assert api.check_import_branch(database,2,record())==101
+    assert api.check_import_branch(database,2,record(),expected_branch_id=101)==101
+    with pytest.raises(HTTPException) as error:
+        api.check_import_branch(database,2,record(),expected_branch_id=102)
+    assert error.value.status_code==400 and 'does not match selected branch' in error.value.detail
+    with pytest.raises(HTTPException) as error:
+        api.check_import_branch(database,2,record(),expected_branch_id=9999)
+    assert error.value.status_code==403
+
+
+def test_receipt_suggestions_require_matching_book_and_enabled_branch_permission(database):
+    configure(database)
+    source=dict(receipt(),earning_branch_id=101)
+    assert api.suggest_receipt_allocations(database,2,[source],OWNER)[0]['employee_user_ids']==[]
+    quote_and_import(database,import_payload())
+    suggested=api.suggest_receipt_allocations(database,2,[source],OWNER)[0]
+    assert set(suggested['employee_user_ids'])=={11,12}
+    assert suggested['employee_roles']=={11:'driver',12:'assistant'}
+    for change in [{'reference':'OTHER'},{'id_number':'1111111111111'},{'deceased':'Different Person'},{'branch':'OTHER'}]:
+        assert api.suggest_receipt_allocations(database,2,[dict(source,**change)],OWNER)[0]['employee_user_ids']==[]
+    save_branch_options(database,2,11,{101:{'enabled_types':['removals']}},1)
+    assert api.suggest_receipt_allocations(database,2,[source],OWNER)[0]['employee_user_ids']==[12]
+
+
 def stage_invoice(db, source=None, total=None):
     source = source or receipt()
     invoice = {**source, 'invoice_total': str(total if total is not None else source['gross_received'])}
