@@ -43,7 +43,7 @@ export default function BranchCommissionHub({ franchiseId, branchId = '', onBran
     setEarnings(null); setEarningsError('')
     if (!/^\d{4}-\d{2}$/.test(month)) return undefined
     const [year, number] = month.split('-').map(Number)
-    const loadEarnings = () => getCommissionEntries({ franchiseUserId: franchiseId, earningBranchId: activeBranch, fromDate: `${month}-01`, toDate: new Date(Date.UTC(year, number, 0)).toISOString().slice(0, 10) })
+    const loadEarnings = () => getCommissionEntries({ franchiseUserId: franchiseId, fromDate: `${month}-01`, toDate: new Date(Date.UTC(year, number, 0)).toISOString().slice(0, 10) })
       .then(result => { if (active) { setEarnings(result.items); setEarningsError('') } })
       .catch(e => { if (active) setEarningsError(e.message) })
     loadEarnings()
@@ -59,6 +59,8 @@ export default function BranchCommissionHub({ franchiseId, branchId = '', onBran
     const money = value => `R ${value.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
     return <><strong>Approved: {money(approved)}</strong><span className="commission-awaiting-badge">Awaiting document checks: {money(awaiting)}</span></>
   }
+  const approvedTotal=branch=>earnings?.filter(r=>r.status==='approved'&&r.payment_eligible&&(!branch||Number(r.earning_branch_id)===Number(branch))).reduce((n,r)=>n+Number(r.calculated_amount||0),0)
+  const totalLabel=value=>value==null?'Loading…':`R ${value.toLocaleString('en-ZA',{minimumFractionDigits:2,maximumFractionDigits:2})}`
   useEffect(() => {
     let active = true
     setEditor(null); setError(''); setSaved('')
@@ -113,8 +115,10 @@ export default function BranchCommissionHub({ franchiseId, branchId = '', onBran
       <button type="button" className="glass-button" onClick={() => download(activeBranch)}>Download {activeBranch ? 'selected branch' : 'all branches'} PDF</button>
       {error && <p role="alert" className="error-message">{error}</p>}{!data && !error && <p role="status">Loading linked branches…</p>}
       {earningsError && <p role="alert" className="error-message">{earningsError}</p>}
+      <strong>Combined approved total · all linked branches: {earningsError?'Unavailable':totalLabel(approvedTotal())}</strong>
     </div>
     {data?.branches.filter(b => !activeBranch || String(b.id) === activeBranch).map(b => <section className="form-card" key={b.id}>
+      <strong>Branch approved total: {earningsError?'Unavailable':totalLabel(approvedTotal(b.id))}</strong>
       <div className="section-heading"><h3>{b.name}</h3><div className="button-row">{!activeBranch && <button type="button" className="glass-button" onClick={() => onBranchChange?.(String(b.id))}>Open this branch</button>}<button type="button" onClick={() => download(b.id)}>Branch commission PDF</button></div></div>
       {members(b).map(e => <div className="branch-staff-row" key={e.user_id}><div><strong>{e.full_name} · {e.employee_role}</strong><small className="commission-branch-summary">Home branch: {e.branch_name}<br/>Enabled here: {enabled(e, b.id).map(c => commissionLabels[c]).join(', ') || 'No commissions enabled'}<br/>{commissionSummary(e, b)}</small></div>
         <div className="branch-staff-actions"><button type="button" className="glass-button" onClick={() => open('permissions', e, b)}>Commission permissions</button>

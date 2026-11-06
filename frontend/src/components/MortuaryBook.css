@@ -69,6 +69,17 @@
 .staff-commission-detail > .form-card { width:100%; max-width:none; }
 .staff-pdf-page iframe { width:100%; min-height:680px; border:1px solid #ded6ea; border-radius:10px; }
 .staff-download-link { color:#673388; font-weight:700; }
+
+.document-field-list { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr)); gap:18px; margin:0; }
+.document-field-list dt { text-transform:capitalize; font-size:.85rem; color:#655676; }
+.document-field-list dd { margin:5px 0 0; overflow-wrap:anywhere; }
+.document-payment-summary { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; }
+.document-payment-summary strong { display:block; margin-top:6px; }
+.commission-document-pdf { width:100%; min-height:640px; border:1px solid #ddd5e8; }
+.commission-document-register pre { white-space:pre-wrap; overflow-wrap:anywhere; max-width:100%; }
+.commission-rate-details { display:grid; gap:14px; }
+.commission-rate-details summary { cursor:pointer; font-weight:700; margin-bottom:12px; }
+@media(max-width:650px) { .document-payment-summary { grid-template-columns:1fr; } }
 .removal-settings-form { display:grid; gap:20px; min-width:0; }
 .removal-fee-table { width:100%; min-width:420px; }
 .removal-fee-table th:first-child { width:40%; }

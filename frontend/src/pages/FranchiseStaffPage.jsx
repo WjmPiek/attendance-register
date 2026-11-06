@@ -22,6 +22,7 @@ import StaffWorkHub from '../components/StaffWorkHub.jsx'
 import MortuaryBook from '../components/MortuaryBook.jsx'
 import MFFileReceipt from '../components/MFFileReceipt.jsx'
 import MFInvoice from '../components/MFInvoice.jsx'
+import CommissionDocumentRegister from '../components/CommissionDocumentRegister.jsx'
 import StaffWorkingHours, { defaultStaffWeek, staffWorkWeek, StaffHoursSummary } from '../components/StaffWorkingHours.jsx'
 import BranchCommissionHub from '../components/BranchCommissionHub.jsx'
 import StaffMenu from '../components/StaffMenu.jsx'
@@ -893,6 +894,8 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
       {activeSubTab === 'receipts' && (canManageStaff || canImportDocuments) && <MFFileReceipt key={selectedFranchiseId || 'own'} franchiseId={isSuperUser ? selectedFranchiseId : ''} canManage={canManageStaff} />}
       {activeSubTab === 'mortuary' && (canManageStaff || canImportDocuments) && <MortuaryBook canManage={canManageStaff} key={selectedFranchiseId || 'own'} franchiseId={isSuperUser ? selectedFranchiseId : ''} />}
 
+      {activeSubTab === 'documents' && (canManageStaff || canImportDocuments) && <CommissionDocumentRegister franchiseId={isSuperUser?selectedFranchiseId:''} onBack={()=>setActiveSubTab('menu')}/>}
+
       {activeSubTab === 'payslips' ? (
         <section className="form-card staff-list-card">
           <h2>My Payslips</h2>
@@ -1018,7 +1021,7 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
           <form onSubmit={saveStaff} className="staff-form-single">
             {canManageStaff && <>
               <label className="staff-home-branch">Home branch<select required value={staff.branch_id || ''} onChange={e => setStaff(v => ({ ...v, branch_id: e.target.value }))}><option value="">Select branch</option>{holderBranches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label>
-              <CommissionCheckboxes branches={holderBranches} branchOptions={staff.commission_branches || {}} onBranchOptionsChange={value => setStaff(v => ({ ...v, commission_branches: value, commission_types: [...new Set(Object.values(value).flatMap(x => x.enabled_types))] }))}/>
+              <CommissionCheckboxes homeBranchId={staff.branch_id} branches={holderBranches} branchOptions={staff.commission_branches || {}} onBranchOptionsChange={value => setStaff(v => ({ ...v, commission_branches: value, commission_types: [...new Set(Object.values(value).flatMap(x => x.enabled_types))] }))}/>
               <label className="mortuary-confirm"><input type="checkbox" checked={staff.can_import_commissions || false} onChange={e => setStaff(v => ({ ...v, can_import_commissions: e.target.checked }))}/>Allow this employee to import commission documents and allocate eligible staff across this holder’s branches</label>
             </>}
 

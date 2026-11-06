@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
 export const staffPages = [
+  { id: 'documents', title: 'Commission documents', description: 'Monthly uploads, payment balances, document corrections and activity log.' },
   { id: 'proof', title: 'Upload proof', description: 'Import the compulsory service and payment documents.' },
   { id: 'branches', title: 'All Branches & Commissions', description: 'Staff, commission permissions and reports for every linked branch.' },
   { id: 'invoices', title: 'MF Invoice', description: 'Import and download the original service invoice.' },
@@ -19,7 +20,7 @@ function readPage() {
     action: params.get('staff_action') || '', employee: params.get('staff_employee') || '', branch: params.get('staff_branch') || '' }
 }
 
-export function useStaffNavigation() {
+export function useStaffNavigation(tab = 'staff') {
   const [route, setRoute] = useState(readPage)
   useEffect(() => {
     const sync = () => setRoute(readPage())
@@ -28,7 +29,7 @@ export function useStaffNavigation() {
   }, [])
   const navigate = (page, details = {}) => {
     const url = new URL(window.location.href)
-    url.searchParams.set('tab', 'staff')
+    url.searchParams.set('tab', tab)
     for (const key of ['page', 'action', 'employee', 'branch']) url.searchParams.delete(`staff_${key}`)
     if (page !== 'menu') url.searchParams.set('staff_page', page)
     for (const key of ['action', 'employee', 'branch']) if (details[key]) url.searchParams.set(`staff_${key}`, details[key])
