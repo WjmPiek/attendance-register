@@ -576,21 +576,8 @@ def calculate_plan(db, fid, ids, user):
                         line.update(state='blocked', reason='Removal fee not configured')
                 else:
                     role = staff['removal_role'] or 'driver'
-                    selected_options=branch_options(db,fid,uid).get(str(permission_branch(db,fid,uid,matched_branch['id'])),{})
-                    rate = selected_options.get('rates',{}).get(f'{role}_invoice_commission')
-                    if rate is None: rate=selected_options.get('receipt_percentage')
-                    if rate is None:
-                        from app.services.receipt_commissions import effective_branch_rates
-                        rate=effective_branch_rates(db,fid,uid,permission_branch(db,fid,uid,matched_branch['id'])).get(f'{role}_invoice_commission')
-                    if rate is None: rate=policies.get(uid, {}).get('rates', {}).get(f'{role}_invoice_commission')
-                    if rate is None:
-                        rate = branch_options(db,fid,uid).get(str(permission_branch(db,fid,uid,matched_branch['id'])),{}).get('receipt_percentage')
-                    if rate is None:
-                        rate = options.get(category, {}).get('rate')
-                    if rate is None:
-                        rate = effective_policy(policies,uid)['rates'].get(f'{role}_invoice_commission')
-                    if rate is None:
-                        rate = settings.get('receipt_percentage')
+                    from app.services.receipt_commissions import invoice_commission_rate
+                    rate=invoice_commission_rate(db,fid,uid,role,matched_branch['id'],policies,settings)
                     line.update(rate=str(rate) if rate is not None else None, vat_registered=proof['vat_registered'], vat_rate=proof['vat_rate'], vat_source=proof['vat_source'], vat_notice=proof['vat_notice'])
                     base = Decimal(proof['commission_base'])
                     line.update(base_amount=str(base), vat_number=proof.get('vat_number'), amount=str(money(base * Decimal(str(rate)) / 100)) if rate is not None else None)

@@ -20,7 +20,7 @@ export default function StaffCommissionOverview({ employeeId, franchiseId, refre
     if (!/^\d{4}-\d{2}$/.test(month)) return undefined
     let active = true
     setRows([]); setLoading(true); setError('')
-    const load = () => getCommissionEntries(filters).then(data => { if (active) { setRows(data.items); setError(''); setLoading(false) } }).catch(e => { if (active) { setError(e.message); setLoading(false) } })
+    const load = () => getCommissionEntries(filters).then(data => { if (active) { setRows([...data.items,...(data.pending_imports||[])]); setError(''); setLoading(false) } }).catch(e => { if (active) { setError(e.message); setLoading(false) } })
     load()
     const timer = setInterval(load, 20000)
     return () => { active = false; clearInterval(timer) }
@@ -41,7 +41,7 @@ export default function StaffCommissionOverview({ employeeId, franchiseId, refre
     <p className="muted">Green means the documents match and the invoice is fully paid. Red means uploads or corrections are required.</p>
     {loading ? <p role="status">Loading commissions…</p> : !error && <>
       <div className="claim-validated"><span>Approved total</span><strong>{money(approved)}</strong></div>
-      <div className="claim-blocked commission-awaiting-total"><span>Total awaiting document checks</span><strong>{money(awaitingDocuments)}</strong><p>{blocked.length} submitted claim{blocked.length === 1 ? '' : 's'} awaiting documents or correction. Not approved for payment.</p></div>
+      <div className="claim-blocked commission-awaiting-total"><span>Total awaiting document checks</span><strong>{money(awaitingDocuments)}</strong><p>{blocked.length} commission item{blocked.length === 1 ? '' : 's'} awaiting documents or correction. Includes service claims and calculated removal and invoice commissions. Not approved for payment.</p></div>
     </>}
     {error && <p role="alert" className="error-message">{error}</p>}
     <button type="button" className="glass-button" disabled={busy || loading || !rows.length} onClick={() => run(async () => saveBlob(await downloadCommissionReport(filters), `commissions-${month}.pdf`))}>Download monthly PDF</button>
@@ -50,6 +50,7 @@ export default function StaffCommissionOverview({ employeeId, franchiseId, refre
       const meta = metadata(row), isActive = ['pending', 'approved'].includes(row.status)
       return <article key={row.id} className={isActive ? row.payment_eligible ? 'claim-validated' : 'claim-blocked' : 'commission-closed-claim'}>
         <h3>{commissionLabels[row.commission_type] || row.commission_type.replaceAll('_', ' ')}</h3>
+        {(row.fee_label||meta.fee_label)&&<p>{row.fee_label||meta.fee_label}</p>}
         <strong>{money(row.expected_amount ?? row.calculated_amount)}</strong>
         <p>{row.service_date} · MF {row.reference}</p>
         {row.branch_name && <p>{row.branch_name}</p>}
@@ -60,10 +61,11 @@ export default function StaffCommissionOverview({ employeeId, franchiseId, refre
           <p>Configured {row.commission_type === 'invoice_commission' ? `rate: ${row.applied_rate}%` : row.commission_type === 'overtime' && meta.calculation_type !== 'fixed' ? `overtime multiplier: ${row.applied_rate}×` : `fee: ${money(row.applied_rate)}`}</p>
           {row.commission_type === 'invoice_commission' && row.invoice_value_before_tax != null && <p>Invoice commission base: {money(row.invoice_value_before_tax)}{meta.vat_registered === true ? ' (excluding VAT)' : meta.vat_registered === false ? ' (not VAT registered)' : ''}</p>}
           {meta.claim_deceased && row.notes && <p className="commission-entry-notes">{row.notes}</p>}
-          <button type="button" className="glass-button" disabled={busy} onClick={() => run(async () => saveBlob(await downloadCommissionForm(row.id), `commission-${row.id}.pdf`))}>Download claim PDF</button>
+          {!row.document_estimate&&<><button type="button" className="glass-button" disabled={busy} onClick={() => run(async () => saveBlob(await downloadCommissionForm(row.id), `commission-${row.id}.pdf`))}>Download claim PDF</button>
           <button type="button" className="glass-button" disabled={busy} onClick={() => run(() => onHistory(row))}>Audit history</button>
           {canManage && row.status === 'pending' && Number(row.employee_user_id) !== Number(me.id) && <button type="button" className="glass-button" disabled={busy} onClick={() => onReview(row)}>Review or correct claim</button>}
-          {canManage && !['approved', 'cancelled'].includes(row.status) && <button type="button" className="danger-button" disabled={busy} onClick={() => cancel(row)}>Cancel claim</button>}
+          {canManage && !['approved', 'cancelled'].includes(row.status) && <button type="button" className="danger-button" disabled={busy} onClick={() => cancel(row)}>Cancel claim</button>}</>}
+          {row.document_estimate&&<p>Calculated from the saved {row.commission_type==='invoice_commission'?'invoice and allocated staff':'Mortuary Book'}. Correct the source document or commission permissions to change this estimate. Included in the monthly PDF.</p>}
         </details>
       </article>
     })}</div>
