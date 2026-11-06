@@ -82,7 +82,7 @@ def test_editing_one_branch_preserves_other_branch_permissions(database):
     values['101']['enabled_types']=[]
     api.save_options(api.OptionIn(employee_user_id=11,commission_branches=values),OWNER,database)
     updated=branch_options(database,2,11)
-    assert '101' not in updated
+    assert updated['101']['enabled_types']==[]
     assert set(updated['102']['enabled_types'])=={'removals','invoice_commission'}
     with pytest.raises(HTTPException):
         api.save_options(api.OptionIn(employee_user_id=11,commission_branches={900:{'enabled_types':['removals']}}),OWNER,database)

@@ -12,6 +12,8 @@ class FakeInspector:
         return list(schema_guard.REQUIRED_TABLES)
 
     def get_columns(self, table_name):
+        if table_name == 'commission_documents':
+            return [{'name':name} for name in ('deleted_at','deleted_by_user_id','deletion_reason')]
         if table_name == "users":
             return [
                 {"name": "id", "nullable": False},

@@ -131,3 +131,5 @@ app.include_router(commission.router, prefix="/api/commission", tags=["commissio
 app.include_router(mortuary.router, prefix="/api/mortuary", tags=["mortuary-book"])
 
 app.include_router(receipt_commissions.router, prefix="/api/receipt-commissions", tags=["receipt-commissions"])
+from app.api import commission_documents
+app.include_router(commission_documents.router, prefix="/api/commission-documents", tags=["commission-documents"])

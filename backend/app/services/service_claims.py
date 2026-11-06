@@ -12,10 +12,14 @@ from app.services.external_commissions import permission_branch, is_external, ou
 MANUAL_TYPES = {'grave_service', 'full_funeral_service', 'cremation_service', 'church_service', 'joinings', 'overtime'}
 
 
-def fixed_rate(db, fid, uid, category, role):
+def fixed_rate(db, fid, uid, category, role, branch_id=None):
     from app.api.mortuary import policy_map, effective_policy
     key = f'{role}_{"other_branch" if category == "service_other_branch" else category}'
     rate = effective_policy(policy_map(db, fid), uid)['rates'].get(key)
+    if branch_id:
+        from app.services.receipt_commissions import effective_branch_rates
+        own=effective_branch_rates(db,fid,uid,permission_branch(db,fid,uid,branch_id)).get(key)
+        if own is not None: rate=own
     if rate is None and category in MANUAL_TYPES - {'overtime'}:
         row = db.execute(text('SELECT rate FROM commission_structures WHERE franchise_user_id=:fid AND commission_type=:type AND is_active=TRUE'), {'fid': fid, 'type': category}).mappings().first()
         rate = row['rate'] if row else None
@@ -43,7 +47,7 @@ def surcharge_line(db, user, fid, uid, role, branch_id, proof, day, reference):
     existing = db.execute(text("SELECT id FROM commission_entries WHERE franchise_user_id=:fid AND employee_user_id=:uid AND commission_type='service_other_branch' AND invoice_document_id=:invoice AND status<>'cancelled'"), {'fid': fid, 'uid': uid, 'invoice': proof['invoice_document_id']}).scalar()
     if existing:
         return None
-    rate = fixed_rate(db, fid, uid, category, role)
+    rate = fixed_rate(db, fid, uid, category, role, branch_id)
     return {**proof, 'mf': mf_key(reference), 'branch': branch, 'reference': reference, 'employee_user_id': uid,
             'category': category, 'earning_branch_id': branch_id, 'service_date': str(day), 'role': role,
             'amount': str(rate), 'rate': str(rate), 'state': 'ready', 'reason': '', 'calculation_type': 'fixed'}
@@ -76,7 +80,7 @@ def calculate_claim(db, user, payload, participant, exclude_id=None):
     if not name:
         raise HTTPException(403, 'Service branch is outside the selected holder’s declared scope.')
     assert_unique_case(db, fid, uid, payload.commission_type, branch, payload.reference, exclude_id)
-    rate = fixed_rate(db, fid, uid, payload.commission_type, payload.commission_role)
+    rate = fixed_rate(db, fid, uid, payload.commission_type, payload.commission_role, branch)
     proof, reason, extra = {}, None, None
     try:
         proof = require_payment_proof(db, fid, branch, payload.reference)
