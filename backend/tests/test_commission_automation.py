@@ -18,7 +18,7 @@ from tests.test_service_claims import STAFF, evidence
 def delivery_db(database):
     for sql in [
         'CREATE TABLE commission_delivery_settings(franchise_user_id INT PRIMARY KEY,recipient_email TEXT,updated_by_user_id INT,updated_at TEXT DEFAULT CURRENT_TIMESTAMP)',
-        "CREATE TABLE commission_monthly_reports(id INTEGER PRIMARY KEY,franchise_user_id INT,month_key TEXT,period_start DATE,period_end DATE,send_on TEXT,recipient_email TEXT,subject TEXT,message TEXT,status TEXT DEFAULT 'scheduled',sent_at TEXT,error_message TEXT,next_attempt_at TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP,UNIQUE(franchise_user_id,month_key))",
+        "CREATE TABLE commission_monthly_reports(id INTEGER PRIMARY KEY,franchise_user_id INT,month_key TEXT,period_start DATE,period_end DATE,send_on TEXT,recipient_email TEXT,subject TEXT,message TEXT,pdf_content BLOB,status TEXT DEFAULT 'scheduled',sent_at TEXT,error_message TEXT,next_attempt_at TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP,UNIQUE(franchise_user_id,month_key))",
         'CREATE TABLE commission_monthly_report_items(entry_id INT PRIMARY KEY,report_id INT)',
     ]:
         database.execute(text(sql))
@@ -77,9 +77,9 @@ def test_changed_name_or_disabled_category_keeps_claim_blocked(database):
 
 def test_default_cycle_and_send_date():
     value = auto.default_report(datetime(2027, 1, 5))
-    assert str(value['period_start']) == '2026-12-25'
+    assert str(value['period_start']) == '2026-12-26'
     assert str(value['period_end']) == '2027-01-25'
-    assert value['send_on'] == datetime(2027, 1, 27, 8)
+    assert value['send_on'] == datetime(2027, 1, 25, 17)
 
 
 def test_holder_can_move_cutoff_and_send_date_staff_cannot(delivery_db):
@@ -98,12 +98,12 @@ def test_monthly_email_is_once_only_and_no_email_before_due(delivery_db, monkeyp
     saved = commission.create_entry(payload(), STAFF, db)
     commission.save_delivery_settings(settings(), OWNER, db)
     sent = []
-    monkeypatch.setattr(email_service, 'send_smtp_email', lambda email, subject, body: (sent.append((email, subject, body)) or ('sent', datetime(2026, 11, 27, 8), None, {})))
+    monkeypatch.setattr(email_service, 'send_smtp_email', lambda email, subject, body, **kwargs: (sent.append((email, subject, body)) or ('sent', datetime(2026, 11, 27, 8), None, {})))
     auto.send_due_reports(db, 2, datetime(2026, 11, 26, 23))
     assert sent == []
     auto.send_due_reports(db, 2, datetime(2026, 11, 27, 8))
     auto.send_due_reports(db, 2, datetime(2026, 11, 28, 8))
-    assert len(sent) == 1 and sent[0][0] == 'finance@example.com'
+    assert len(sent) == 1 and sent[0][0] == auto.FINANCE_RECIPIENTS
     assert 'Ewald Example: R 100.00' in sent[0][2] and f"#{saved['id']}" in sent[0][2]
     assert db.execute(text('SELECT COUNT(*) FROM commission_monthly_report_items')).scalar() == 1
     with pytest.raises(HTTPException, match='already been sent'):
@@ -115,7 +115,7 @@ def test_late_approved_commissions_carry_forward_without_resending_older_entries
     first = commission.create_entry(payload(), STAFF, db)
     commission.save_delivery_settings(settings(), OWNER, db)
     messages = []
-    monkeypatch.setattr(email_service, 'send_smtp_email', lambda email, subject, body: (messages.append(body) or ('sent', datetime(2026, 11, 27, 8), None, {})))
+    monkeypatch.setattr(email_service, 'send_smtp_email', lambda email, subject, body, **kwargs: (messages.append(body) or ('sent', datetime(2026, 11, 27, 8), None, {})))
     auto.send_due_reports(db, 2, datetime(2026, 11, 27, 8))
     from app.services.receipt_commissions import save_branch_options
     db.execute(text("INSERT INTO commission_structures VALUES(2,2,'church_service','Church','fixed',60,NULL,TRUE)"))
@@ -134,7 +134,7 @@ def test_known_email_failure_retries_but_uncertain_delivery_never_auto_resends(d
     commission.create_entry(payload(), STAFF, db)
     commission.save_delivery_settings(settings(), OWNER, db)
     attempts = []
-    def failure(*args):
+    def failure(*args, **kwargs):
         attempts.append(1)
         return 'failed', None, 'SMTP not connected', {}
     monkeypatch.setattr(email_service, 'send_smtp_email', failure)
@@ -142,11 +142,11 @@ def test_known_email_failure_retries_but_uncertain_delivery_never_auto_resends(d
     auto.send_due_reports(db, 2, datetime(2026, 11, 27, 8, 30))
     assert len(attempts) == 1
     assert db.execute(text('SELECT COUNT(*) FROM commission_monthly_report_items')).scalar() == 0
-    monkeypatch.setattr(email_service, 'send_smtp_email', lambda *args: ('failed', None, 'Connection lost during delivery', {'delivery_uncertain': True}))
+    monkeypatch.setattr(email_service, 'send_smtp_email', lambda *args, **kwargs: ('failed', None, 'Connection lost during delivery', {'delivery_uncertain': True}))
     auto.send_due_reports(db, 2, datetime(2026, 11, 27, 9))
     assert db.execute(text('SELECT status FROM commission_monthly_reports')).scalar() == 'uncertain'
     assert db.execute(text('SELECT COUNT(*) FROM commission_monthly_report_items')).scalar() == 1
-    monkeypatch.setattr(email_service, 'send_smtp_email', lambda *args: pytest.fail('Must not resend uncertain delivery'))
+    monkeypatch.setattr(email_service, 'send_smtp_email', lambda *args, **kwargs: pytest.fail('Must not resend uncertain delivery'))
     auto.send_due_reports(db, 2, datetime(2026, 11, 28, 9))
 
 
@@ -158,13 +158,13 @@ def test_staff_can_be_deactivated_and_reactivated_without_requiring_inactive_log
     for table in ['employee_users', 'manager_users', 'users']:
         db.execute(text(f'ALTER TABLE {table} ADD COLUMN updated_at TEXT'))
     db.commit()
-    monkeypatch.setattr(franchise_staff, '_require_staff_manager', lambda *args: None)
-    monkeypatch.setattr(franchise_staff, '_ensure_office_hours_columns', lambda *args: None)
+    monkeypatch.setattr(franchise_staff, '_require_staff_manager', lambda *args, **kwargs: None)
+    monkeypatch.setattr(franchise_staff, '_ensure_office_hours_columns', lambda *args, **kwargs: None)
     monkeypatch.setattr(franchise_staff, '_ensure_staff_identity_unique', lambda *args, **kwargs: None)
-    monkeypatch.setattr(franchise_staff, '_ensure_user_role', lambda *args: None)
-    monkeypatch.setattr(franchise_staff, '_ensure_franchise_exists', lambda *args: None)
-    monkeypatch.setattr(franchise_staff, '_ensure_active_office_assignment', lambda *args: None)
-    monkeypatch.setattr(franchise_staff, '_save_staff_commissions', lambda *args: None)
+    monkeypatch.setattr(franchise_staff, '_ensure_user_role', lambda *args, **kwargs: None)
+    monkeypatch.setattr(franchise_staff, '_ensure_franchise_exists', lambda *args, **kwargs: None)
+    monkeypatch.setattr(franchise_staff, '_ensure_active_office_assignment', lambda *args, **kwargs: None)
+    monkeypatch.setattr(franchise_staff, '_save_staff_commissions', lambda *args, **kwargs: None)
     monkeypatch.setattr(franchise_staff, '_staff_scope_filter', lambda db, user, table, uid: db.execute(text(f'SELECT * FROM {table} WHERE id=:id'), {'id': uid}).mappings().one())
     fn = franchise_staff.update_employee if kind == 'employee' else franchise_staff.update_manager
     model = franchise_staff.UpdateEmployeeRequest if kind == 'employee' else franchise_staff.UpdateManagerRequest

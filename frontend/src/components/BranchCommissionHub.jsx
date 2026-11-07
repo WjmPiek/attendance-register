@@ -43,7 +43,7 @@ export default function BranchCommissionHub({ franchiseId, branchId = '', onBran
     setEarnings(null); setEarningsError('')
     if (!/^\d{4}-\d{2}$/.test(month)) return undefined
     const [year, number] = month.split('-').map(Number)
-    const loadEarnings = () => getCommissionEntries({ franchiseUserId: franchiseId, fromDate: `${month}-01`, toDate: new Date(Date.UTC(year, number, 0)).toISOString().slice(0, 10) })
+    const loadEarnings = () => getCommissionEntries({ franchiseUserId: franchiseId, fromDate: new Date(Date.UTC(year, number - 2, 26)).toISOString().slice(0, 10), toDate: `${month}-25` })
       .then(result => { if (active) { setEarnings([...result.items,...(result.pending_imports||[])]); setEarningsError('') } })
       .catch(e => { if (active) setEarningsError(e.message) })
     loadEarnings()
@@ -128,3 +128,4 @@ export default function BranchCommissionHub({ franchiseId, branchId = '', onBran
     </section>)}
   </section>
 }
+

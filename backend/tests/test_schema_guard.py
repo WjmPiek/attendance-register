@@ -12,6 +12,8 @@ class FakeInspector:
         return list(schema_guard.REQUIRED_TABLES)
 
     def get_columns(self, table_name):
+        if table_name == 'commission_monthly_reports':
+            return [{'name':'pdf_content'}]
         if table_name == 'commission_documents':
             return [{'name':name} for name in ('deleted_at','deleted_by_user_id','deletion_reason')]
         if table_name == "users":
@@ -43,3 +45,4 @@ def test_schema_guard_rejects_missing_attendance_evidence_columns(monkeypatch):
 
     with pytest.raises(RuntimeError, match="Missing attendance evidence columns"):
         schema_guard.assert_operational_schema(object())
+

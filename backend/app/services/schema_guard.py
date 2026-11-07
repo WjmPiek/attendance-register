@@ -29,6 +29,9 @@ def assert_operational_schema(engine) -> None:
     document_columns={column['name'] for column in inspector.get_columns('commission_documents')}
     if not {'deleted_at','deleted_by_user_id','deletion_reason'} <= document_columns:
         raise RuntimeError('Database schema is behind the application. Run `python -m alembic upgrade head` for the document register.')
+    report_columns={column['name'] for column in inspector.get_columns('commission_monthly_reports')}
+    if 'pdf_content' not in report_columns:
+        raise RuntimeError('Database schema is behind the application. Run `python -m alembic upgrade head` for monthly commission PDF statements.')
     user_columns = {column['name']: column for column in inspector.get_columns('users')}
     email_column = user_columns.get('email')
     if email_column and not email_column.get('nullable', False):
@@ -48,3 +51,4 @@ def assert_operational_schema(engine) -> None:
             '`python -m alembic upgrade head`. Missing attendance evidence '
             'columns: ' + ', '.join(missing_attendance)
         )
+

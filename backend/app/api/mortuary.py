@@ -103,6 +103,35 @@ def read_preview(token, uid):
         raise HTTPException(400, 'Import preview expired or invalid. Upload the books again.')
 
 
+class EvidenceIn(BaseModel):
+    preview_token: str = Field(max_length=2000000)
+    confirmed_franchise: bool = False
+
+
+@router.post('/stage')
+def stage_evidence(payload: EvidenceIn, current_user: User = Depends(get_current_user), db: Session = Depends(get_db), background_tasks: BackgroundTasks = None):
+    """Save printed evidence without assigning any commission recipients."""
+    if not payload.confirmed_franchise:
+        raise HTTPException(400, 'Confirm the printed document details first.')
+    source = read_preview(payload.preview_token,current_user.id)
+    fid = import_scope(db,current_user,source['franchise_user_id'])
+    from app.api.receipt_commissions import save_document
+    try:
+        db.execute(text('SELECT pg_advisory_xact_lock(:namespace,:fid)'), {'namespace':15015,'fid':fid})
+        ids, duplicates = [], 0
+        for record in source['records']:
+            doc_id, duplicate = save_document(db,fid,'mortuary',record,[],current_user.id)
+            ids.append(doc_id); duplicates += duplicate
+        db.commit()
+        if background_tasks is not None:
+            from app.services.commission_automation import reconcile_holder
+            background_tasks.add_task(reconcile_holder,fid)
+        return {'document_ids':ids,'saved':len(ids)-duplicates,'duplicates':duplicates,
+                'message':'Books saved under their printed branches. Staff claims are checked automatically; no recipients were selected.'}
+    except Exception:
+        db.rollback(); raise
+
+
 def policy_map(db, fid):
     return {int(r['employee_user_id']): json.loads(r['policy']) for r in db.execute(text(
         'SELECT employee_user_id, policy FROM mortuary_policies WHERE franchise_user_id=:fid'
@@ -176,7 +205,8 @@ def preview(franchise_user_id: int | None = None, external_branch_id: int | None
             try:
                 from app.api.receipt_commissions import check_import_branch
                 item['earning_branch_id'] = check_import_branch(db, fid, item, external_branch_id,expected_branch_id)
-                item['external_branch_id'] = external_branch_id
+                from app.services.external_commissions import is_external
+                item['external_branch_id'] = item['earning_branch_id'] if is_external(db,fid,item['earning_branch_id']) else None
             except HTTPException as exc:
                 errors.append({'filename':filename,'page':item.get('page'),'error':exc.detail});continue
             item.update(filename=filename, source_hash=sha256(data).hexdigest())
@@ -301,3 +331,4 @@ def import_books(payload: ImportIn, current_user: User = Depends(get_current_use
     except Exception:
         db.rollback()
         raise
+

@@ -225,8 +225,6 @@ def require_manual_eligibility(db, participant, category, branch_id=None):
         raise HTTPException(403, 'Employee must belong to an active branch in this holder group.')
     if not enabled(db, participant['franchise_user_id'], participant['user_id'], category):
         raise HTTPException(403, 'This commission category is not enabled for this employee.')
-    if category in {'removals', 'invoice_commission'}:
-        raise HTTPException(400, 'Use the matched Mortuary Book and MF File Receipt imports for this commission category.')
     branch_id = branch_id or home['branch_id']
     from app.services.external_commissions import permission_branch
     scope_branch = permission_branch(db, participant['franchise_user_id'], participant['user_id'], branch_id)
@@ -356,9 +354,10 @@ def payment_eligibility(db, row):
             quote = calculate_claim(db, None, EntryIn(**values), {'user_id': row['employee_user_id'], 'franchise_user_id': row['franchise_user_id']}, exclude_id=row['id'])
             return {'payment_eligible': quote['documents_valid'], 'payment_block_reason': quote['notice'], 'expected_amount': quote['amount'],
                     'expected_additional_fee': quote['additional_fee']['amount'] if quote['additional_fee'] else '0',
-                    'expected_invoice_id': quote['proof'].get('invoice_document_id')}
+                    'expected_invoice_id': quote['proof'].get('invoice_document_id'), 'estimate_available':quote['estimate_available']}
         require_payment_proof(db, row['franchise_user_id'], row.get('earning_branch_id'), row['reference'],
                               row.get('mortuary_document_id'), row.get('receipt_document_id'), row.get('invoice_document_id'))
         return {'payment_eligible': True, 'payment_block_reason': None}
     except HTTPException as exc:
         return {'payment_eligible': False, 'payment_block_reason': exc.detail}
+

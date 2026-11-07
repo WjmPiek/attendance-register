@@ -65,7 +65,7 @@ class ReceiptAllocation(BaseModel):
 
 class StageIn(BaseModel):
     preview_token: str = Field(max_length=2000000)
-    allocations: list[ReceiptAllocation] = Field(max_length=100)
+    allocations: list[ReceiptAllocation] = Field(default_factory=list, max_length=100)
     confirmed_franchise: bool = False
 
 
@@ -160,6 +160,10 @@ def require_branch(db, fid, value, external_branch_id=None):
     if sum(branch_key(b['name']) == branch_key(value) for b in available) > 1:
         raise HTTPException(400, 'Printed branch name is ambiguous within this holder group. Use distinct branch names before importing.')
     if not branch_key(value) or branch_key(value) not in aliases:
+        from app.services.external_commissions import external_branches
+        outside = [b for b in external_branches(db,fid) if branch_key(b['name'])==branch_key(value)]
+        if len(outside)==1:
+            return outside[0]['id']
         raise HTTPException(400, f'Printed franchise "{value}" does not match this franchise profile. Correct the franchise profile or use its own document.')
     return next((b['id'] for b in available if branch_key(b['name'])==branch_key(value)), None)
 
@@ -336,7 +340,8 @@ def preview_invoices(franchise_user_id: int | None = None, external_branch_id: i
             for record in parsed:
                 try:
                     record['earning_branch_id'] = check_import_branch(db, fid, record, external_branch_id,expected_branch_id)
-                    record['external_branch_id'] = external_branch_id
+                    from app.services.external_commissions import is_external
+                    record['external_branch_id'] = record['earning_branch_id'] if is_external(db,fid,record['earning_branch_id']) else None
                 except HTTPException as exc:
                     errors.append({'filename': name, 'page': record['page'], 'error': exc.detail}); continue
                 record.update(filename=name, source_hash=digest); accepted.append(record)
@@ -414,7 +419,8 @@ def preview(franchise_user_id: int | None = None, external_branch_id: int | None
         for record in parsed:
             try:
                 record['earning_branch_id'] = check_import_branch(db, fid, record, external_branch_id,expected_branch_id)
-                record['external_branch_id'] = external_branch_id
+                from app.services.external_commissions import is_external
+                record['external_branch_id'] = record['earning_branch_id'] if is_external(db,fid,record['earning_branch_id']) else None
             except HTTPException as exc:
                 errors.append({'filename': name, 'page': record['page'], 'error': exc.detail}); continue
             record.update(filename=name, source_hash=sha256(content).hexdigest()); records.append(record);accepted.append(record)
@@ -440,6 +446,8 @@ def stage(payload: StageIn, current_user: User = Depends(get_current_user), db: 
         raise HTTPException(400, 'Receipt preview expired or invalid. Upload again.')
     fid = import_scope(db, current_user, source['franchise_user_id'])
     records = source['records']
+    if not payload.allocations:
+        payload = payload.model_copy(update={'allocations':[ReceiptAllocation(record=i,employee_user_ids=[]) for i in range(len(records))]})
     if {a.record for a in payload.allocations} != set(range(len(records))) or len(payload.allocations) != len(records):
         raise HTTPException(400, 'Check the employee selection for each receipt.')
     try:
@@ -701,8 +709,9 @@ def report(month: str, franchise_user_id: int | None = None, branch_id: int | No
     if branch_id and branch_id not in {b['id'] for b in branches(db, fid, False)}:
         raise HTTPException(403, 'Branch is outside this holder group.')
     try:
-        first = datetime.strptime(month, '%Y-%m').date().replace(day=1)
-        last = first.replace(day=monthrange(first.year, first.month)[1])
+        from app.services.commission_automation import default_report
+        period = default_report(datetime.strptime(month, '%Y-%m'))
+        first, last = period['period_start'], period['period_end']
     except ValueError:
         raise HTTPException(400, 'Select a valid report month.')
     rows = _rows(db, current_user, employee_user_id=employee_user_id, from_date=first, to_date=last, status='approved', franchise_user_id=fid)
@@ -736,7 +745,7 @@ def report(month: str, franchise_user_id: int | None = None, branch_id: int | No
                     values = [row['service_date'], f"{row['reference']}\nReceipts: {', '.join(meta.get('receipt_numbers', []))}\n{row.get('branch_name') or ''}", f"{meta.get('deceased') or '—'}\n{meta.get('id_number') or '—'}",
                               f"R {money(meta.get('total_received') or meta['gross_received']):,.2f}" if meta.get('total_received') or meta.get('gross_received') else '—',
                               f"R {money(row['invoice_value_before_tax']):,.2f}" if row.get('invoice_value_before_tax') is not None else '—',
-                              f"{row['applied_rate']}%" if category == 'invoice_commission' else f"{row['applied_rate']}x" if category == 'overtime' else f"R {money(row['applied_rate']):,.2f}", f'R {amount:,.2f}']
+                              f"{row['applied_rate']}%" if category == 'invoice_commission' else f"{row['applied_rate']}x" if category == 'overtime' and meta.get('calculation_type')!='fixed' else f"R {money(row['applied_rate']):,.2f}", f'R {amount:,.2f}']
                     data.append([para(v) for v in values])
                 table = Table(data, colWidths=[20*mm,45*mm,65*mm,32*mm,32*mm,25*mm,32*mm], repeatRows=1, hAlign='LEFT')
                 table.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.HexColor('#eee8f5')),('GRID',(0,0),(-1,-1),.3,colors.HexColor('#ddd5e8')),('VALIGN',(0,0),(-1,-1),'TOP'),('LEFTPADDING',(0,0),(-1,-1),7),('RIGHTPADDING',(0,0),(-1,-1),7),('TOPPADDING',(0,0),(-1,-1),7),('BOTTOMPADDING',(0,0),(-1,-1),7)]))
@@ -750,3 +759,4 @@ def report(month: str, franchise_user_id: int | None = None, branch_id: int | No
     SimpleDocTemplate(stream, pagesize=landscape(A4), leftMargin=14*mm, rightMargin=14*mm, topMargin=14*mm, bottomMargin=14*mm).build(story)
     stream.seek(0)
     return StreamingResponse(stream, media_type='application/pdf', headers={'Content-Disposition': f'attachment; filename="commissions-{month}.pdf"'})
+
