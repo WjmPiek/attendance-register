@@ -92,6 +92,21 @@ def test_disabled_category_cannot_be_claimed(database):
         commission.create_entry(claim(),STAFF,database)
 
 
+def test_disabled_branch_item_and_another_persons_permission_cannot_be_bypassed(database):
+    configure(database)
+    save_branch_options(database,2,11,{101:{'enabled_types':['invoice_commission']},102:{'enabled_types':[]}},1)
+    save_branch_options(database,2,12,{102:{'enabled_types':['church_service']}},1)
+    database.commit()
+    for invalid in [claim(earning_branch_id=102),claim('church_service',earning_branch_id=102,employee_user_id=12)]:
+        with pytest.raises(HTTPException) as quoted:
+            commission.claim_quote(invalid,STAFF,database)
+        assert quoted.value.status_code==403
+        with pytest.raises(HTTPException) as saved:
+            commission.create_entry(invalid,STAFF,database)
+        assert saved.value.status_code==403
+    assert database.execute(text('SELECT COUNT(*) FROM commission_entries')).scalar()==0
+
+
 def test_registered_outside_branch_detected_without_manual_selection(database):
     result=imports.declare_external_branch(imports.ExternalBranchIn(name='Outside Example'),OWNER,database)
     bid=result['id'] if 'id' in result else result['branch_id']

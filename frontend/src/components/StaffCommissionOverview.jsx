@@ -55,7 +55,7 @@ export default function StaffCommissionOverview({ employeeId, franchiseId, refre
         <h3>{commissionLabels[row.commission_type] || row.commission_type.replaceAll('_', ' ')}</h3>
         {(row.fee_label||meta.fee_label)&&<p>{row.fee_label||meta.fee_label}</p>}
         <strong>{row.estimate_available === false ? 'Amount awaiting document checks' : money(row.expected_amount ?? row.calculated_amount)}</strong>
-        <p>{row.service_date} · MF {row.reference}</p>{row.carry_forward_notice && <p className="commission-carry-notice" role="status">{row.carry_forward_notice} {row.payment_eligible ? 'Included in this cycle’s approved total.' : 'Awaiting documents; excluded from approved payment.'}</p>}
+        <p>{row.service_date} · MF {row.reference}</p>{isActive && row.carry_forward_notice && <p className="commission-carry-notice" role="status">{row.carry_forward_notice} {row.status === 'approved' && row.payment_eligible ? 'Included in this cycle’s approved total.' : row.payment_eligible ? 'Documents verified; awaiting automatic approval.' : 'Awaiting documents; excluded from approved payment.'}</p>}
         {row.branch_name && <p>{row.branch_name}</p>}
         <p>{!isActive ? row.status === 'cancelled' ? 'Cancelled' : 'Rejected' : !row.payment_eligible ? `Document uploads or corrections required: ${row.payment_block_reason}` : row.status === 'approved' ? meta.automatic_approval ? 'Automatically approved' : 'Approved' : 'Documents validated — automatic approval queued'}</p>
         <details className="commission-entry-details"><summary>Details and documents</summary>
