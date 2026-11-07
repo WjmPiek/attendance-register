@@ -1,5 +1,6 @@
 import {setStaffBranchId} from './api/branchContext'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { usesStaffPortal } from './utils/staff-portal.mjs'
 import { getCoreEntities, getMe, getRoles, login } from './api/client'
 import { AUTH_INVALID_EVENT, getAccessToken, setAccessToken } from './api/authSession'
 import LoginPage from './pages/LoginPage'
@@ -27,6 +28,7 @@ export default function App() {
   const [me, setMe] = useState(null)
   const [roles, setRoles] = useState([])
   const [entities, setEntities] = useState([])
+  const freshLogin = useRef(false)
 
   useEffect(() => {
     if (!embedded) return undefined
@@ -86,6 +88,14 @@ export default function App() {
     const load = async () => {
       try {
         const meData = await getMe()
+        if (freshLogin.current && usesStaffPortal(meData)) {
+          const url = new URL(window.location.href)
+          if (!url.searchParams.has('office_qr')) {
+            url.searchParams.delete('staff_portal_page'); url.searchParams.delete('staff_page'); url.searchParams.delete('tab')
+            window.history.replaceState({}, '', url)
+          }
+        }
+        freshLogin.current = false
         setMe(meData)
 
         // Admin metadata is optional. Employee/Manager accounts must not be
@@ -116,6 +126,7 @@ export default function App() {
     setError('')
     try {
       const data = await login(loginName, password)
+      freshLogin.current = true
       setAccessToken(data.access_token)
       setToken(data.access_token)
     } catch (err) {
@@ -126,6 +137,7 @@ export default function App() {
   }
 
   const handleLogout = () => {
+    freshLogin.current = false
     setAccessToken(null)
     setToken(null)
     setMe(null)

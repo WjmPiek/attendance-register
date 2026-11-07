@@ -209,11 +209,14 @@ def _scope_where(db: Session, current_user: User):
 
 
 @router.get('/applications')
-def list_leave_applications(status: str = '', current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def list_leave_applications(status: str = '', current_user: User = Depends(get_current_user), db: Session = Depends(get_db), own_only: bool = False, include_past: bool = False):
     _ensure_tables(db)
     where, params = _scope_where(db, current_user)
     # Hide leave records once their leave period has ended.
-    where += ' AND la.end_date >= :today'
+    if not include_past:
+        where += ' AND la.end_date >= :today'
+    if own_only:
+        where += ' AND la.applicant_user_id = :current_uid'
     params['today'] = now_sa_naive().date()
     params['current_uid'] = current_user.id
     if status:
@@ -224,17 +227,30 @@ def list_leave_applications(status: str = '', current_user: User = Depends(get_c
                COALESCE(e.name, m.name, u.full_name) AS name,
                COALESCE(e.surname, m.surname, '') AS surname,
                COALESCE(e.employee_role, CASE WHEN m.id IS NOT NULL THEN 'Manager' ELSE 'Employee' END) AS role,
-               (la.end_date + INTERVAL '1 day')::date AS return_date
+               COALESCE(e.work_week,m.work_week) AS _work_week,
+               COALESCE(e.work_start_time,m.work_start_time) AS _work_start,
+               COALESCE(e.work_end_time,m.work_end_time) AS _work_end
         FROM leave_applications la
         JOIN users u ON u.id = la.applicant_user_id AND COALESCE(u.is_active, TRUE) = TRUE
         LEFT JOIN employee_users e ON e.user_id = la.applicant_user_id AND COALESCE(e.is_active, TRUE) = TRUE
         LEFT JOIN manager_users m ON m.user_id = la.applicant_user_id AND COALESCE(m.is_active, TRUE) = TRUE
         WHERE {where}
           AND (e.id IS NOT NULL OR m.id IS NOT NULL OR la.applicant_user_id = :current_uid)
-        ORDER BY la.start_date ASC, la.end_date ASC, la.created_at DESC
+        ORDER BY la.start_date {'DESC' if include_past else 'ASC'}, la.end_date ASC, la.created_at DESC
         LIMIT 500
     '''), params).mappings().all()
-    return [dict(r) for r in rows]
+    from app.services.leave_calendar import return_to_work
+    approved={}
+    for row in rows:
+        if row['status']=='approved':
+            approved.setdefault(row['applicant_user_id'],[]).append((row['start_date'],row['end_date']))
+    result=[]
+    for row in rows:
+        item=dict(row)
+        staff={'work_week':item.pop('_work_week'),'work_start_time':item.pop('_work_start'),'work_end_time':item.pop('_work_end')}
+        item['return_date']=return_to_work(row['end_date'],staff,approved.get(row['applicant_user_id'],[]))
+        result.append(item)
+    return result
 
 
 def _can_decide(db: Session, current_user: User, app: dict) -> bool:
