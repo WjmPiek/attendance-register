@@ -7,6 +7,7 @@ startup and provides one actionable error when a deployment is behind.
 from sqlalchemy import inspect
 
 REQUIRED_TABLES = {
+    'commission_carry_forwards',
     'employee_commission_branch_overrides',
     'commission_document_files', 'external_commission_branches', 'commission_delivery_settings', 'commission_monthly_reports', 'commission_monthly_report_items',
     'users', 'roles', 'user_roles', 'franchise_users', 'manager_users',

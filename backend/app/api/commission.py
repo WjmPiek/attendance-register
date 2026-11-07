@@ -408,6 +408,9 @@ def create_entry(payload: EntryIn, current_user: User = Depends(get_current_user
         _notify(db, uid, 'Commission automatically approved', f"MF {payload.reference}: documents match and the invoice is fully paid.", row['id'], 'success')
         if quote['additional_fee']:
             insert_surcharge(db, current_user, quote['additional_fee'])
+    from app.services.commission_carry_forward import carry_after_cutoff
+    carry_after_cutoff(db,fid,{**dict(row),'payment_eligible':quote['documents_valid'],
+        'estimate_available':quote['estimate_available'],'expected_amount':quote['amount'],'payment_block_reason':quote['notice']})
     db.commit()
     return {**dict(row), 'documents_valid': quote['documents_valid'], 'notice': quote['notice']}
 
@@ -451,9 +454,11 @@ def _rows(db, user, employee_user_id=None, from_date=None, to_date=None, status=
     if earning_branch_id:
         where.append("c.earning_branch_id=:earning_branch"); params["earning_branch"] = earning_branch_id
     if from_date:
-        where.append("c.service_date>=:fd"); params["fd"] = from_date
+        from app.services.commission_carry_forward import EARNING_DATE_SQL
+        where.append(EARNING_DATE_SQL+">=:fd"); params["fd"] = from_date
     if to_date:
-        where.append("c.service_date<=:td"); params["td"] = to_date
+        from app.services.commission_carry_forward import EARNING_DATE_SQL
+        where.append(EARNING_DATE_SQL+"<=:td"); params["td"] = to_date
     if status:
         where.append("c.status=:status"); params["status"] = status
     if search:
@@ -468,9 +473,10 @@ def _rows(db, user, employee_user_id=None, from_date=None, to_date=None, status=
       WHERE {' AND '.join(where)} ORDER BY CASE WHEN c.status='pending' THEN 0 ELSE 1 END,c.service_date DESC,c.id DESC"""), params).mappings().all()
     from app.services.receipt_commissions import payment_eligibility
     result = []
+    from app.services.commission_carry_forward import carry_info
     for row in rows:
         meta = json.loads(row.get('source_metadata') or '{}')
-        result.append({**dict(row), **payment_eligibility(db, row), 'claim_deceased': meta.get('claim_deceased'), 'commission_role': meta.get('commission_role', 'driver')})
+        result.append({**dict(row), **payment_eligibility(db, row), **carry_info(db,row['id']), 'claim_deceased': meta.get('claim_deceased'), 'commission_role': meta.get('commission_role', 'driver')})
     return result
 
 @router.get('/entries')
@@ -544,7 +550,15 @@ def _review_service(entry_id, payload, user, db, automatic=False):
         _audit(db, entry_id, 'service_claim_auto_approved' if automatic else 'service_claim_approved', user.id, old=dict(old), new=dict(updated), note=payload.review_notes)
         if quote['additional_fee']:
             insert_surcharge(db, user, quote['additional_fee'])
-    _notify(db, int(old['employee_user_id']), 'Commission automatically approved' if automatic else 'Service claim reviewed', f'MF {payload.reference}: {payload.status}.', entry_id, 'success' if payload.status == 'approved' else 'warning')
+    from app.services.commission_carry_forward import carry_info, carry_after_cutoff
+    if payload.status=='approved':
+        carry_after_cutoff(db,old['franchise_user_id'],{**dict(updated),'payment_eligible':True})
+    carry=carry_info(db,entry_id)
+    message=f'MF {payload.reference}: {payload.status}.'
+    if carry:
+        message += ' '+carry['carry_forward_notice']
+        if payload.status=='approved': message += ' The verified amount is included in that cycle’s approved commission total.'
+    _notify(db, int(old['employee_user_id']), 'Commission automatically approved' if automatic else 'Service claim reviewed', message, entry_id, 'success' if payload.status == 'approved' else 'warning')
     return dict(db.execute(text('SELECT * FROM commission_entries WHERE id=:id'), {'id': entry_id}).mappings().one())
 
 
@@ -624,6 +638,8 @@ def _pdf(rows,title):
         if r['status']=='approved' and r.get('payment_eligible'): total+=amount
         metadata = json.loads(r.get('source_metadata') or '{}')
         details=f"{r['hours']} hrs x R{r['hourly_rate']} x {r['applied_rate']}" if r['commission_type']=='overtime' and metadata.get('calculation_type') != 'fixed' else (f"Invoice R{r['invoice_value_before_tax']} @ {r['applied_rate']}%" if r['commission_type']=='invoice_commission' else f"Qty {r['quantity']} @ R{r['applied_rate']}")
+        if r.get('carry_forward_notice'):
+            details += ' / '+r['carry_forward_notice']
         if metadata.get('claim_deceased'):
             details += f" / {metadata['claim_deceased']} / {'Assistant' if metadata.get('commission_role') == 'assistant' else 'Employee'}"
         data.append([str(r['service_date']),r.get('employee_name',''),r['commission_type'].replace('_',' ').title(),(r['reference'] or '') + (' / ' + r['branch_name'] if r.get('branch_name') else ''),('Blocked: documents required' if r['status'] in {'approved','pending'} and not r.get('payment_eligible') else r['status'].title()),details,f"R {amount:,.2f}"])

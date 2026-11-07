@@ -138,6 +138,11 @@ def database(monkeypatch):
     connection.close()
     with Session(engine) as db:
         schemas = [
+            "CREATE TABLE commission_monthly_reports(id INTEGER PRIMARY KEY,franchise_user_id INT,month_key TEXT,period_start DATE,period_end DATE,send_on TEXT,recipient_email TEXT,subject TEXT,message TEXT,pdf_content BLOB,status TEXT DEFAULT 'scheduled',sent_at TEXT,error_message TEXT,next_attempt_at TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP,UNIQUE(franchise_user_id,month_key))",
+            'CREATE TABLE commission_monthly_report_items(entry_id INT PRIMARY KEY,report_id INT)',
+            '''CREATE TABLE commission_carry_forwards(entry_id INT,source_report_id INT,source_month TEXT,target_month TEXT,
+                target_start DATE,target_end DATE,estimated_amount NUMERIC,reason TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY(entry_id,source_report_id))''',
             'CREATE TABLE mortuary_policies(franchise_user_id INT,employee_user_id INT,policy TEXT,updated_by_user_id INT,updated_at TEXT DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(franchise_user_id,employee_user_id))',
             '''CREATE TABLE commission_entries(id INTEGER PRIMARY KEY,franchise_user_id INT,employee_user_id INT,commission_type TEXT,service_date DATE,reference TEXT,quantity NUMERIC,applied_rate NUMERIC,calculated_amount NUMERIC,notes TEXT,branch_name TEXT,created_by_user_id INT,status TEXT,submitted_at TEXT,reviewed_at TEXT,reviewed_by_user_id INT,last_edited_by_user_id INT,is_cancelled BOOLEAN DEFAULT FALSE)''',
             '''CREATE TABLE mortuary_import_allocations(id INTEGER PRIMARY KEY,franchise_user_id INT,employee_user_id INT,branch_key TEXT,reference_key TEXT,entry_id INT,source_hash TEXT,source_filename TEXT,source_page INT,removal_role TEXT,date_in DATE,time_in TEXT,fee_band TEXT,UNIQUE(franchise_user_id,employee_user_id,branch_key,reference_key))''',
@@ -321,3 +326,4 @@ def test_staff_scope_rejects_employees_managers_and_foreign_franchises(monkeypat
     with pytest.raises(HTTPException) as exc:
         franchise_staff._staff_franchise_id(None, SimpleNamespace(id=1), 99)
     assert exc.value.status_code == 403
+

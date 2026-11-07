@@ -1,9 +1,9 @@
+import { useCommissionMonth } from '../utils/useCommissionMonth'
 import { useEffect, useState } from 'react'
 import { apiRequest, apiBlob } from '../api/client'
 
-const currentMonth = () => new Date(Date.now() + 7200000).toISOString().slice(0, 7)
 export default function CommissionDeliverySettings({ franchiseId }) {
-  const [month, setMonth] = useState(currentMonth), [data, setData] = useState(null), [form, setForm] = useState(null)
+  const [month, setMonth] = useCommissionMonth(), [data, setData] = useState(null), [form, setForm] = useState(null)
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState('')
   const load = async () => {
     const query = new URLSearchParams({ month })

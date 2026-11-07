@@ -742,7 +742,7 @@ def report(month: str, franchise_user_id: int | None = None, branch_id: int | No
                 subtotal = Decimal(0)
                 for row, meta in entries:
                     amount = money(row['calculated_amount']); subtotal += amount
-                    values = [row['service_date'], f"{row['reference']}\nReceipts: {', '.join(meta.get('receipt_numbers', []))}\n{row.get('branch_name') or ''}", f"{meta.get('deceased') or '—'}\n{meta.get('id_number') or '—'}",
+                    values = [row['service_date'], f"{row['reference']}\n{row.get('carry_forward_notice') or ''}\nReceipts: {', '.join(meta.get('receipt_numbers', []))}\n{row.get('branch_name') or ''}", f"{meta.get('deceased') or '—'}\n{meta.get('id_number') or '—'}",
                               f"R {money(meta.get('total_received') or meta['gross_received']):,.2f}" if meta.get('total_received') or meta.get('gross_received') else '—',
                               f"R {money(row['invoice_value_before_tax']):,.2f}" if row.get('invoice_value_before_tax') is not None else '—',
                               f"{row['applied_rate']}%" if category == 'invoice_commission' else f"{row['applied_rate']}x" if category == 'overtime' and meta.get('calculation_type')!='fixed' else f"R {money(row['applied_rate']):,.2f}", f'R {amount:,.2f}']

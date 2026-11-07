@@ -21,7 +21,7 @@ def delivery_db(database):
         "CREATE TABLE commission_monthly_reports(id INTEGER PRIMARY KEY,franchise_user_id INT,month_key TEXT,period_start DATE,period_end DATE,send_on TEXT,recipient_email TEXT,subject TEXT,message TEXT,pdf_content BLOB,status TEXT DEFAULT 'scheduled',sent_at TEXT,error_message TEXT,next_attempt_at TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP,UNIQUE(franchise_user_id,month_key))",
         'CREATE TABLE commission_monthly_report_items(entry_id INT PRIMARY KEY,report_id INT)',
     ]:
-        database.execute(text(sql))
+        database.execute(text(sql.replace('CREATE TABLE ','CREATE TABLE IF NOT EXISTS ')))
     database.commit()
     return database
 

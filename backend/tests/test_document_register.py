@@ -86,6 +86,50 @@ def test_south_african_month_boundary_is_respected(database):
     assert client.get('/api/commission-documents?month=2026-10').json()['total']==0
 
 
+def test_mf_folder_opens_all_months_and_one_card_never_splits_between_pages(database):
+    partial(database,amount='1150.00')
+    database.execute(text("UPDATE commission_documents SET created_at='2026-10-01 08:00:00' WHERE kind='invoice'"));database.commit()
+    client,_=client_for(database)
+    listing=client.get('/api/commission-documents?month=2026-11&limit=1').json()
+    assert listing['case_total']==1 and len(listing['cases'])==1
+    case=listing['cases'][0]
+    assert case['ready'] and case['document_counts']=={'mortuary':1,'invoice':1,'receipt':1}
+    opened=client.get('/api/commission-documents/case',params={'branch_id':101,'mf':case['mf']})
+    assert opened.status_code==200
+    assert {d['kind'] for d in opened.json()['documents']}=={'mortuary','invoice','receipt'}
+    assert opened.json()['case']['ready']
+    assert client.get('/api/commission-documents?month=2026-11&limit=1&offset=1').json()['cases']==[]
+    assert client.get('/api/commission-documents/case?branch_id=900&mf=TEST-1315').status_code==403
+
+
+def test_mf_folder_is_not_complete_when_unpaid_or_archived_and_checks_access(database):
+    did=partial(database)
+    client,identity=client_for(database)
+    result=client.get('/api/commission-documents/case?branch_id=101&mf=TEST-1315').json()
+    assert not result['case']['ready'] and Decimal(result['case']['balance'])==650
+    client.post(f'/api/commission-documents/{did}/archive',json={'reason':'Wrong receipt'})
+    result=client.get('/api/commission-documents/case?branch_id=101&mf=TEST-1315').json()
+    assert len(result['documents'])==2 and not result['case']['ready']
+    archived=client.get('/api/commission-documents/case?branch_id=101&mf=TEST-1315&include_deleted=true').json()
+    assert len(archived['documents'])==3 and sum(bool(d['deleted_at']) for d in archived['documents'])==1
+    identity['id']=12
+    assert client.get('/api/commission-documents/case?branch_id=101&mf=TEST-1315').status_code==403
+
+
+def test_same_mf_number_at_two_branches_has_separate_cards_and_evidence(database):
+    partial(database,amount='1150.00')
+    receipts.save_document(database,2,'mortuary',dict(record(),branch='EXAMPLE SOUTH'),[],1)
+    database.commit()
+    client,_=client_for(database)
+    listing=client.get('/api/commission-documents?month=2026-11').json()
+    assert listing['case_total']==2
+    assert {c['branch_id'] for c in listing['cases']}=={101,102}
+    home=client.get('/api/commission-documents/case?branch_id=101&mf=TEST-1315').json()
+    other=client.get('/api/commission-documents/case?branch_id=102&mf=TEST-1315').json()
+    assert home['case']['ready'] and len(home['documents'])==3
+    assert not other['case']['ready'] and len(other['documents'])==1
+
+
 def test_nominated_uploader_can_view_delete_and_restore_but_other_staff_cannot(database):
     did=partial(database);client,identity=client_for(database)
     identity['id']=11
