@@ -157,6 +157,11 @@ def start_automation():
         scheduler.add_job(run_automation, 'interval', seconds=60, id='commission-reconciliation', max_instances=1,
                           coalesce=True, replace_existing=True, next_run_time=now_sa_naive() + timedelta(seconds=5))
         scheduler.start()
+        from app.services.email_service import get_email_config
+        # Operational confirmation without logging credentials or recipient data.
+        logging.getLogger('uvicorn.error').info(
+            'Commission automation started: reconciliation every 60 seconds; default PDF delivery on the 25th at 17:00 SA; SMTP configured=%s',
+            get_email_config().configured)
 
 
 def stop_automation():
