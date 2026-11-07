@@ -161,3 +161,15 @@
 .commission-branch-hub .branch-staff-actions > button { width:100%!important; max-width:none; min-width:0; box-sizing:border-box; white-space:normal; }
 @media(max-width:1100px) { .commission-branch-hub .branch-staff-row { grid-template-columns:minmax(0,1fr); } }
 @media(max-width:600px) { .branch-staff-actions { grid-template-columns:minmax(0,1fr); } .staff-commission-page { gap:18px; } }
+
+
+.commission-case-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr)); gap:18px; margin-top:20px; }
+.commission-document-register .commission-case-card { width:100%; min-width:0; display:flex; flex-direction:column; align-items:flex-start; gap:12px; padding:22px; border:1px solid #dcd5e8; border-radius:16px; background:#fff; color:#26213a; font:inherit; font-weight:400; line-height:1.5; white-space:normal; overflow-wrap:anywhere; text-align:left; cursor:pointer; box-shadow:0 5px 18px #38215208; }
+.commission-document-register .commission-case-card:hover { border-color:#72519e; background:#fcfaff; }
+.commission-document-register .commission-case-card:focus-visible { outline:3px solid #9278ba; outline-offset:3px; }
+.commission-case-title { color:#69499b; font-size:15px; letter-spacing:2px; text-transform:uppercase; }
+.commission-file-status { display:inline-block; padding:9px 14px; border-radius:10px; font-weight:600; }
+.commission-file-status.complete { background:#e9fbef; color:#146c3b; border:1px solid #86d5a3; }
+.commission-file-status.incomplete { background:#fff0f2; color:#a5223c; border:1px solid #efa2af; }
+.commission-case-link { color:#69499b; margin-top:auto; }
+.commission-carry-notice { padding:12px 14px; border-radius:10px; background:#f3edf9; color:#69499b; border:1px solid #d9c9eb; }

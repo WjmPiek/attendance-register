@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 
 export const staffPages = [
-  { id: 'documents', title: 'Commission documents', description: 'Monthly uploads, payment balances, document corrections and activity log.' },
+  { id: 'documents', title: 'Commission Documents', description: 'Open branch and MF File folders. Green Complete or red Not Complete document checks.' },
   { id: 'proof', title: 'Upload proof', description: 'Import the compulsory service and payment documents.' },
   { id: 'branches', title: 'All Branches & Commissions', description: 'Staff, commission permissions and reports for every linked branch.' },
   { id: 'invoices', title: 'MF Invoice', description: 'Import and download the original service invoice.' },
@@ -39,3 +39,4 @@ export function useStaffNavigation(tab = 'staff') {
   useEffect(() => { window.scrollTo(0, 0) }, [route.page, route.action, route.employee, route.branch])
   return [route, navigate]
 }
+

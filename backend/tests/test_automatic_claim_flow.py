@@ -152,7 +152,7 @@ def test_automatic_monthly_pdf_uses_both_recipients_without_settings(delivery_db
     assert 'PENDING - NOT APPROVED FOR PAYMENT' in content and 'MISSING' in content
     assert 'MF File Receipts' in content and 'EXAMPLE' in content
     assert 'Approved totals by manager / employee - all service branches' in content
-    report=db.execute(text('SELECT * FROM commission_monthly_reports')).mappings().one()
+    report=db.execute(text("SELECT * FROM commission_monthly_reports WHERE month_key='2026-11'")).mappings().one()
     assert report['pdf_content']==pdf
     assert str(report['period_start'])=='2026-10-26'
     assert commission.monthly_statement(report['id'],current_user=OWNER,db=db).body==pdf

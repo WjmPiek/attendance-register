@@ -91,6 +91,7 @@ def statement_pdf(rows, pending, report):
         values=[['Claim / date','Branch / person','Category / MF file','Amount']]
         for row in rows:
             earlier=' | Earlier-period adjustment' if str(row['service_date'])<str(report['period_start']) else ''
+            if row.get('carry_forward_notice'): earlier += ' | '+row['carry_forward_notice']
             values.append([f"#{row['id']} | {row['service_date']}{earlier}",f"{row.get('service_branch') or row.get('branch_name') or ''} | {row['employee_name']}",f"{category_label(row)} | MF {row['reference']}",money(row['calculated_amount'])])
         story.append(table(values,[38,55,53,30]))
     if pending: story.append(PageBreak())
@@ -98,7 +99,9 @@ def statement_pdf(rows, pending, report):
     if pending:
         values=[['Branch / person','Category / MF file','Estimate','Required action']]
         for row in pending:
-            values.append([f"{row.get('service_branch') or row.get('branch_name') or ''} | {row['employee_name']}",f"{category_label(row)} | MF {row['reference']}",'Awaiting documents' if row.get('estimate_available') is False else money(row.get('expected_amount',row['calculated_amount'])),row.get('payment_block_reason') or 'Awaiting automatic validation'])
+            reason=row.get('payment_block_reason') or 'Awaiting automatic validation'
+            if row.get('carry_forward_notice'): reason += ' '+row['carry_forward_notice']
+            values.append([f"{row.get('service_branch') or row.get('branch_name') or ''} | {row['employee_name']}",f"{category_label(row)} | MF {row['reference']}",'Awaiting documents' if row.get('estimate_available') is False else money(row.get('expected_amount',row['calculated_amount'])),reason])
         story.append(table(values,[47,47,27,55]))
     else: story.append(p('No pending claims for this cutoff.'))
     story += [Spacer(1,5*mm),p(f"Use report #{report['id']} as the unique finance processing reference. Do not process the same report twice.")]

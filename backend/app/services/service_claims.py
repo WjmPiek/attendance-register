@@ -64,6 +64,8 @@ def insert_surcharge(db, user, line):
         {'fid': fid, 'uid': line['employee_user_id'], 'day': line['service_date'], 'ref': line['reference'], 'rate': Decimal(line['rate']), 'branch': line['branch'], 'actor': user.id,
          'book': line['mortuary_document_id'], 'receipt': line['receipt_document_id'], 'invoice': line['invoice_document_id'], 'meta': json.dumps(line, default=str), 'bid': line['earning_branch_id']}).mappings().first()
     _audit(db, row['id'], 'external_branch_additional_fee', user.id, new=dict(row))
+    from app.services.commission_carry_forward import carry_after_cutoff
+    carry_after_cutoff(db,fid,{**dict(row),'payment_eligible':True})
     _notify(db, line['employee_user_id'], 'Outside branch commission approved', f"Additional fee for MF {line['reference']}.", row['id'], 'success')
     return row['id']
 

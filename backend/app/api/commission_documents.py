@@ -57,7 +57,11 @@ def register(month: str = Query(pattern=r'^\d{4}-(0[1-9]|1[0-2])$'), branch_id: 
     where=''' FROM commission_documents d WHERE d.franchise_user_id=:fid AND d.created_at>=:first AND d.created_at<:last '''+(' AND d.deleted_at IS NULL ' if not include_deleted else '')+(' AND d.branch_key=:branch ' if branch_id else '')
     params={'fid':fid,'first':first,'last':last,'branch':key,'limit':limit,'offset':offset}
     total=db.execute(text('SELECT COUNT(*)'+where),params).scalar()
-    rows=db.execute(text('SELECT d.*'+where+' ORDER BY d.created_at DESC,d.id DESC LIMIT :limit OFFSET :offset'),params).mappings().all()
+    groups='SELECT d.branch_key,d.mf_key'+where+' GROUP BY d.branch_key,d.mf_key'
+    case_total=db.execute(text('SELECT COUNT(*) FROM ('+groups+') grouped_cases'),params).scalar()
+    keys=db.execute(text(groups+' ORDER BY MAX(d.created_at) DESC,MAX(d.id) DESC LIMIT :limit OFFSET :offset'),params).all()
+    rows=db.execute(text('SELECT d.*'+where+' AND (d.branch_key,d.mf_key) IN :cases ORDER BY d.created_at DESC,d.id DESC').bindparams(bindparam('cases',expanding=True)),
+                    {**params,'cases':[tuple(key) for key in keys]}).mappings().all() if keys else []
     cases=[]
     for bk,mf in sorted({(r['branch_key'],r['mf_key']) for r in rows}):
         docs=db.execute(text('SELECT * FROM commission_documents WHERE franchise_user_id=:fid AND branch_key=:branch AND mf_key=:mf AND deleted_at IS NULL ORDER BY id'), {'fid':fid,'branch':bk,'mf':mf}).mappings().all()
@@ -71,15 +75,51 @@ def register(month: str = Query(pattern=r'^\d{4}-(0[1-9]|1[0-2])$'), branch_id: 
             except HTTPException as exc: reason=exc.detail
         source=json.loads(next(r for r in rows if r['branch_key']==bk and r['mf_key']==mf)['source_data'])
         cases.append({'branch_id':b['id'] if b else None,'branch':b['name'] if b else source.get('branch',bk),'mf':mf,
-                      'deceased':source.get('deceased'),'invoice_total':str(invoice_total) if invoice_total is not None else None,
+                      'document_counts':{kind:sum(d['kind']==kind for d in docs) for kind in ('mortuary','invoice','receipt')},
+                      'deceased':source.get('deceased'),'reference':source.get('reference',mf),'invoice_total':str(invoice_total) if invoice_total is not None else None,
                       'total_received':str(money(paid)),'balance':str(money(invoice_total-paid)) if invoice_total is not None else None,
                       'ready':ready,'reason':reason,'document_ids':[r['id'] for r in rows if r['branch_key']==bk and r['mf_key']==mf]})
     # Use all cases in this month for the selector, independently of pagination/filter.
     populated=set(db.execute(text('SELECT DISTINCT branch_key FROM commission_documents WHERE franchise_user_id=:fid AND created_at>=:first AND created_at<:last '+('AND deleted_at IS NULL' if not include_deleted else '')),params).scalars())
-    result={'branches':[b for b in choices if branch_key(b['name']) in populated],'month':month,'cases':cases,'documents':[serialise(db,r) for r in rows], 'total':total,'offset':offset,'limit':limit}
+    result={'branches':[b for b in choices if branch_key(b['name']) in populated],'month':month,'cases':cases,'documents':[serialise(db,r) for r in rows], 'total':total,'case_total':case_total,'offset':offset,'limit':limit}
     audit(db,current_user,fid,'commission_register_viewed',new={'month':month,'branch_id':branch_id,'include_deleted':include_deleted,'offset':offset})
     db.commit()
     return result
+
+
+@router.get('/case')
+def case_documents(branch_id: int, mf: str = Query(min_length=1,max_length=255), include_deleted: bool = False,
+                   franchise_user_id: int | None = None,current_user: User = Depends(get_current_user),db=Depends(get_db)):
+    """A complete MF folder is independent of upload-month pagination."""
+    fid=import_scope(db,current_user,franchise_user_id)
+    branch=db.execute(text('SELECT * FROM attendance_branches WHERE id=:id AND franchise_user_id=:fid'),{'id':branch_id,'fid':fid}).mappings().first()
+    if not branch:
+        raise HTTPException(403,'Branch is outside this holder group.')
+    from app.services.receipt_commissions import branch_key,mf_key
+    key=mf_key(mf)
+    rows=db.execute(text('''SELECT * FROM commission_documents WHERE franchise_user_id=:fid
+        AND branch_key=:branch AND mf_key=:mf ORDER BY kind,id'''),
+        {'fid':fid,'branch':branch_key(branch['name']),'mf':key}).mappings().all()
+    if not rows:
+        raise HTTPException(404,'No documents found for this branch and MF File number.')
+    active=[r for r in rows if not r['deleted_at']]
+    invoices=[json.loads(r['source_data']) for r in active if r['kind']=='invoice']
+    total=Decimal(str(invoices[0]['invoice_total'])) if len(invoices)==1 else None
+    paid=sum((Decimal(str(json.loads(r['source_data']).get('gross_received',0))) for r in active if r['kind']=='receipt'),Decimal(0))
+    ready=False;reason='Branch is no longer linked or available.'
+    if branch['is_active']:
+        try:
+            require_payment_proof(db,fid,branch_id,key)
+            ready=True;reason='All three document types match and the invoice is fully paid.'
+        except HTTPException as exc: reason=exc.detail
+    source=json.loads((active or rows)[0]['source_data'])
+    case={'branch_id':branch_id,'branch':branch['name'],'mf':key,'reference':source.get('reference',key),'deceased':source.get('deceased'),
+          'ready':ready,'reason':reason,'invoice_total':str(total) if total is not None else None,
+          'total_received':str(money(paid)),'balance':str(money(total-paid)) if total is not None else None,
+          'document_counts':{kind:sum(r['kind']==kind for r in active) for kind in ('mortuary','invoice','receipt')}}
+    audit(db,current_user,fid,'commission_mf_folder_viewed',new={'branch_id':branch_id,'mf':key,'include_deleted':include_deleted})
+    db.commit()
+    return {'case':case,'documents':[serialise(db,r) for r in rows if include_deleted or not r['deleted_at']]}
 
 
 @router.get('/activity')

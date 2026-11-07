@@ -189,3 +189,33 @@ Validation includes nonmatching clients, both import orders, per-branch VAT, the
 three-branch/one-VAT-vendor case, cross-branch staff, disabled categories, delegation,
 20-case batches, duplicates, changed quotes, rollback and filtered PDFs.
 
+
+## Carry-forward notices and MF File folders
+
+At a monthly report cutoff, each unverified claim is recorded against the next
+open report cycle. The employee/manager and holder receive one in-app
+"Commission carried forward" notification for that claim and cutoff. The notice
+shows the MF File, branch, estimate where known, source month and destination
+month. The original service date and evidence are preserved. The claim stays
+red and is excluded from approved payment until all checks pass. When the
+missing documents arrive, reconciliation approves it into the carried-to cycle;
+the approval notice, monthly staff views and PDF identify the carry-forward.
+Claims still blocked at the next cutoff move again with one new notice for that
+cycle. Retries of a failed email cannot move a carried claim backwards or repeat
+its carry notification. Claims submitted after a report closes also enter the
+next open cycle immediately. Cancelled/rejected claims are not rolled again.
+The default open cycle advances on the 25th at 17:00 South African time, including
+when a browser page remains open; manually selected historical cycles stay selected.
+
+HR Staff > Commission Documents groups the register by branch, with one clickable
+card per MF File number. Green Complete means the three document types match and
+receipts fully balance the invoice. Red Not Complete explains missing documents,
+unpaid balances or inconsistent evidence. Opening a card shows all documents for
+that branch/MF File across all upload months, with view/download and audited
+correction controls. Pagination operates on whole MF folders, so a receipt batch
+cannot split one folder into duplicate cards. The same MF number at two branches
+remains two separate folders and cannot share payment evidence. Archived evidence
+is excluded from Complete checks and can be shown using Include deleted uploads.
+
+Migration 025 creates the durable carry-forward history. Prior sent PDFs and
+payment reservations remain unchanged.

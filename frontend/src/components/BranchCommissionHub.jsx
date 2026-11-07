@@ -1,9 +1,9 @@
+import { useCommissionMonth } from '../utils/useCommissionMonth'
 import { useEffect, useState } from 'react'
 import { apiRequest, apiBlob, getCommissionEntries } from '../api/client'
 import MonthlyCommissionStatement from './MonthlyCommissionStatement'
 import CommissionCheckboxes, { commissionLabels } from './CommissionCheckboxes'
 
-const currentMonth = () => new Date(Date.now() + 7200000).toISOString().slice(0, 7)
 const actionTitles = { permissions: 'Commission permissions', monthly: 'Monthly commissions', pdf: 'Employee PDF' }
 
 function EmployeePdfPage({ franchiseId, employee, branch, month, onMonthChange }) {
@@ -28,7 +28,7 @@ function EmployeePdfPage({ franchiseId, employee, branch, month, onMonthChange }
 }
 
 export default function BranchCommissionHub({ franchiseId, branchId = '', onBranchChange, route = {}, onNavigate }) {
-  const [data, setData] = useState(null), [error, setError] = useState(''), [month, setMonth] = useState(currentMonth)
+  const [data, setData] = useState(null), [error, setError] = useState(''), [month, setMonth] = useCommissionMonth()
   const [editor, setEditor] = useState(null), [busy, setBusy] = useState(false), [saved, setSaved] = useState('')
   const [earnings, setEarnings] = useState(null), [earningsError, setEarningsError] = useState('')
   const activeBranch = String(branchId || '')

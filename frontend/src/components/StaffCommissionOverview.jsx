@@ -1,8 +1,8 @@
+import { useCommissionMonth } from '../utils/useCommissionMonth'
 import { useEffect, useState } from 'react'
 import { getCommissionEntries, downloadCommissionForm, downloadCommissionReport, deleteCommissionEntry } from '../api/client'
 import { commissionLabels } from './CommissionCheckboxes'
 
-const currentMonth = () => new Date(Date.now() + 7200000).toISOString().slice(0, 7)
 const money = value => `R ${Number(value || 0).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 const metadata = row => { try { return JSON.parse(row.source_metadata || '{}') } catch { return {} } }
 const saveBlob = (blob, name) => {
@@ -11,7 +11,7 @@ const saveBlob = (blob, name) => {
 }
 
 export default function StaffCommissionOverview({ employeeId, franchiseId, refreshKey, me, onReview, onHistory }) {
-  const [month, setMonth] = useState(currentMonth), [rows, setRows] = useState([]), [showClosed, setShowClosed] = useState(false)
+  const [month, setMonth] = useCommissionMonth(), [rows, setRows] = useState([]), [showClosed, setShowClosed] = useState(false)
   const [error, setError] = useState(''), [loading, setLoading] = useState(true), [busy, setBusy] = useState(false), [revision, setRevision] = useState(0)
   const [categoryTotals, setCategoryTotals] = useState([])
   const canManage = me.roles.some(role => ['FranchiseUser', 'SuperUser'].includes(role))
@@ -55,7 +55,7 @@ export default function StaffCommissionOverview({ employeeId, franchiseId, refre
         <h3>{commissionLabels[row.commission_type] || row.commission_type.replaceAll('_', ' ')}</h3>
         {(row.fee_label||meta.fee_label)&&<p>{row.fee_label||meta.fee_label}</p>}
         <strong>{row.estimate_available === false ? 'Amount awaiting document checks' : money(row.expected_amount ?? row.calculated_amount)}</strong>
-        <p>{row.service_date} · MF {row.reference}</p>
+        <p>{row.service_date} · MF {row.reference}</p>{row.carry_forward_notice && <p className="commission-carry-notice" role="status">{row.carry_forward_notice} {row.payment_eligible ? 'Included in this cycle’s approved total.' : 'Awaiting documents; excluded from approved payment.'}</p>}
         {row.branch_name && <p>{row.branch_name}</p>}
         <p>{!isActive ? row.status === 'cancelled' ? 'Cancelled' : 'Rejected' : !row.payment_eligible ? `Document uploads or corrections required: ${row.payment_block_reason}` : row.status === 'approved' ? meta.automatic_approval ? 'Automatically approved' : 'Approved' : 'Documents validated — automatic approval queued'}</p>
         <details className="commission-entry-details"><summary>Details and documents</summary>

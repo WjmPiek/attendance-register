@@ -1022,7 +1022,7 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
             {canManageStaff && <>
               <label className="staff-home-branch">Home branch<select required value={staff.branch_id || ''} onChange={e => setStaff(v => ({ ...v, branch_id: e.target.value }))}><option value="">Select branch</option>{holderBranches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label>
               <CommissionCheckboxes homeBranchId={staff.branch_id} branches={holderBranches} branchOptions={staff.commission_branches || {}} onBranchOptionsChange={value => setStaff(v => ({ ...v, commission_branches: value, commission_types: [...new Set(Object.values(value).flatMap(x => x.enabled_types))] }))}/>
-              <label className="mortuary-confirm"><input type="checkbox" checked={staff.can_import_commissions || false} onChange={e => setStaff(v => ({ ...v, can_import_commissions: e.target.checked }))}/>Allow this employee to import commission documents and allocate eligible staff across this holder’s branches</label>
+              <label className="mortuary-confirm"><input type="checkbox" checked={staff.can_import_commissions || false} onChange={e => setStaff(v => ({ ...v, can_import_commissions: e.target.checked }))}/>Allow this employee to upload commission documents for automatic branch and MF File matching</label>
             </>}
 
             <label>Assign to / Role<select value={staff.role} onChange={(e) => setStaff({ ...staff, role: e.target.value, manager_user_id: e.target.value === 'Manager' ? '' : staff.manager_user_id })}>{staffRoles.filter((role) => !isManagerView || role !== 'Manager').map((role) => <option key={role}>{role}</option>)}</select></label>
@@ -1268,3 +1268,4 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
   )
 }
 import {getAccessToken} from '../api/authSession'
+

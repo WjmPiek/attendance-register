@@ -70,8 +70,11 @@ def report_content(db, fid, report):
         JOIN users u ON u.id=c.employee_user_id LEFT JOIN attendance_branches b ON b.id=c.earning_branch_id
         WHERE c.franchise_user_id=:fid AND c.status='approved' AND COALESCE(c.is_cancelled,FALSE)=FALSE
         AND c.service_date<=:last AND NOT EXISTS (SELECT 1 FROM commission_monthly_report_items i WHERE i.entry_id=c.id)
-        ORDER BY u.full_name,c.service_date,c.id'''), {'fid': fid, 'last': report['period_end']}).mappings().all()
+        AND NOT EXISTS (SELECT 1 FROM commission_carry_forwards cf WHERE cf.entry_id=c.id AND cf.source_report_id=:report)
+        ORDER BY u.full_name,c.service_date,c.id'''), {'fid': fid, 'last': report['period_end'], 'report':report['id']}).mappings().all()
     rows = [dict(row) for row in rows if payment_eligibility(db, row)['payment_eligible']]
+    from app.services.commission_carry_forward import carry_info
+    rows = [{**row,**carry_info(db,row['id'])} for row in rows]
     from decimal import Decimal
     totals = {}
     details = []
@@ -79,7 +82,7 @@ def report_content(db, fid, report):
         uid = row['employee_user_id']
         totals.setdefault(uid, {'name': row['employee_name'], 'total': Decimal(0)})['total'] += Decimal(str(row['calculated_amount']))
         earlier = str(row['service_date']) < str(report['period_start'])
-        details.append(f"#{row['id']} | {row['employee_name']} | {row['service_date']} | {row['service_branch'] or row.get('branch_name') or ''} | {row['commission_type'].replace('_', ' ')} | MF {row['reference']} | R {Decimal(str(row['calculated_amount'])):,.2f}" + (' | Earlier-period adjustment' if earlier else ''))
+        details.append(f"#{row['id']} | {row['employee_name']} | {row['service_date']} | {row['service_branch'] or row.get('branch_name') or ''} | {row['commission_type'].replace('_', ' ')} | MF {row['reference']} | R {Decimal(str(row['calculated_amount'])):,.2f}" + (' | Earlier-period adjustment' if earlier else '') + (' | '+row['carry_forward_notice'] if row.get('carry_forward_notice') else ''))
     total = sum((item['total'] for item in totals.values()), Decimal(0))
     subject = f"Approved commission summary {report['month_key']} — report #{report['id']}"
     message = '\n'.join([
@@ -104,12 +107,16 @@ def send_due_reports(db, fid, now=None):
         AND (next_attempt_at IS NULL OR next_attempt_at<=:now) ORDER BY send_on,id"""), {'fid': fid, 'now': now}).mappings().all()
     for report in reports:
         db.execute(text('SELECT pg_advisory_xact_lock(:namespace,:fid)'), {'namespace': 15016, 'fid': fid})
+        db.execute(text('SELECT pg_advisory_xact_lock(:namespace,:fid)'), {'namespace': 15015, 'fid': fid})
         current_status = db.execute(text('SELECT status FROM commission_monthly_reports WHERE id=:id'), {'id': report['id']}).scalar_one()
         if current_status not in {'scheduled', 'failed', 'pending'}:
             continue
         rows, subject, message = report_content(db, fid, report)
         from app.services.commission_statement import statement_pdf, pending_claims
         pending = pending_claims(db,fid,report)
+        from app.services.commission_carry_forward import carry_pending_claims, carry_info
+        carry_pending_claims(db,fid,report,pending)
+        pending = [{**row,**carry_info(db,row['id'])} for row in pending]
         pdf = statement_pdf(rows,pending,report)
         # Commit a durable sending marker first. If a process dies after SMTP
         # accepts the message, never retry blindly and duplicate a finance report.
