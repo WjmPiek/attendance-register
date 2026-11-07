@@ -228,3 +228,26 @@ the additional outside-branch fee is never a separate selectable claim. Both
 quote and submission endpoints independently enforce the current user's own
 identity and effective branch permissions; hiding controls does not replace
 server-side checks.
+
+
+## Simple staff self-service
+
+Managers and employees share a responsive button-only Home. Claim and leave
+applications use separate pages; successful submission returns Home with
+"Your request has been sent." Failed requests remain on the form. Claim
+items still come from the person's effective branch permissions and are
+validated by the API. Personal Commissions shows approved and waiting totals
+for the current finance cycle; incomplete and queued amounts remain waiting.
+
+Personal leave pages request own_only and include_past: managers see their
+own leave there, with team approvals separately under More. Approved leave is
+red on the calendar and the next scheduled working day is green, skipping
+other approved leave. The recorded work week determines return dates; no
+public-holiday absence rule is assumed. Payslips and IRP5 use the own-document
+endpoints, retain document passwords, and list files vertically.
+
+More preserves existing manager/team, authorised import and finance tools
+without adding privileges. The staff_portal_page query parameter is separate
+from existing staff_page management navigation. Holder and administrator
+dashboards retain their full management interface. No schema migration is
+needed for these self-service pages.
