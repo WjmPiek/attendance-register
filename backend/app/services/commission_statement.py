@@ -80,6 +80,13 @@ def statement_pdf(rows, pending, report):
     story += [Spacer(1,5*mm),p('TOTAL APPROVED FOR FINANCE: '+money(grand),'Section')]
     if not rows: story.append(p('No newly reportable approved commissions.'))
     if rows:
+        people={}
+        for row in rows:
+            key=row.get('employee_user_id',row['employee_name'])
+            person=people.setdefault(key,{'name':row['employee_name'],'total':Decimal(0)})
+            person['total']+=Decimal(str(row['calculated_amount']))
+        story += [p('Approved totals by manager / employee - all service branches','Section'),
+                  table([['Manager / employee','Approved total']]+[[person['name'],money(person['total'])] for person in sorted(people.values(),key=lambda item:item['name'])],[126,50])]
         story.append(p('Approved claim details','Section'))
         values=[['Claim / date','Branch / person','Category / MF file','Amount']]
         for row in rows:
