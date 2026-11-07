@@ -53,6 +53,31 @@ def test_register_groups_uploads_by_month_and_branch_but_checks_all_payment_mont
     assert client.get('/api/commission-documents?month=2026-13').status_code==422
 
 
+@pytest.mark.parametrize('external', [False, True])
+def test_inactive_branch_documents_remain_browsable_but_not_payment_ready(database, external):
+    did=partial(database,amount='1150.00')
+    if external:
+        database.execute(text("INSERT INTO external_commission_branches(branch_id,franchise_user_id,branch_key,created_by_user_id) VALUES(101,2,'EXAMPLE',1)"))
+    database.execute(text('UPDATE attendance_branches SET is_active=FALSE WHERE id IN (101,900)'))
+    database.commit()
+    client,_=client_for(database)
+    for suffix in ('', '&branch_id=101'):
+        response=client.get('/api/commission-documents?month=2026-11'+suffix)
+        assert response.status_code==200
+        result=response.json()
+        assert result['total']==3 and len(result['documents'])==3
+        assert [b['id'] for b in result['branches']]==[101]
+        assert not result['branches'][0]['is_active']
+        assert result['cases'][0]['branch_id']==101
+        assert not result['cases'][0]['ready']
+        assert result['cases'][0]['reason']=='Branch is no longer linked or available.'
+    assert client.get(f'/api/commission-documents/{did}').status_code==200
+    assert client.get('/api/commission-documents?month=2026-11&branch_id=900').status_code==403
+    from app.services.attendance_branches import branches
+    from app.services.external_commissions import external_branches
+    assert 101 not in {b['id'] for b in [*branches(database,2),*external_branches(database,2)]}
+
+
 def test_south_african_month_boundary_is_respected(database):
     partial(database)
     database.execute(text("UPDATE commission_documents SET created_at='2026-10-31 22:30:00'"));database.commit()
@@ -182,3 +207,4 @@ def test_original_pdfs_are_retained_for_all_three_types_and_views_logged(databas
         assert client.get(f'/api/commission-documents/{did}/file?download=true').content==content
         actions={r['action'] for r in client.get(f'/api/commission-documents/activity?document_id={did}').json()['items']}
         assert {'commission_document_saved','commission_document_pdf_viewed','commission_document_downloaded'}<=actions
+
