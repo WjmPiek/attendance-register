@@ -13,6 +13,7 @@ from app.db.session import SessionLocal
 
 logger = logging.getLogger(__name__)
 scheduler = BackgroundScheduler(timezone='Africa/Johannesburg')
+FINANCE_RECIPIENTS = 'wjm@martinsdirect.com, finance@martinsdirect.com'
 
 
 def auto_approve_holder(db, fid, document_ids=None):
@@ -50,8 +51,8 @@ def default_report(now=None):
     now = now or now_sa_naive()
     first = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     previous = first - timedelta(days=1)
-    return {'month_key': now.strftime('%Y-%m'), 'period_start': previous.date().replace(day=25),
-            'period_end': now.date().replace(day=25), 'send_on': first.replace(day=27, hour=8), 'status': 'scheduled'}
+    return {'month_key': now.strftime('%Y-%m'), 'period_start': previous.date().replace(day=26),
+            'period_end': now.date().replace(day=25), 'send_on': first.replace(day=25, hour=17), 'status': 'scheduled'}
 
 
 def ensure_month_report(db, fid, now):
@@ -96,9 +97,6 @@ def report_content(db, fid, report):
 def send_due_reports(db, fid, now=None):
     from app.services.email_service import send_smtp_email
     now = now or now_sa_naive()
-    settings = db.execute(text('SELECT recipient_email FROM commission_delivery_settings WHERE franchise_user_id=:fid'), {'fid': fid}).mappings().first()
-    if not settings or not settings['recipient_email']:
-        return
     db.execute(text('SELECT pg_advisory_xact_lock(:namespace,:fid)'), {'namespace': 15016, 'fid': fid})
     ensure_month_report(db, fid, now)
     reports = db.execute(text("""SELECT * FROM commission_monthly_reports WHERE franchise_user_id=:fid
@@ -110,15 +108,19 @@ def send_due_reports(db, fid, now=None):
         if current_status not in {'scheduled', 'failed', 'pending'}:
             continue
         rows, subject, message = report_content(db, fid, report)
+        from app.services.commission_statement import statement_pdf, pending_claims
+        pending = pending_claims(db,fid,report)
+        pdf = statement_pdf(rows,pending,report)
         # Commit a durable sending marker first. If a process dies after SMTP
         # accepts the message, never retry blindly and duplicate a finance report.
         db.execute(text("""UPDATE commission_monthly_reports SET status='sending',recipient_email=:email,
-            subject=:subject,message=:message,error_message=NULL WHERE id=:id"""),
-            {'email': settings['recipient_email'], 'subject': subject, 'message': message, 'id': report['id']})
+            subject=:subject,message=:message,pdf_content=:pdf,error_message=NULL WHERE id=:id"""),
+            {'email': FINANCE_RECIPIENTS, 'subject': subject, 'message': message, 'pdf':pdf, 'id': report['id']})
         for row in rows:
             db.execute(text('INSERT INTO commission_monthly_report_items(entry_id,report_id) VALUES(:entry,:report)'), {'entry': row['id'], 'report': report['id']})
         db.commit()
-        status, sent_at, error, diagnostics = send_smtp_email(settings['recipient_email'], subject, message)
+        status, sent_at, error, diagnostics = send_smtp_email(FINANCE_RECIPIENTS, subject, message,
+            attachments=[(f"commission-statement-{report['month_key']}-{fid}-{report['id']}.pdf",pdf,'application/pdf')])
         if diagnostics.get('delivery_uncertain'):
             status = 'uncertain'
         if status not in {'sent', 'uncertain'}:
@@ -160,3 +162,4 @@ def start_automation():
 def stop_automation():
     if scheduler.running:
         scheduler.shutdown(wait=False)
+

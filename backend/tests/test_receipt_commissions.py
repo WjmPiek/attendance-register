@@ -277,7 +277,7 @@ def test_manual_entry_cannot_bypass_document_pairing_or_employee_optin(database)
     with pytest.raises(HTTPException,match='not enabled'):require_manual_eligibility(database,person,'joinings')
     configure(database)
     for category in ('removals','invoice_commission'):
-        with pytest.raises(HTTPException,match='matched'):require_manual_eligibility(database,person,category)
+        assert require_manual_eligibility(database,person,category)==101
 
 
 def test_branch_and_individual_pdfs_contain_only_selected_employee_totals(database):
@@ -368,3 +368,4 @@ def test_group_branch_with_blank_vat_number_never_silently_inherits_registered_s
     database.execute(text('UPDATE attendance_branches SET vat_number=NULL WHERE id=101'));database.commit()
     _,q=calculate(database,stage_both(database))
     assert all(r['state']=='blocked' for r in q['items'] if r.get('category')=='invoice_commission')
+

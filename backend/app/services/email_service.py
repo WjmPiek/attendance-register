@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, asdict
 from datetime import datetime
 from email.message import EmailMessage
-from email.utils import formataddr, parseaddr
+from email.utils import formataddr, parseaddr, getaddresses
 from pathlib import Path
 import os
 import smtplib
@@ -116,11 +116,12 @@ def _valid_email(address: str | None) -> bool:
     return bool(parsed and "@" in parsed and "." in parsed.rsplit("@", 1)[-1])
 
 
-def send_smtp_email(recipient_email: str | None, subject: str, message: str) -> tuple[str, datetime | None, str | None, dict[str, Any]]:
+def send_smtp_email(recipient_email: str | None, subject: str, message: str, *, attachments=()) -> tuple[str, datetime | None, str | None, dict[str, Any]]:
     cfg = get_email_config()
     diagnostics = cfg.safe_dict()
     diagnostics["recipient_email"] = recipient_email
-    if not _valid_email(recipient_email):
+    recipients = [address for _,address in getaddresses([recipient_email or ''])]
+    if not recipients or any(not _valid_email(address) for address in recipients):
         return "pending", None, "No valid recipient email set", diagnostics
     if not cfg.smtp_host:
         return "pending", None, "SMTP_HOST is not configured. Check backend/.env.", diagnostics
@@ -138,11 +139,16 @@ def send_smtp_email(recipient_email: str | None, subject: str, message: str) -> 
         email["To"] = recipient_email or ""
         email["Subject"] = subject
         email.set_content(message)
+        for filename, content, mime_type in attachments:
+            maintype, subtype = mime_type.split('/',1)
+            email.add_attachment(content,maintype=maintype,subtype=subtype,filename=filename)
         if cfg.smtp_use_ssl:
             with smtplib.SMTP_SSL(cfg.smtp_host, cfg.smtp_port, timeout=cfg.smtp_timeout_seconds, context=ssl.create_default_context()) as smtp:
                 smtp.login(cfg.smtp_username, cfg.smtp_password)
                 delivery_started = True
-                smtp.send_message(email)
+                refused = smtp.send_message(email,to_addrs=recipients)
+                if refused:
+                    raise RuntimeError('Some recipients were refused. Check delivery before resending this statement.')
         else:
             with smtplib.SMTP(cfg.smtp_host, cfg.smtp_port, timeout=cfg.smtp_timeout_seconds) as smtp:
                 smtp.ehlo()
@@ -151,7 +157,9 @@ def send_smtp_email(recipient_email: str | None, subject: str, message: str) -> 
                     smtp.ehlo()
                 smtp.login(cfg.smtp_username, cfg.smtp_password)
                 delivery_started = True
-                smtp.send_message(email)
+                refused = smtp.send_message(email,to_addrs=recipients)
+                if refused:
+                    raise RuntimeError('Some recipients were refused. Check delivery before resending this statement.')
         return "sent", now_sa_naive(), None, diagnostics
     except smtplib.SMTPAuthenticationError as exc:
         return "failed", None, "SMTP authentication failed. For Microsoft 365, verify the mailbox credentials and enable authenticated SMTP for this mailbox. " + str(exc), diagnostics

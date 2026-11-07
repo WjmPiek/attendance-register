@@ -40,6 +40,10 @@ recipient allocations, PDF views/downloads, removals, restorations, blocked dele
 attempts and commission allocations are recorded with actor and time in the activity
 log. The register and activity history are paginated.
 
+Migration `024_claim_statements` retains PDF snapshots and changes unsent scheduled
+reports to the 26th-to-25th cycle, sent on the 25th at 17:00. Sent, sending and
+uncertain reports are preserved.
+
 Migration `022_commission_document_register` adds reversible corrections, an active
 document uniqueness index and employee branch override records. It preserves source
 records and existing financial amounts. Deploy the backend before the new frontend.
@@ -88,55 +92,75 @@ holder's profile. Branch commission VAT settings remain independent.
    conflicting recorded VAT number stays unconfirmed until explicitly configured.
    A saved VAT setting is a holder confirmation, not verification against SARS.
 
-## Import and earning rules
+## Automatic imports and claims (November 2026)
 
-- Mortuary Books are saved as waiting evidence; they do not directly award money.
-- Import original searchable MF File Receipt PDFs and select the receipt recipients
-  from employees whose receipt category is enabled for the printed branch. The list includes home branches
-  and searches the entire holder group. A receipt may have no recipients if it is
-  only needed to qualify removal commissions.
-- Printed franchise names must resolve to an active branch in that holder group.
-  Common Martins branding and a trailing `(F)`/`(C)` marker are normalised. Ambiguous
-  printed branch names are blocked, rather than guessed.
-- A book and receipt must have the same normalised MF number **and document branch**.
-  A literal `MF` prefix is ignored. Different MF numbers remain unmatched. When both
-  records include an ID number, a conflicting deceased ID blocks the case as well.
-- Saving either file can happen first. Use **Review matched commissions for recent
-  documents** after adding the missing file, enabling categories or configuring fees.
-- The review lists ready, blocked and already-recorded items. Confirming the ready
-  entries adds approved commission records to the normal employee Work Hub history.
-  Every staff/category allocation is checked again on save.
-- Removal recipients come from the saved Driver In allocations; each receives one
-  configured fee. Receipt recipients come from the selected, enabled employee list.
-- Receipt commission uses **Amount Received**, not balance due plus invoice total.
-  For a VAT-registered document branch: `base = amount received / (1 + VAT rate/100)`.
-  For a non-registered branch: `base = amount received`. Commission is the rounded
-  base times the configured percentage. Values round to cents using half-up.
-- The document branch determines VAT even when the employee's home branch differs.
-  Each branch can therefore calculate independently when one is registered and
-  two others are not. Confirming one branch never silently confirms another with a
-  different recorded VAT number.
-- Each invoice pays a given employee's invoice commission once, after its distinct
-  payment receipts balance the total. The removal is also paid only once.
-  Reprinted or repeated PDFs cannot pay a second commission. Conflicting
-  details on a previously used receipt number require separate correction/review.
-- Disabled categories, missing files, missing fees and unconfirmed VAT settings do
-  not earn commission. Manual entry/review endpoints cannot bypass these rules.
+- Upload Mortuary Book, MF Invoice and all MF File Receipt PDFs in any order.
+  Read the detected branch and extracted fields, review excluded pages, then save.
+  The printed branch selects the active linked or registered outside branch
+  automatically. No employee or commission recipient selection is required.
+  Unknown, ambiguous and inactive branches are excluded with correction notices.
+- Evidence is grouped by holder, normalised service branch and MF File number.
+  A matching MF number at another branch cannot satisfy a claim.
+- A manager or employee logs in and enters the MF File number, service branch,
+  deceased name and surname, actual service date and enabled commission item.
+  The login determines the claimant; staff cannot submit for someone else.
+  Holders retain their existing ability to submit a claim for a selected person.
+- Only enabled categories and configured service-branch fees are available. One
+  claim covers one service item for one person and MF case. Rate overrides,
+  multiplied quantities and repeated claims cannot increase the award.
+- Removal claims match the claimant uniquely to printed Driver In staff and the
+  printed Driver role. Their business hours and Date In/Time In determine the
+  business-hours, after-hours or Sunday/public-holiday fixed fee. Unmatched or
+  ambiguous staff identities remain blocked.
+- Church, grave, full funeral, cremation, joinings and overtime items use configured
+  fixed fees. A claim declares who performed these services: the three documents
+  verify the case/payment but do not independently prove who performed a service
+  when that person's name is absent from the documents.
+- MF File Receipt commissions are claimed against the MF case and calculated once
+  from the invoice, not once per instalment. Use the configured percentage and the
+  invoice commission base resolved against the service branch's VAT record.
+  Registered branches use the VAT-exclusive base; confirmed non-VAT branches use
+  the full invoice amount. Values round to cents, half-up.
+- All three document types must agree on branch, MF number and deceased identity.
+  Receipt invoice numbers must match the invoice; conflicting supplied ID numbers
+  block the claim. Distinct receipt payments must balance the invoice exactly.
+  Partial payments, overpayments and duplicate receipts cannot qualify an award.
+- Claims awaiting documents remain red with a reason and an estimate where the
+  evidence permits calculation. Missing invoice/removal evidence shows that the
+  amount is awaiting checks, rather than presenting a zero as a confirmed fee.
+- The background reconciler rechecks pending claims every minute and after uploads.
+  Verified, fully paid eligible claims approve automatically. Staff pages refresh
+  every 20 seconds. Disabled categories and missing rates never bypass checks.
+- Service for Other Branch is an automatic additional fee when the service branch
+  is outside the holder's linked group and the person's surcharge is enabled.
+  It is added once per person and invoice, even for multiple service categories.
+- Existing approved awards and historical document allocations are retained, with
+  duplicate checks preventing a new claim from earning the same item again.
 
-## Statements and printing
+## Monthly statements and automatic delivery
 
-Employee Work Hubs and commission pages show a monthly category statement with
-entry details, deceased name/ID, source MF/receipt, commissionable amount, rate,
-category subtotals and monthly total. Only approved entries contribute.
-
-The holder can download PDFs for all branches, one earning branch, or one employee.
-Branch statements include only commissions earned for that branch, even when the
-employee's home branch differs. Reports retain both branches separately.
-New awards snapshot the employee branch and VAT calculation, so later settings or
-branch transfers do not rewrite already approved financial records.
-
-Service date remains Date Generated for removal books and the printed receipt date
-for receipt commission. They may therefore fall in different monthly statements.
+- The default cycle is 26th of the previous month through 25th of the report month.
+  The in-app scheduler emails the PDF at 17:00 South African time on the 25th,
+  without a person pressing Send or saving recipient settings first.
+- Recipients are always wjm@martinsdirect.com and finance@martinsdirect.com.
+  Business > Commissions shows the schedule, email connection status, delivery
+  history and PDF downloads. A holder may adjust an unsent month's dates when
+  needed; subsequent months use the default schedule.
+- Each holder-group statement lists approved amounts per service branch, person
+  and category, branch subtotals, a full approved total and MF claim details.
+  A separate pending section is explicitly NOT APPROVED FOR PAYMENT and excluded
+  from approved totals. The application does not run payroll or transfer money.
+- Approved entries are reserved to one report only. Approvals after the report
+  closes carry into the next statement as earlier-period adjustments.
+- The exact PDF sent is retained privately with the report and can be downloaded
+  by an authorised holder. Historical emails without a PDF say it is unavailable;
+  the system does not recreate a historical delivered statement from current data.
+- Known delivery failures retry after an hour. An interrupted/uncertain SMTP delivery
+  is held for checking rather than automatically sending a potentially duplicate
+  payment statement. Delivery errors remain visible in the history.
+- The SMTP connection must be configured on the backend. The scheduler starts with
+  the application, checks every minute, and catches up due unsent reports after a
+  restart. No browser session needs to remain open.
 
 ## Deployment and retention
 
@@ -164,3 +188,4 @@ Saving awards is atomic and serialised per holder, with unique database indexes.
 Validation includes nonmatching clients, both import orders, per-branch VAT, the
 three-branch/one-VAT-vendor case, cross-branch staff, disabled categories, delegation,
 20-case batches, duplicates, changed quotes, rollback and filtered PDFs.
+

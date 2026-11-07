@@ -40,7 +40,7 @@ def delivery_scope(db, user, fid):
 
 @router.get('/delivery-settings')
 def delivery_settings(month: str | None = None, franchise_user_id: int | None = None, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    from app.services.commission_automation import default_report
+    from app.services.commission_automation import default_report, FINANCE_RECIPIENTS
     from app.services.email_service import get_email_config
     fid = delivery_scope(db, current_user, franchise_user_id)
     try:
@@ -51,13 +51,14 @@ def delivery_settings(month: str | None = None, franchise_user_id: int | None = 
     report = db.execute(text('SELECT * FROM commission_monthly_reports WHERE franchise_user_id=:fid AND month_key=:month'), {'fid': fid, 'month': defaults['month_key']}).mappings().first()
     history = db.execute(text('''SELECT id,month_key,period_start,period_end,send_on,recipient_email,status,sent_at,error_message
         FROM commission_monthly_reports WHERE franchise_user_id=:fid ORDER BY month_key DESC LIMIT 12'''), {'fid': fid}).mappings().all()
-    return {'recipient_email': settings['recipient_email'] if settings else None, 'report': dict(report) if report else defaults,
+    return {'recipient_email': FINANCE_RECIPIENTS, 'report': dict(report) if report else defaults,
             'history': [dict(row) for row in history], 'email_configured': get_email_config().configured}
 
 
 @router.put('/delivery-settings')
 def save_delivery_settings(payload: DeliverySettingsIn, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     from app.core.timezone import to_sa
+    from app.services.commission_automation import FINANCE_RECIPIENTS
     fid = delivery_scope(db, current_user, payload.franchise_user_id)
     try:
         datetime.strptime(payload.month_key, '%Y-%m')
@@ -72,7 +73,7 @@ def save_delivery_settings(payload: DeliverySettingsIn, current_user: User = Dep
         raise HTTPException(409, 'This report has already been sent or delivery needs checking. Its dates cannot be changed. Later approvals carry to the next unsent report.')
     db.execute(text('''INSERT INTO commission_delivery_settings(franchise_user_id,recipient_email,updated_by_user_id)
         VALUES(:fid,:email,:actor) ON CONFLICT(franchise_user_id) DO UPDATE SET recipient_email=EXCLUDED.recipient_email,
-        updated_by_user_id=EXCLUDED.updated_by_user_id,updated_at=NOW()'''), {'fid': fid, 'email': str(payload.recipient_email).lower() if payload.recipient_email else None, 'actor': current_user.id})
+        updated_by_user_id=EXCLUDED.updated_by_user_id,updated_at=NOW()'''), {'fid': fid, 'email': FINANCE_RECIPIENTS, 'actor': current_user.id})
     db.execute(text('''INSERT INTO commission_monthly_reports(franchise_user_id,month_key,period_start,period_end,send_on)
         VALUES(:fid,:month,:first,:last,:send) ON CONFLICT(franchise_user_id,month_key) DO UPDATE SET
         period_start=EXCLUDED.period_start,period_end=EXCLUDED.period_end,send_on=EXCLUDED.send_on,
@@ -83,6 +84,26 @@ def save_delivery_settings(payload: DeliverySettingsIn, current_user: User = Dep
                     entity_type='commission_delivery_settings', new_values=payload.model_dump(mode='json'))
     db.commit()
     return {'saved': True}
+
+
+@router.get('/monthly-reports/{report_id}/pdf')
+def monthly_statement(report_id: int, franchise_user_id: int | None = None, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    fid = delivery_scope(db,current_user,franchise_user_id)
+    report = db.execute(text('SELECT * FROM commission_monthly_reports WHERE id=:id AND franchise_user_id=:fid'), {'id':report_id,'fid':fid}).mappings().first()
+    if not report:
+        raise HTTPException(404,'Monthly statement not found in this holder group.')
+    content=report['pdf_content']
+    if not content:
+        from app.services.commission_automation import report_content
+        from app.services.commission_statement import statement_pdf, pending_claims
+        if report['status'] in {'sent','sending','uncertain'}:
+            raise HTTPException(404,'This historical email did not retain a PDF attachment.')
+        rows,_,_=report_content(db,fid,report)
+        content=statement_pdf(rows,pending_claims(db,fid,report),report)
+    from fastapi.responses import Response
+    return Response(content=bytes(content),media_type='application/pdf',headers={
+        'Content-Disposition':f'attachment; filename="commission-statement-{report["month_key"]}-{report_id}.pdf"',
+        'Cache-Control':'private, no-store'})
 
 class StructureIn(BaseModel):
     franchise_user_id: int | None = None
@@ -365,18 +386,18 @@ def create_entry(payload: EntryIn, current_user: User = Depends(get_current_user
     quote = calculate_claim(db, current_user, payload, participant)
     status = 'approved' if quote['documents_valid'] else 'pending'
     proof = quote['proof'] if quote['documents_valid'] else {}
-    metadata = {**proof, 'claim_deceased': payload.claim_deceased, 'commission_role': payload.commission_role,
-                'claim_notice': quote['notice'], 'calculation_type': 'fixed', 'deceased': payload.claim_deceased, 'automatic_approval': quote['documents_valid']}
+    metadata = {**proof, 'fee_label':quote.get('fee_label'), 'estimate_available':quote['estimate_available'], 'claim_deceased': payload.claim_deceased, 'commission_role': payload.commission_role,
+                'claim_notice': quote['notice'], 'calculation_type': quote['calculation_type'], 'deceased': payload.claim_deceased, 'automatic_approval': quote['documents_valid']}
     reviewed_at = datetime.now() if status == 'approved' else None
     reviewed_by = None
     row = db.execute(text("""INSERT INTO commission_entries(franchise_user_id,employee_user_id,commission_type,service_date,
         reference,quantity,applied_rate,calculated_amount,notes,branch_name,created_by_user_id,status,submitted_at,
-        reviewed_at,reviewed_by_user_id,last_edited_by_user_id,earning_branch_id,mortuary_document_id,receipt_document_id,invoice_document_id,source_metadata)
-        VALUES(:fid,:uid,:type,:day,:ref,1,:rate,:rate,:notes,:branch,:actor,:status,NOW(),:reviewed_at,:reviewed_by,:actor,:bid,:book,:receipt,:invoice,:meta) RETURNING *"""),
+        reviewed_at,reviewed_by_user_id,last_edited_by_user_id,earning_branch_id,mortuary_document_id,receipt_document_id,invoice_document_id,source_metadata,invoice_value_before_tax)
+        VALUES(:fid,:uid,:type,:day,:ref,1,:rate,:amount,:notes,:branch,:actor,:status,NOW(),:reviewed_at,:reviewed_by,:actor,:bid,:book,:receipt,:invoice,:meta,:base) RETURNING *"""),
         {'fid': fid, 'uid': uid, 'type': payload.commission_type, 'day': payload.service_date, 'ref': payload.reference.strip(),
-         'rate': Decimal(quote['rate']), 'notes': payload.notes, 'branch': quote['branch_name'], 'actor': current_user.id,
+         'rate': Decimal(quote['rate']), 'amount': Decimal(quote['amount']), 'notes': payload.notes, 'branch': quote['branch_name'], 'actor': current_user.id,
          'status': status, 'reviewed_at': reviewed_at, 'reviewed_by': reviewed_by, 'bid': quote['branch_id'],
-         'book': proof.get('mortuary_document_id'), 'receipt': proof.get('receipt_document_id'), 'invoice': proof.get('invoice_document_id'), 'meta': json.dumps(metadata, default=str)}).mappings().first()
+         'book': proof.get('mortuary_document_id'), 'receipt': proof.get('receipt_document_id'), 'invoice': proof.get('invoice_document_id'), 'meta': json.dumps(metadata, default=str), 'base':proof.get('commission_base')}).mappings().first()
     _audit(db, row['id'], 'service_claim_submitted' if status == 'pending' else 'service_claim_auto_approved', current_user.id, new=dict(row))
     if status == 'pending':
         for recipient in _reviewer_ids(db, participant):
@@ -461,7 +482,18 @@ def entries(employee_user_id:int|None=None,from_date:date|None=None,to_date:date
     total = sum((Decimal(r["calculated_amount"] or 0) for r in approved), Decimal(0))
     overtime = sum((Decimal(r["calculated_amount"] or 0) for r in approved if r["commission_type"] == "overtime"), Decimal(0))
     counts = {x: sum(1 for r in rows if r["status"] == x) for x in ["pending","approved","rejected","cancelled"]}
-    return {"items":[dict(r) for r in rows],"pending_imports":pending_imports,"total":total,"commission_total":total-overtime,"overtime_total":overtime,"counts":counts}
+    grouped = {}
+    for row in [*rows,*pending_imports]:
+        if row['status'] not in {'pending','approved'}:
+            continue
+        key = (row.get('earning_branch_id'),row['commission_type'])
+        group = grouped.setdefault(key, {'branch_id':key[0],'branch_name':row.get('branch_name'),
+            'commission_type':key[1],'approved_total':Decimal(0),'pending_total':Decimal(0),'approved_count':0,'pending_count':0})
+        ready = row['status']=='approved' and row['payment_eligible']
+        state = 'approved' if ready else 'pending'
+        group[state+'_count'] += 1
+        group[state+'_total'] += Decimal(str(row['calculated_amount'] if ready else row.get('expected_amount',row['calculated_amount']) or 0))
+    return {"items":[dict(r) for r in rows],"pending_imports":pending_imports,"total":total,"commission_total":total-overtime,"overtime_total":overtime,"counts":counts,"branch_category_totals":list(grouped.values())}
 
 
 @router.get('/entries/{entry_id}')
@@ -500,15 +532,15 @@ def _review_service(entry_id, payload, user, db, automatic=False):
         if not quote['documents_valid']:
             raise HTTPException(400, quote['notice'])
         proof = quote['proof']
-        meta = {**proof, 'claim_deceased': payload.claim_deceased, 'commission_role': payload.commission_role,
-                'calculation_type': 'fixed', 'deceased': payload.claim_deceased, 'automatic_approval': automatic}
+        meta = {**proof, 'fee_label':quote.get('fee_label'), 'estimate_available':quote['estimate_available'], 'claim_deceased': payload.claim_deceased, 'commission_role': payload.commission_role,
+                'calculation_type': quote['calculation_type'], 'deceased': payload.claim_deceased, 'automatic_approval': automatic}
         updated = db.execute(text("""UPDATE commission_entries SET commission_type=:type,service_date=:day,reference=:ref,
-            quantity=1,applied_rate=:rate,calculated_amount=:rate,notes=:notes,branch_name=:branch,earning_branch_id=:bid,
+            quantity=1,applied_rate=:rate,calculated_amount=:amount,notes=:notes,branch_name=:branch,earning_branch_id=:bid,
             status='approved',review_notes=:note,reviewed_at=NOW(),reviewed_by_user_id=:reviewer,last_edited_by_user_id=:actor,updated_at=NOW(),
-            mortuary_document_id=:book,receipt_document_id=:receipt,invoice_document_id=:invoice,source_metadata=:meta WHERE id=:id RETURNING *"""),
-            {'type': payload.commission_type, 'day': payload.service_date, 'ref': payload.reference.strip(), 'rate': Decimal(quote['rate']),
+            mortuary_document_id=:book,receipt_document_id=:receipt,invoice_document_id=:invoice,source_metadata=:meta,invoice_value_before_tax=:base WHERE id=:id RETURNING *"""),
+            {'type': payload.commission_type, 'day': payload.service_date, 'ref': payload.reference.strip(), 'rate': Decimal(quote['rate']), 'amount': Decimal(quote['amount']),
              'notes': payload.notes, 'branch': quote['branch_name'], 'bid': quote['branch_id'], 'note': payload.review_notes,
-             'actor': user.id, 'reviewer': None if automatic else user.id, 'book': proof['mortuary_document_id'], 'receipt': proof['receipt_document_id'], 'invoice': proof['invoice_document_id'], 'meta': json.dumps(meta, default=str), 'id': entry_id}).mappings().first()
+             'actor': user.id, 'reviewer': None if automatic else user.id, 'book': proof['mortuary_document_id'], 'receipt': proof['receipt_document_id'], 'invoice': proof['invoice_document_id'], 'meta': json.dumps(meta, default=str), 'base':proof.get('commission_base'), 'id': entry_id}).mappings().first()
         _audit(db, entry_id, 'service_claim_auto_approved' if automatic else 'service_claim_approved', user.id, old=dict(old), new=dict(updated), note=payload.review_notes)
         if quote['additional_fee']:
             insert_surcharge(db, user, quote['additional_fee'])
@@ -620,3 +652,4 @@ def form_pdf(entry_id:int,current_user:User=Depends(get_current_user),db:Session
     selected=[r for r in _rows(db,current_user,int(entry["employee_user_id"]),franchise_user_id=int(entry["franchise_user_id"])) if int(r['id'])==entry_id]
     if not selected: raise HTTPException(404,"Entry not found")
     return StreamingResponse(_pdf(selected,"Commission Review Form"),media_type='application/pdf',headers={'Content-Disposition':f'attachment; filename=commission-form-{entry_id}.pdf'})
+
