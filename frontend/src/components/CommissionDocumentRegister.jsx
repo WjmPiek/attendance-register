@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { apiRequest, apiBlob } from '../api/client'
 import './MortuaryBook.css'
+import CommissionEvidenceImport from './CommissionEvidenceImport'
 
 const labels={mortuary:'Mortuary Book',invoice:'Invoice',receipt:'Receipt'}
 const money=value=>value==null?'Not uploaded':`R ${Number(value).toLocaleString('en-ZA',{minimumFractionDigits:2,maximumFractionDigits:2})}`
@@ -11,10 +12,12 @@ export default function CommissionDocumentRegister({franchiseId,onBack}) {
   const [branch,setBranch]=useState(''),[deleted,setDeleted]=useState(false),[offset,setOffset]=useState(0)
   const [data,setData]=useState(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[notice,setNotice]=useState('')
   const [selected,setSelected]=useState(null),[pdf,setPdf]=useState(''),[correction,setCorrection]=useState(null),[reason,setReason]=useState('')
-  const [openedCase,setOpenedCase]=useState(null)
+  const [openedCase,setOpenedCase]=useState(null),[uploadKind,setUploadKind]=useState('')
+  const detailRef=useRef(null)
   const [log,setLog]=useState(null),[logOffset,setLogOffset]=useState(0)
   const correctionRef=useRef(null)
-  useEffect(()=>{setOpenedCase(null);setSelected(null);setPdf('');setLog(null)},[franchiseId])
+  useEffect(()=>{if(openedCase||selected||uploadKind){detailRef.current?.scrollIntoView({block:'start',behavior:'smooth'});detailRef.current?.focus({preventScroll:true})}},[openedCase,selected,uploadKind])
+  useEffect(()=>{setOpenedCase(null);setSelected(null);setPdf('');setLog(null);setUploadKind('')},[franchiseId])
   useEffect(()=>{if(data&&branch&&!data.branches.some(b=>String(b.id)===branch)){setBranch('');setOffset(0)}},[data,branch])
   useEffect(()=>{if(correction)correctionRef.current?.scrollIntoView({block:'start',behavior:'smooth'})},[correction])
   const scope=franchiseId?{franchise_user_id:franchiseId}:{}
@@ -38,19 +41,20 @@ export default function CommissionDocumentRegister({franchiseId,onBack}) {
     setNotice(result.message||'Document restored.');setCorrection(null);setReason('');setSelected(null);setPdf('');await load();if(openedCase)await fetchCase(openedCase.case.branch_id,openedCase.case.mf)
   })
   return <section className="mortuary-book commission-document-register">
-    <header className="form-card"><div className="button-row">{selected?<button type="button" className="glass-button" onClick={()=>{setSelected(null);setPdf('');setLog(null)}}>← {openedCase?'MF File documents':'Monthly documents'}</button>:openedCase?<button type="button" className="glass-button" onClick={()=>{setOpenedCase(null);setLog(null)}}>← All MF Files</button>:onBack&&<button type="button" className="glass-button" onClick={onBack}>← Back</button>}</div>
+    <header className="form-card"><div className="button-row">{selected?<button type="button" className="glass-button" onClick={()=>{setSelected(null);setPdf('');setLog(null)}}>← {openedCase?'MF File documents':'Monthly documents'}</button>:openedCase?<button type="button" className="glass-button" onClick={()=>{setOpenedCase(null);setLog(null);setUploadKind('')}}>← All MF Files</button>:onBack&&<button type="button" className="glass-button" onClick={onBack}>← Back</button>}</div>
       <h1>Commission documents</h1><p>View Mortuary Books, invoices and every payment receipt under their printed service branch. Payment checks include matching evidence from other months.</p>
       <p>Deleting an incorrect upload removes it from active commission evidence. Its original and audit history are retained, and it can be restored. Cases with approved commissions require Head Office review first.</p>
     </header>
     {error&&<p role="alert" className="error-message">{error}</p>}{notice&&<p role="status" className="success-message">{notice}</p>}
-    {selected?<section className="form-card"><h2>{labels[selected.kind]} · MF {selected.record.reference}</h2><p>{selected.record.branch} · {selected.record.deceased}</p><p>Uploaded {timestamp(selected.created_at)} · {selected.deleted_at?'Deleted from active evidence':'Active evidence'}</p>
+    {uploadKind?<section ref={detailRef} tabIndex={-1} className="form-card"><button type="button" className="glass-button" onClick={()=>run(async()=>{setUploadKind('');await load();if(openedCase)await fetchCase(openedCase.case.branch_id,openedCase.case.mf)})}>← Recheck MF File documents</button><CommissionEvidenceImport kind={uploadKind} franchiseId={franchiseId}/></section>:selected?<section ref={detailRef} tabIndex={-1} className="form-card"><h2>{labels[selected.kind]} · MF {selected.record.reference}</h2><p>{selected.record.branch} · {selected.record.deceased}</p><p>Uploaded {timestamp(selected.created_at)} · {selected.deleted_at?'Deleted from active evidence':'Active evidence'}</p>
       <dl className="document-field-list">{Object.entries(selected.record).filter(([key])=>!['source_hash','external_branch_id','earning_branch_id'].includes(key)).map(([key,value])=><div key={key}><dt>{key.replaceAll('_',' ')}</dt><dd>{typeof value==='object'?JSON.stringify(value):String(value??'—')}</dd></div>)}</dl>
       <h3>Allocated employees and managers</h3>{selected.staff.map(p=><p key={p.employee_user_id}>{p.full_name} · {p.removal_role||'Receipt commission recipient'}</p>)}{!selected.staff.length&&<p>Commission recipients are determined by staff claims; uploads do not assign recipients.</p>}
       <div className="button-row">{selected.original_available&&<button type="button" disabled={busy} onClick={()=>download(selected.id)}>Download original PDF</button>}<button type="button" className="glass-button" disabled={busy} onClick={()=>history()}>Document audit history</button><button type="button" className="glass-button" disabled={busy} onClick={()=>{setCorrection(selected);setReason('')}}>{selected.deleted_at?'Restore document':'Delete incorrect upload'}</button></div>
       {pdf?<iframe className="commission-document-pdf" src={pdf} title={`Original ${labels[selected.kind]} ${selected.id}`}/>:!selected.original_available&&<p>This older upload did not retain its original PDF. The extracted details are shown above.</p>}
-    </section>:openedCase?<section className="form-card">
+    </section>:openedCase?<section ref={detailRef} tabIndex={-1} className="form-card">
       <h2>{openedCase.case.branch} · MF {openedCase.case.reference || openedCase.case.mf}</h2><p>{openedCase.case.deceased}</p>
       <p className={openedCase.case.ready?'commission-file-status complete':'commission-file-status incomplete'}>{openedCase.case.ready?'Complete':'Not Complete'}</p>
+      {!openedCase.case.ready&&<section className="commission-case-issues" aria-label="Items to fix"><h3>Items to fix</h3>{(openedCase.case.issues||[{action:'inspect',label:'Check the documents below',message:openedCase.case.reason,document_ids:openedCase.documents.map(d=>d.id)}]).map((issue,index)=><article key={index}><h4>{issue.label}</h4><p>{issue.message}</p>{issue.action==='upload'&&<button type="button" disabled={busy} onClick={()=>setUploadKind(issue.kind)}>{issue.label} →</button>}{issue.action==='main_vat'&&<p>Correct the branch VAT number in the main system, then reopen Attendance to sync it. A blank synced VAT number means no VAT deduction.</p>}{issue.document_ids?.map(id=>{const doc=openedCase.documents.find(d=>d.id===id);return doc&&<button type="button" className="glass-button" key={id} disabled={busy} onClick={()=>view(id)}>Check {labels[doc.kind]} {doc.record.receipt_number||doc.record.invoice_number||doc.record.reference} →</button>})}</article>)}</section>}
       <p>{openedCase.case.reason}</p><p className="muted">All documents for this branch and MF File, across every upload month.</p>
       <div className="document-payment-summary"><p>Invoice total<strong>{money(openedCase.case.invoice_total)}</strong></p><p>All receipts<strong>{money(openedCase.case.total_received)}</strong></p><p>Balance<strong>{money(openedCase.case.balance)}</strong></p></div>
       <div className="table-wrap"><table><thead><tr><th>Document</th><th>Number / service date</th><th>Amount</th><th>Uploaded</th><th>Status</th><th>Open</th></tr></thead><tbody>{openedCase.documents.map(d=><tr key={d.id}>

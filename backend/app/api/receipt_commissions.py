@@ -206,6 +206,15 @@ def suggest_receipt_allocations(db,fid,records,user):
 def receipt_settings(db, fid, branch_id=0):
     row = db.execute(text('SELECT * FROM receipt_commission_settings WHERE franchise_user_id=:fid AND branch_id=:branch'), {'fid': fid, 'branch': branch_id}).mappings().first()
     default = receipt_settings(db, fid, 0) if branch_id else None
+    if branch_id:
+        synced = db.execute(text('SELECT vat_number,main_synced FROM attendance_branches WHERE id=:id AND franchise_user_id=:fid'), {'id': branch_id, 'fid': fid}).mappings().first()
+        if synced and synced['main_synced']:
+            number = str(synced['vat_number'] or '').strip()
+            result = {**default, **(dict(row) if row else {}), 'branch_id': branch_id,
+                      'vat_registered': bool(number), 'vat_number': number or None, 'vat_from_main_system': True}
+            if not number: result['vat_rate'] = 0
+            if result.get('receipt_percentage') is None: result['receipt_percentage'] = default.get('receipt_percentage')
+            return result
     if row:
         result = dict(row)
         result['vat_registered'] = bool(result['vat_registered'])

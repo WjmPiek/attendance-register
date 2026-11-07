@@ -254,7 +254,8 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
   const setActiveSubTab = page => navigateStaff(page)
   const [canImportDocuments, setCanImportDocuments] = useState(false)
   const [holderBranches, setHolderBranches] = useState([])
-  const [viewBranchId,setViewBranchId] = useState(getStaffBranchId)
+  const [viewBranchId,setViewBranchId] = useState(() => canManageStaff ? '' : getStaffBranchId())
+  useEffect(() => { if (canManageStaff) setStaffBranchId('') }, [canManageStaff])
   const changeStaffBranch = value => {setViewBranchId(String(value || ''));setStaffBranchId(value)}
   const [managers, setManagers] = useState([])
   const [employees, setEmployees] = useState([])

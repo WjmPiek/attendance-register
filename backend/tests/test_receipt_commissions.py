@@ -350,6 +350,7 @@ def test_three_branches_only_registered_branch_excludes_vat(database):
     database.commit()
     api.save_settings(api.SettingsIn(branch_id=101,vat_registered=True,vat_number='4000000000',receipt_percentage=2),OWNER,database)
     for bid in (102,103):api.save_settings(api.SettingsIn(branch_id=bid,vat_registered=False,receipt_percentage=2),OWNER,database)
+    database.execute(text("UPDATE attendance_branches SET vat_number='4000000000' WHERE id=101"));database.commit()
     names=['EXAMPLE','EXAMPLE SOUTH','EXAMPLE WEST']
     quote_and_import(database,import_payload([dict(record(),branch=name) for name in names]))
     result=stage_receipt(database,[dict(receipt(),branch=name) for name in names],people=(11,))
@@ -363,9 +364,9 @@ def test_three_branches_only_registered_branch_excludes_vat(database):
     assert api.settle(payload,OWNER,database)['created']==9
 
 
-def test_group_branch_with_blank_vat_number_never_silently_inherits_registered_status(database):
+def test_synced_group_branch_with_blank_vat_uses_full_invoice_instead_of_holder_vat(database):
     configure(database)
     database.execute(text('UPDATE attendance_branches SET vat_number=NULL WHERE id=101'));database.commit()
     _,q=calculate(database,stage_both(database))
-    assert all(r['state']=='blocked' for r in q['items'] if r.get('category')=='invoice_commission')
+    assert all(r['state']=='ready' and r['base_amount']=='23580.61' for r in q['items'] if r.get('category')=='invoice_commission')
 
