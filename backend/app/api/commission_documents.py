@@ -43,7 +43,9 @@ def register(month: str = Query(pattern=r'^\d{4}-(0[1-9]|1[0-2])$'), branch_id: 
     fid=import_scope(db,current_user,franchise_user_id)
     from app.services.attendance_branches import branches
     from app.services.external_commissions import external_branches
-    choices=[*branches(db,fid),*external_branches(db,fid)]
+    # Historical evidence stays browsable after a branch is unlinked. The
+    # active-branch check below still controls payment readiness.
+    choices=[*branches(db,fid,active_only=False),*external_branches(db,fid,active_only=False)]
     if branch_id and branch_id not in {b['id'] for b in choices}: raise HTTPException(403,'Branch is outside this holder group.')
     try:
         year,number=map(int,month.split('-'))
@@ -151,3 +153,4 @@ def restore(document_id: int, payload: CorrectionIn, current_user: User = Depend
         audit(db,current_user,fid,'commission_document_restored',document_id,old={'deleted_at':row['deleted_at'],'reason':row['deletion_reason']},note=payload.reason.strip())
         db.commit();return {'restored':True}
     except Exception: db.rollback();raise
+
