@@ -28,7 +28,7 @@ export default function StaffLeave({ me, page, navigate, onSubmitted }) {
     const note=window.prompt(approved?'Approval note (optional)':'Reason for rejection')
     if(note===null)return
     setBusy(true);setError('')
-    try {await (approved?approveLeaveApplication:declineLeaveApplication)(id,note);onSubmitted()}catch(e){setError(e.message)}finally{setBusy(false)}
+    try {await (approved?approveLeaveApplication:declineLeaveApplication)(id,note);onSubmitted('Task completed.')}catch(e){setError(e.message)}finally{setBusy(false)}
   }
   if(page==='leave-apply')return <form className="staff-simple-form" onSubmit={submit}>{error&&<p role="alert" className="error-message">{error}</p>}
     <label>Leave type<select disabled={busy} value={form.leave_type} onChange={e=>setForm({...form,leave_type:e.target.value})}>{leaveTypes.map(type=><option key={type}>{type}</option>)}</select></label>

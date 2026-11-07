@@ -56,3 +56,6 @@
 .staff-popup h2 { margin-bottom:24px; font-size:18px; }
 .staff-popup button { width:100%; }
 @media(max-width:600px) { .staff-portal { padding:12px; } .staff-portal-main { padding:18px; } .staff-button-grid,.staff-amounts { grid-template-columns:minmax(0,1fr); } .staff-portal-header { gap:9px; } .staff-portal-header button { padding:10px 12px; font-size:14px; } .staff-button-grid>button { min-height:64px; } .staff-calendar-grid { gap:3px; } .staff-calendar-grid>span { min-height:36px; font-size:12px; } }
+
+.staff-popup p { white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.5; margin:0 0 24px; }
+.staff-popup { max-height:calc(100dvh - 40px); overflow-y:auto; }
