@@ -48,6 +48,8 @@ def test_register_groups_uploads_by_month_and_branch_but_checks_all_payment_mont
     case=result['cases'][0]
     assert case['invoice_total']=='1150.0' or Decimal(case['invoice_total'])==Decimal('1150')
     assert case['total_received']=='500.00' and case['balance']=='650.00' and not case['ready']
+    assert case['issues'][0]['action']=='inspect'
+    assert set(case['issues'][0]['document_ids'])=={d['id'] for d in result['documents'] if d['kind']=='receipt'}|{r.id for r in database.execute(text("SELECT id FROM commission_documents WHERE kind='invoice'"))}
     assert client.get('/api/commission-documents?month=2026-11&branch_id=102').json()['total']==0
     assert client.get('/api/commission-documents?month=2026-11&branch_id=900').status_code==403
     assert client.get('/api/commission-documents?month=2026-13').status_code==422

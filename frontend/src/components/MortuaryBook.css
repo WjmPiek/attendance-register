@@ -173,3 +173,11 @@
 .commission-file-status.incomplete { background:#fff0f2; color:#a5223c; border:1px solid #efa2af; }
 .commission-case-link { color:#69499b; margin-top:auto; }
 .commission-carry-notice { padding:12px 14px; border-radius:10px; background:#f3edf9; color:#69499b; border:1px solid #d9c9eb; }
+
+/* Case folders stay readable even when global button styles are loaded later. */
+.mortuary-book.commission-document-register button.commission-case-card { background:#fff!important; color:#26213a!important; }
+.mortuary-book.commission-document-register button.commission-case-card .commission-case-title,
+.mortuary-book.commission-document-register button.commission-case-card .commission-case-link { color:#69499b!important; }
+.commission-case-issues { border:1px solid #efa2af; background:#fff8f9; border-radius:12px; padding:18px; margin:18px 0; }
+.commission-case-issues article { display:flex; flex-wrap:wrap; gap:12px; padding:14px 0; }
+.commission-case-issues article>h4,.commission-case-issues article>p { flex-basis:100%; margin:0; }

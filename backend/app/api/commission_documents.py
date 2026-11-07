@@ -15,6 +15,7 @@ from app.models.core import User
 from app.services.attendance_branches import import_scope
 from app.services.receipt_commissions import require_payment_proof, money
 from app.services.audit import write_audit_log
+from app.services.commission_document_issues import document_issues
 
 router = APIRouter()
 
@@ -78,7 +79,7 @@ def register(month: str = Query(pattern=r'^\d{4}-(0[1-9]|1[0-2])$'), branch_id: 
                       'document_counts':{kind:sum(d['kind']==kind for d in docs) for kind in ('mortuary','invoice','receipt')},
                       'deceased':source.get('deceased'),'reference':source.get('reference',mf),'invoice_total':str(invoice_total) if invoice_total is not None else None,
                       'total_received':str(money(paid)),'balance':str(money(invoice_total-paid)) if invoice_total is not None else None,
-                      'ready':ready,'reason':reason,'document_ids':[r['id'] for r in rows if r['branch_key']==bk and r['mf_key']==mf]})
+                      'ready':ready,'reason':reason,'issues':document_issues(docs,ready,reason),'document_ids':[r['id'] for r in rows if r['branch_key']==bk and r['mf_key']==mf]})
     # Use all cases in this month for the selector, independently of pagination/filter.
     populated=set(db.execute(text('SELECT DISTINCT branch_key FROM commission_documents WHERE franchise_user_id=:fid AND created_at>=:first AND created_at<:last '+('AND deleted_at IS NULL' if not include_deleted else '')),params).scalars())
     result={'branches':[b for b in choices if branch_key(b['name']) in populated],'month':month,'cases':cases,'documents':[serialise(db,r) for r in rows], 'total':total,'case_total':case_total,'offset':offset,'limit':limit}
@@ -114,7 +115,7 @@ def case_documents(branch_id: int, mf: str = Query(min_length=1,max_length=255),
         except HTTPException as exc: reason=exc.detail
     source=json.loads((active or rows)[0]['source_data'])
     case={'branch_id':branch_id,'branch':branch['name'],'mf':key,'reference':source.get('reference',key),'deceased':source.get('deceased'),
-          'ready':ready,'reason':reason,'invoice_total':str(total) if total is not None else None,
+          'ready':ready,'reason':reason,'issues':document_issues(active,ready,reason),'invoice_total':str(total) if total is not None else None,
           'total_received':str(money(paid)),'balance':str(money(total-paid)) if total is not None else None,
           'document_counts':{kind:sum(r['kind']==kind for r in active) for kind in ('mortuary','invoice','receipt')}}
     audit(db,current_user,fid,'commission_mf_folder_viewed',new={'branch_id':branch_id,'mf':key,'include_deleted':include_deleted})

@@ -125,6 +125,8 @@ def test_system_non_vat_branch_uses_full_amount_despite_conflicting_invoice(data
 
 
 def test_unclear_invoice_and_unknown_system_vat_status_remain_blocked(database):
+    database.execute(text('UPDATE attendance_branches SET main_synced=FALSE WHERE id=101'))
+    database.commit()
     row = parse_invoice_text(INVOICE.replace('R 150.00', 'R 100.00'))
     with pytest.raises(HTTPException, match='no confirmed branch VAT status'):
         resolve_commission_vat(database, 2, 101, row)
@@ -167,3 +169,25 @@ def test_invoice_stage_cannot_use_an_unsigned_or_unconfirmed_preview(database):
     client, _ = client_for(database)
     assert client.post('/api/receipt-commissions/invoices/stage', json={'preview_token': 'tampered', 'confirmed_franchise': True}).status_code == 400
     assert client.post('/api/receipt-commissions/invoices/stage', json={'preview_token': 'tampered'}).status_code == 400
+
+
+def test_synced_blank_main_vat_overrides_printed_vat_and_local_registered_defaults(database):
+    configure(database)
+    database.execute(text("UPDATE attendance_branches SET main_synced=TRUE,vat_number=NULL WHERE id=101"))
+    database.commit()
+    resolved=resolve_commission_vat(database,2,101,parse_invoice_text(INVOICE))
+    assert resolved['vat_registered'] is False
+    assert resolved['commission_base']=='1150.00' and resolved['vat_rate']=='0'
+    assert resolved['vat_source']=='Main system: not VAT registered'
+    settings=api.receipt_settings(database,2,101)
+    assert settings['vat_registered'] is False and settings['vat_from_main_system'] is True
+    assert settings['vat_number'] is None
+
+
+def test_synced_non_vat_still_uses_total_when_printed_vat_is_unclear(database):
+    database.execute(text("UPDATE attendance_branches SET main_synced=TRUE,vat_number='' WHERE id=101"))
+    database.commit()
+    row=parse_invoice_text(INVOICE.replace('R 150.00','R 100.00'))
+    assert row['vat_issue']
+    resolved=resolve_commission_vat(database,2,101,row)
+    assert resolved['commission_base']=='1150.00' and resolved['vat_registered'] is False

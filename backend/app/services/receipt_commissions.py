@@ -248,8 +248,8 @@ def invoice_commission_rate(db, fid, uid, role, branch_id, policies, settings):
 
 
 def resolve_commission_vat(db, fid, branch_id, invoice):
-    """Cross-check printed VAT against the branch record; do not infer exempt from unknown."""
-    branch = db.execute(text('SELECT vat_number FROM attendance_branches WHERE id=:id AND franchise_user_id=:fid'), {'id': branch_id, 'fid': fid}).mappings().first()
+    """A signed main-system VAT record overrides invoice and local VAT settings."""
+    branch = db.execute(text('SELECT vat_number,main_synced FROM attendance_branches WHERE id=:id AND franchise_user_id=:fid'), {'id': branch_id, 'fid': fid}).mappings().first()
     settings = db.execute(text('SELECT * FROM receipt_commission_settings WHERE franchise_user_id=:fid AND branch_id IN (0,:branch) ORDER BY branch_id DESC'), {'fid': fid, 'branch': branch_id}).mappings().all()
     direct = next((r for r in settings if r['branch_id'] == branch_id), None)
     inherited = next((r for r in settings if r['branch_id'] == 0), None)
@@ -263,6 +263,8 @@ def resolve_commission_vat(db, fid, branch_id, invoice):
         if not re.fullmatch(r'\d{10}', recorded_number):
             raise HTTPException(400, 'The system branch VAT number is invalid. Correct its registration record before approval.')
         registered, number, source = True, recorded_number, 'System branch VAT registration'
+    elif branch and branch['main_synced']:
+        registered, number, source = False, None, 'Main system: not VAT registered'
     elif direct:
         registered, number, source = bool(direct['vat_registered']), direct.get('vat_number'), 'Confirmed branch VAT settings'
     elif inherited and not inherited['vat_registered']:
@@ -277,7 +279,7 @@ def resolve_commission_vat(db, fid, branch_id, invoice):
     if registered and (not number or not re.fullmatch(r'\d{10}', str(number)) or not rate.is_finite() or not 0 <= rate <= 100):
         raise HTTPException(400, 'Confirm a valid branch VAT registration number and VAT rate in the system.')
     compatible = valid_print and invoice['vat_registered'] == registered and (not registered or str(invoice.get('vat_number')) == str(number)) and (not registered or Decimal(str(invoice.get('vat_rate', 0))) == rate)
-    base = Decimal(str(invoice['commission_base'])) if compatible else receipt_base(total, registered, rate)
+    base = Decimal(str(invoice['commission_base'])) if compatible and registered else receipt_base(total, registered, rate)
     if not base.is_finite() or base < 0 or base > total:
         raise HTTPException(400, 'Invoice commission base is inconsistent with its total.')
     return {'commission_base': str(base), 'vat_registered': registered, 'vat_number': number, 'vat_rate': str(rate),

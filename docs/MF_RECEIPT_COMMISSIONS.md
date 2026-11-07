@@ -258,3 +258,25 @@ Unread updates are filtered to the current recipient and acknowledged only
 after OK succeeds. Failed acknowledgements can be retried without losing the
 update. Polling continues while forms are open, but popups wait until a safe
 page so that typing and submission confirmations are not interrupted.
+
+
+## Main-holder defaults and authoritative VAT
+
+HR Staff opens at Main holder — all linked branches, irrespective of a stored
+launch branch. Selecting a branch filters the staff view only. Uploads keep
+using the printed branch and signed holder scope, never the selected view.
+
+A main_synced branch's blank VAT number explicitly means not VAT registered.
+It overrides local registered defaults and printed invoice VAT; percentage
+commission uses the full invoice total without a VAT deduction. A recorded
+main-system VAT number means the invoice base excludes VAT. Unsynced/outside
+branches retain their existing confirmed-settings/evidence checks. VAT records
+for synced branches are displayed as coming from the main system. Correct
+them there and reopen Attendance to sync changes; no VAT numbers are invented.
+
+Commission Documents cards open and focus the MF folder. Not Complete folders
+show Items to fix with direct missing-document upload or document-inspection
+buttons. Returning from an upload rechecks the same branch/MF folder. Original
+PDFs and correction audit controls remain available. Document names, MF numbers,
+payment totals and full-payment requirements remain mandatory. No schema
+migration or document reimport is needed for this change.
