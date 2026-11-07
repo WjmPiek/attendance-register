@@ -151,6 +151,7 @@ def test_automatic_monthly_pdf_uses_both_recipients_without_settings(delivery_db
     assert 'TOTAL APPROVED FOR FINANCE: R 410.10' in content
     assert 'PENDING - NOT APPROVED FOR PAYMENT' in content and 'MISSING' in content
     assert 'MF File Receipts' in content and 'EXAMPLE' in content
+    assert 'Approved totals by manager / employee - all service branches' in content
     report=db.execute(text('SELECT * FROM commission_monthly_reports')).mappings().one()
     assert report['pdf_content']==pdf
     assert str(report['period_start'])=='2026-10-26'
