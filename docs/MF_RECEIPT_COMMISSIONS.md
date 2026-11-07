@@ -251,3 +251,10 @@ without adding privileges. The staff_portal_page query parameter is separate
 from existing staff_page management navigation. Holder and administrator
 dashboards retain their full management interface. No schema migration is
 needed for these self-service pages.
+
+Staff notifications appear automatically as one popup at a time on Home and
+read-only commission/leave pages. There is no Notifications button or inbox.
+Unread updates are filtered to the current recipient and acknowledged only
+after OK succeeds. Failed acknowledgements can be retried without losing the
+update. Polling continues while forms are open, but popups wait until a safe
+page so that typing and submission confirmations are not interrupted.

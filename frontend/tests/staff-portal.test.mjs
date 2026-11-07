@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { usesStaffPortal,commissionTotals,ownLeave,calendarDays,staffRoute } from '../src/utils/staff-portal.mjs'
+import { usesStaffPortal,commissionTotals,ownLeave,calendarDays,staffRoute,unreadStaffNotifications } from '../src/utils/staff-portal.mjs'
 
 test('employees and managers share the simple portal while holder/admin roles retain management pages',()=>{
   for(const role of ['EmployeeUser','ManagerUser'])assert.equal(usesStaffPortal({roles:[role]}),true)
@@ -37,4 +37,18 @@ test('home is the normal landing page and existing attendance QR/notification li
   assert.equal(staffRoute('?staff_portal_page=team-commissions&commission_employee=12'),'team-commissions')
   assert.equal(staffRoute('?office_qr=example'),'attendance')
   assert.equal(staffRoute('?staff_page=business'),'home')
+})
+
+
+test('staff popups show unread personal updates once, oldest first, without leaking another recipient',()=>{
+  const items=[{id:3,recipient_user_id:11,subject:'Leave approved',created_at:'2026-11-07T11:00:00'},
+    {id:2,user_id:11,subject:'Claim finalised',created_at:'2026-11-07T10:00:00'},
+    {id:2,user_id:11,subject:'Duplicate'},
+    {id:4,recipient_user_id:12,user_id:11,subject:'Another recipient'},
+    {id:5,user_id:11,is_read:true},{id:6,user_id:11,status:'read'},
+    {id:7,recipient_user_id:null,user_id:null}]
+  assert.deepEqual(unreadStaffNotifications(items,11).map(item=>item.id),[2,3])
+  assert.deepEqual(unreadStaffNotifications(items,11,new Set(['2'])).map(item=>item.id),[3])
+  assert.deepEqual(unreadStaffNotifications(null,11),[])
+  assert.equal(staffRoute('?staff_portal_page=notifications'),'home')
 })

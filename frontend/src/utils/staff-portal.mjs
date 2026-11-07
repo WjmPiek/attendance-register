@@ -32,11 +32,23 @@ export function calendarDays(month,items) {
   return cells
 }
 
-const pages=new Set(['home','claim','commissions','leave','leave-apply','leave-approved','leave-rejected','leave-pending','payslips','irp5','notifications','more','attendance','history','id-card','profile','upload','team','team-commissions','approvals','attendance-approvals','leave-requests','manage-payslips','manage-irp5'])
+const pages=new Set(['home','claim','commissions','leave','leave-apply','leave-approved','leave-rejected','leave-pending','payslips','irp5','more','attendance','history','id-card','profile','upload','team','team-commissions','approvals','attendance-approvals','leave-requests','manage-payslips','manage-irp5'])
 export function staffRoute(search) {
   const query=new URLSearchParams(search)
   if(query.has('office_qr'))return 'attendance'
   const explicit=query.get('staff_portal_page') || query.get('staff_page')
   if(pages.has(explicit))return explicit
   return {commission:'commissions',leave:'leave',payroll:'payslips',irp5:'irp5',attendance:'attendance',history:'history',profile:'profile','employee-card':'id-card',staff:'upload',approvals:'attendance-approvals'}[query.get('tab')] || 'home'
+}
+
+
+export function unreadStaffNotifications(items, uid, dismissed = new Set()) {
+  const seen = new Set(dismissed)
+  return (Array.isArray(items) ? items : []).filter(item => {
+    const id = String(item.id ?? '')
+    if (!id || seen.has(id) || item.is_read || item.status === 'read'
+      || Number(item.recipient_user_id ?? item.user_id) !== Number(uid)) return false
+    seen.add(id)
+    return true
+  }).sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || '')) || Number(a.id) - Number(b.id))
 }

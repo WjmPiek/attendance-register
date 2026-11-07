@@ -1,12 +1,13 @@
-import { useEffect, useRef, useState } from 'react'
-import { apiRequest, getCommissionEntries, getNotifications, markNotificationRead } from '../api/client'
+import { useEffect, useState } from 'react'
+import { apiRequest, getCommissionEntries } from '../api/client'
 import { staffRoute, commissionTotals } from '../utils/staff-portal.mjs'
 import { useCommissionMonth } from '../utils/useCommissionMonth'
 import { notifyAttendanceParent } from '../embeddedAttendance'
 import ServiceClaimPanel from '../components/ServiceClaimPanel'
 import StaffLeave from '../components/StaffLeave'
 import StaffDocuments from '../components/StaffDocuments'
-import AttendanceExceptionPopup from '../components/AttendanceExceptionPopup'
+import StaffPopup from '../components/StaffPopup'
+import StaffNotificationPopup from '../components/StaffNotificationPopup'
 import MobileAttendancePage from './MobileAttendancePage'
 import AttendanceHistoryPage from './AttendanceHistoryPage'
 import AttendanceApprovalPage from './AttendanceApprovalPage'
@@ -19,15 +20,9 @@ import MyProfilePage from './MyProfilePage'
 import DigitalIdCard from '../components/DigitalIdCard'
 import './StaffPortal.css'
 
-const titles={home:'Home',claim:'Claim',commissions:'Commissions',leave:'Leave Days','leave-apply':'Leave Application','leave-approved':'Leave Approved','leave-rejected':'Leave Rejected','leave-pending':'Pending Requests',payslips:'Payslips',irp5:'IRP5',notifications:'Notifications',more:'More',attendance:'Sign In / Out',history:'Attendance History','id-card':'My ID',profile:'My Profile',upload:'Upload Documents',team:'My Team','team-commissions':'Team Commissions',approvals:'Approvals','attendance-approvals':'Attendance Requests','leave-requests':'Leave Requests','manage-payslips':'Manage Payslips','manage-irp5':'Manage IRP5'}
-const homeButtons=[['attendance','Sign In / Out'],['claim','Claim'],['commissions','Commissions'],['leave','Leave Days'],['payslips','Payslips'],['irp5','IRP5'],['notifications','Notifications'],['more','More']]
+const titles={home:'Home',claim:'Claim',commissions:'Commissions',leave:'Leave Days','leave-apply':'Leave Application','leave-approved':'Leave Approved','leave-rejected':'Leave Rejected','leave-pending':'Pending Requests',payslips:'Payslips',irp5:'IRP5',more:'More',attendance:'Sign In / Out',history:'Attendance History','id-card':'My ID',profile:'My Profile',upload:'Upload Documents',team:'My Team','team-commissions':'Team Commissions',approvals:'Approvals','attendance-approvals':'Attendance Requests','leave-requests':'Leave Requests','manage-payslips':'Manage Payslips','manage-irp5':'Manage IRP5'}
+const homeButtons=[['attendance','Sign In / Out'],['claim','Claim'],['commissions','Commissions'],['leave','Leave Days'],['payslips','Payslips'],['irp5','IRP5'],['more','More']]
 const money=value=>`R ${Number(value || 0).toLocaleString('en-ZA',{minimumFractionDigits:2,maximumFractionDigits:2})}`
-
-function SubmissionPopup({onClose}) {
-  const button=useRef(null)
-  useEffect(()=>{button.current?.focus()},[])
-  return <div className="staff-popup-backdrop"><section role="alertdialog" aria-modal="true" aria-labelledby="staff-request-sent" className="staff-popup" onKeyDown={event=>{if(event.key==='Escape')onClose();if(event.key==='Tab'){event.preventDefault();button.current?.focus()}}}><h2 id="staff-request-sent">Your request has been sent.</h2><button ref={button} type="button" onClick={onClose}>OK</button></section></div>
-}
 
 function StaffCommissionAmounts({me}) {
   const [month]=useCommissionMonth(),[totals,setTotals]=useState(null),[error,setError]=useState('')
@@ -42,15 +37,8 @@ function StaffCommissionAmounts({me}) {
   return <section>{error&&<p role="alert" className="error-message">{error}</p>}{!totals&&!error&&<p role="status">Loading…</p>}{totals&&<><p className="staff-period">{new Date(`${month}-01T12:00:00Z`).toLocaleDateString('en-ZA',{month:'long',year:'numeric'})}</p><div className="staff-amounts"><section className="approved"><h2>Approved</h2><strong>{money(totals.approved)}</strong></section><section className="waiting"><h2>Waiting to be finalised</h2><strong>{totals.unknown&&totals.waiting===0?'Awaiting calculation':money(totals.waiting)}</strong>{totals.unknown&&totals.waiting>0&&<small>More amounts await documents.</small>}</section></div></>}</section>
 }
 
-function StaffNotifications({me,navigate}) {
-  const [items,setItems]=useState(null),[error,setError]=useState('')
-  useEffect(()=>{let active=true;const load=()=>getNotifications().then(data=>{if(active)setItems((Array.isArray(data)?data:[]).filter(item=>Number(item.recipient_user_id??item.user_id)===Number(me.id)))}).catch(e=>{if(active)setError(e.message)});load();const timer=setInterval(load,20000);return()=>{active=false;clearInterval(timer)}},[me.id])
-  const open=async item=>{setError('');try{await markNotificationRead(item.id);navigate(item.target_tab==='leave'?'leave':item.target_tab==='commission'?'commissions':item.target_tab==='approvals'?'attendance-approvals':'home')}catch(e){setError(e.message)}}
-  return <section>{error&&<p role="alert" className="error-message">{error}</p>}{!items&&!error&&<p role="status">Loading…</p>}<div className="staff-notification-list">{items?.map(item=><button type="button" key={item.id} onClick={()=>open(item)}><strong>{item.subject}</strong><span>{item.message}</span></button>)}</div>{items?.length===0&&<p>No notifications.</p>}</section>
-}
-
 export default function StaffPortal({me,onLogout,embedded=false}) {
-  const [page,setPage]=useState(()=>staffRoute(window.location.search)),[sent,setSent]=useState(false)
+  const [page,setPage]=useState(()=>staffRoute(window.location.search)),[sent,setSent]=useState('')
   const [canImport,setCanImport]=useState(null)
   const manager=me.roles.includes('ManagerUser'),finance=(me.employee_role||'').toLowerCase().includes('finance')
   useEffect(()=>{let active=true;apiRequest('/receipt-commissions/access').then(result=>{if(active)setCanImport(Boolean(result.can_import))}).catch(()=>{if(active)setCanImport(false)});return()=>{active=false}},[me.id])
@@ -64,7 +52,7 @@ export default function StaffPortal({me,onLogout,embedded=false}) {
     setPage(next);window.scrollTo(0,0)
     if(embedded)notifyAttendanceParent('martins:attendance-scroll-top')
   }
-  const submitted=()=>{navigate('home',{replace:true});setSent(true)}
+  const submitted=message=>{navigate('home',{replace:true});setSent(typeof message==='string'?message:'Your request has been sent.')}
   const restricted=(['team','team-commissions','approvals','attendance-approvals','leave-requests'].includes(page)&&!manager)||(['manage-payslips','manage-irp5'].includes(page)&&!finance)||(page==='upload'&&canImport===false)
   const current=restricted?'home':page
   const tools=[['history','Attendance History'],['id-card','My ID'],['profile','My Profile'],...(canImport?[['upload','Upload Documents']]:[]),...(manager?[['approvals','Approvals'],['team','My Team']]:[]),...(finance?[['manage-payslips','Manage Payslips'],['manage-irp5','Manage IRP5']]:[])]
@@ -77,7 +65,6 @@ export default function StaffPortal({me,onLogout,embedded=false}) {
       {current==='commissions'&&<StaffCommissionAmounts me={me}/>}
       {(current==='leave'||current.startsWith('leave-'))&&<StaffLeave me={me} page={current} navigate={navigate} onSubmitted={submitted}/>}
       {['payslips','irp5'].includes(current)&&<StaffDocuments kind={current}/>}
-      {current==='notifications'&&<StaffNotifications me={me} navigate={navigate}/>}
       {current==='more'&&<nav className="staff-button-grid" aria-label="More">{tools.map(([id,label])=><button type="button" key={id} onClick={()=>navigate(id)}>{label}</button>)}</nav>}
       {current==='attendance'&&<MobileAttendancePage me={me} onDone={()=>navigate('home',{replace:true})}/>}
       {current==='history'&&<AttendanceHistoryPage me={me}/>}
@@ -91,7 +78,7 @@ export default function StaffPortal({me,onLogout,embedded=false}) {
       {current==='manage-payslips'&&finance&&<PayrollPage me={me}/>}
       {current==='manage-irp5'&&finance&&<Irp5DocumentsPage me={me}/>}
     </main>
-    {sent&&<SubmissionPopup onClose={()=>setSent(false)}/>}
-    {manager&&<AttendanceExceptionPopup me={me} onNavigate={()=>navigate('attendance-approvals')}/>}
+    {sent&&<StaffPopup title={sent} onClose={()=>setSent('')}/>}
+    <StaffNotificationPopup key={me.id} me={me} paused={Boolean(sent)||!['home','commissions','leave','leave-approved','leave-rejected','leave-pending','more'].includes(current)}/>
   </div>
 }
