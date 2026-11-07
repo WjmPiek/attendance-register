@@ -219,3 +219,12 @@ is excluded from Complete checks and can be shown using Include deleted uploads.
 
 Migration 025 creates the durable carry-forward history. Prior sent PDFs and
 payment reservations remain unchanged.
+
+The staff claim form loads permissions before showing inputs. It lists only
+service branches with claimable items, then only the person's enabled items at
+the selected branch. MF/deceased/date/role inputs remain hidden until an enabled
+item is selected. Outside branches use home-branch commission permissions, and
+the additional outside-branch fee is never a separate selectable claim. Both
+quote and submission endpoints independently enforce the current user's own
+identity and effective branch permissions; hiding controls does not replace
+server-side checks.
