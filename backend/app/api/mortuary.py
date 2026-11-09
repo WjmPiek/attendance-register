@@ -74,6 +74,7 @@ class Policy(BaseModel):
 class SavePolicy(Policy):
     franchise_user_id: int | None = None
     employee_user_id: int = Field(default=0, ge=0)
+    branch_id: int | None = Field(default=None,gt=0)
 
 
 class Allocation(BaseModel):
@@ -150,24 +151,47 @@ def effective_policy(policies, uid):
 
 
 @router.get('/settings')
-def get_settings(franchise_user_id: int | None = None, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def get_settings(franchise_user_id: int | None = None, current_user: User = Depends(get_current_user), db: Session = Depends(get_db), branch_id:int|None=None):
     fid = import_scope(db, current_user, franchise_user_id)
     people = import_staff(db, fid)
     policies = policy_map(db, fid)
-    return {'employees': people, 'default': effective_policy(policies, 0), 'overrides': policies,
-            'franchise_user_id': fid}
+    from app.services.attendance_branches import branches
+    locations=branches(db,fid)
+    default=effective_policy(policies,0)
+    main_default=deepcopy(default)
+    own={}
+    if branch_id:
+        if branch_id not in {branch['id'] for branch in locations}:raise HTTPException(403,'Select an active linked branch belonging to this franchise holder.')
+        saved=db.execute(text('SELECT rates FROM commission_branch_rates WHERE franchise_user_id=:fid AND branch_id=:bid'),{'fid':fid,'bid':branch_id}).scalar()
+        own=json.loads(saved) if saved else {}
+        default['rates'].update(own)
+    return {'employees':people,'default':default,'main_default':main_default,'overrides':policies if not branch_id else {},'branch_rates':own,
+            'franchise_user_id':fid,'branches':locations,'branch_id':branch_id}
 
 
 @router.put('/settings')
 def save_settings(payload: SavePolicy, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     fid = _staff_franchise_id(db, current_user, payload.franchise_user_id)
+    if payload.branch_id:
+        from app.services.attendance_branches import branches
+        if payload.branch_id not in {branch['id'] for branch in branches(db,fid)}:raise HTTPException(403,'Select an active linked branch belonging to this franchise holder.')
+        if payload.employee_user_id:raise HTTPException(400,'Set individual staff branch fees under that staff member’s branch commission permissions.')
+        rates=payload.rates.model_dump(mode='json',exclude_none=True)
+        old=db.execute(text('SELECT rates FROM commission_branch_rates WHERE franchise_user_id=:fid AND branch_id=:bid'),{'fid':fid,'bid':payload.branch_id}).scalar()
+        db.execute(text('''INSERT INTO commission_branch_rates(franchise_user_id,branch_id,rates,updated_by_user_id) VALUES(:fid,:bid,:rates,:actor)
+            ON CONFLICT(franchise_user_id,branch_id) DO UPDATE SET rates=EXCLUDED.rates,updated_by_user_id=EXCLUDED.updated_by_user_id,updated_at=NOW()'''),
+            {'fid':fid,'bid':payload.branch_id,'rates':json.dumps(rates),'actor':current_user.id})
+        from app.services.audit import write_audit_log
+        write_audit_log(db,actor_user_id=current_user.id,franchise_user_id=fid,action='branch_commission_fees_updated',entity_type='commission_branch_rates',entity_id=payload.branch_id,old_values={'rates':old},new_values={'rates':rates})
+        db.commit()
+        return {'saved':True,'branch_id':payload.branch_id}
     if payload.employee_user_id:
         participant = _participant(db, current_user, payload.employee_user_id, write=True)
         if participant['franchise_user_id'] != fid:
             raise HTTPException(403, 'Staff member is outside this franchise')
         if payload.extra_holidays:
             raise HTTPException(400, 'Set additional public holidays on franchise defaults.')
-    policy = payload.model_dump(mode='json', exclude={'franchise_user_id', 'employee_user_id'})
+    policy = payload.model_dump(mode='json', exclude={'franchise_user_id', 'employee_user_id','branch_id'})
     old = db.execute(text('SELECT policy FROM mortuary_policies WHERE franchise_user_id=:fid AND employee_user_id=:uid'),
                      {'fid': fid, 'uid': payload.employee_user_id}).scalar()
     db.execute(text('''INSERT INTO mortuary_policies(franchise_user_id,employee_user_id,policy,updated_by_user_id)

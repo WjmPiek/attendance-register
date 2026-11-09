@@ -169,6 +169,7 @@ def database(monkeypatch):
         schemas_files = 'CREATE TABLE commission_document_files(franchise_user_id INT,source_hash TEXT,filename TEXT,file_content BLOB,uploaded_by_user_id INT,created_at TEXT DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(franchise_user_id,source_hash))'
         db.execute(text(schemas_files))
         db.execute(text('CREATE TABLE external_commission_branches(branch_id INT PRIMARY KEY,franchise_user_id INT,branch_key TEXT,created_by_user_id INT,created_at TEXT DEFAULT CURRENT_TIMESTAMP,UNIQUE(franchise_user_id,branch_key))'))
+        db.execute(text("CREATE TABLE commission_branch_rates(franchise_user_id INT,branch_id INT,rates TEXT,updated_by_user_id INT,updated_at TEXT DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(franchise_user_id,branch_id))"))
         for column in ('mortuary_document_id INT', 'receipt_document_id INT', 'invoice_document_id INT', 'source_metadata TEXT', 'invoice_value_before_tax NUMERIC', 'hours NUMERIC', 'hourly_rate NUMERIC', 'earning_branch_id INT', 'review_notes TEXT', 'updated_at TEXT'):
             db.execute(text('ALTER TABLE commission_entries ADD COLUMN ' + column))
         db.execute(text("CREATE UNIQUE INDEX uq_receipt_award ON commission_entries(receipt_document_id,employee_user_id) WHERE commission_type='invoice_commission' AND receipt_document_id IS NOT NULL"))
