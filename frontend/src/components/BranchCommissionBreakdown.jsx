@@ -13,7 +13,7 @@ export default function BranchCommissionBreakdown({branch}) {
           {!branch.files[status].length&&<p>No MF files in this block.</p>}
           {branch.files[status].map(file=><details className="staff-mf-file" key={file.key}>
             <summary>{file.reference}</summary>
-            <ul aria-label={`${file.reference} commissions`}>{file.items.map((item,index)=><li key={item.id ?? index}><span>{commissionLabels[item.category] || String(item.category || 'Commission').replaceAll('_',' ')}</span><span>{item.unknown?'Awaiting calculation':money(item.amount)}</span></li>)}</ul>
+            <ul aria-label={`${file.reference} commissions`}>{file.items.map((item,index)=><li key={item.id ?? index}><span>{commissionLabels[item.category] || String(item.category || 'Commission').replaceAll('_',' ')}</span><span>{item.unknown?'Awaiting calculation':money(item.amount)}</span>{item.notice&&<small className="staff-commission-reason">{item.notice}</small>}</li>)}</ul>
             <p>File total: <b>{money(file.total)}</b>{file.unknown?' + items awaiting calculation':''}</p>
           </details>)}
         </div>

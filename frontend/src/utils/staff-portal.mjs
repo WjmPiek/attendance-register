@@ -28,7 +28,7 @@ export function commissionFiles(rows, uid) {
     const value=Number(approved?row.calculated_amount:row.expected_amount ?? row.calculated_amount ?? 0)
     const amount=Number.isFinite(value)?value:0
     const unknown=!approved && row.estimate_available===false
-    file.items.push({id:row.id,category:row.commission_type,amount,unknown})
+    file.items.push({id:row.id,category:row.commission_type,amount,unknown,notice:unknown?row.payment_block_reason:null})
     file.total+=amount
     file.unknown ||= unknown
   }

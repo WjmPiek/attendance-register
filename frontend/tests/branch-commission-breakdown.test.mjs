@@ -20,7 +20,7 @@ const Component=module.exports.default
 test('branch blocks disclose only MF numbers before their individual commission breakdowns',()=>{
   const base={employee_user_id:24,earning_branch_id:4,branch_name:'Northcliff',reference:'MF111137',commission_type:'grave_service',calculated_amount:'75.00'}
   const [branch]=commissionBranchTotals([{...base,id:1,status:'approved',payment_eligible:true},
-    {...base,id:2,status:'pending',reference:'MF111105',commission_type:'removals',estimate_available:false,expected_amount:'0'}],24)
+    {...base,id:2,status:'pending',reference:'MF111105',commission_type:'removals',estimate_available:false,expected_amount:'0',payment_block_reason:'The claimant is not identified in the Mortuary Book.'}],24)
   const view=TestRenderer.create(React.createElement(Component,{branch}))
   try {
     const blocks=view.root.findAllByType('details').filter(node=>['approved','waiting'].includes(node.props.className))
@@ -36,6 +36,7 @@ test('branch blocks disclose only MF numbers before their individual commission 
       const lines=file.findAllByType('li')
       assert.equal(lines.length,1)
       assert.match(lines[0].findAllByType('span').map(span=>span.children.join('')).join(' '),index===0?/Grave Service/:/Awaiting calculation/)
+      if(index===1)assert.equal(lines[0].findByType('small').children[0],'The claimant is not identified in the Mortuary Book.')
     }
   } finally {view.unmount()}
 })
