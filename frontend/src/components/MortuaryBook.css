@@ -181,6 +181,10 @@
 .commission-case-issues { border:1px solid #efa2af; background:#fff8f9; border-radius:12px; padding:18px; margin:18px 0; }
 .commission-case-issues article { display:flex; flex-wrap:wrap; gap:12px; padding:14px 0; }
 .commission-case-issues article>h4,.commission-case-issues article>p { flex-basis:100%; margin:0; }
-.commission-group-table .commission-group-toggle { width:100%; padding:6px 0; min-height:40px; text-align:left; border:0; background:transparent !important; color:#69499b !important; border-radius:0 !important; }
-.commission-group-toggle:focus-visible { outline:3px solid #aa8fcb; outline-offset:2px; }
-.commission-group-table .claim-status-list { margin:10px 0; }
+.commission-branch-list { display:grid; gap:12px; }
+.commission-branch-list > section { min-width:0; }
+.commission-branch-list button { display:block; width:100%; min-height:48px; padding:14px 18px; text-align:left; white-space:normal; overflow-wrap:anywhere; }
+.commission-branch-list ul { display:grid; gap:8px; padding:12px 0 0 20px; margin:0; list-style:none; }
+.commission-branch-list .commission-type-link { background:#f5f1fa !important; color:#69499b !important; border:1px solid #ded7e8; }
+.commission-branch-list button:focus-visible { outline:3px solid #aa8fcb; outline-offset:2px; }
+.commission-type-page .claim-status-list { margin-top:16px; }

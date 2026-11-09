@@ -4,7 +4,7 @@ export function commissionGroups(rows,includeClosed=false) {
     const active=['pending','approved'].includes(row.status)
     if(!active&&!includeClosed)continue
     const key=JSON.stringify([row.earning_branch_id ?? row.branch_name ?? '',row.commission_type])
-    if(!groups.has(key))groups.set(key,{key,branch:row.branch_name || row.service_branch || 'Unassigned branch',category:row.commission_type,rows:[],approved:0,pending:0,approvedCount:0,pendingCount:0,unknown:false})
+    if(!groups.has(key))groups.set(key,{key,branchKey:String(row.earning_branch_id ?? row.branch_name ?? ''),branch:row.branch_name || row.service_branch || 'Unassigned branch',category:row.commission_type,rows:[],approved:0,pending:0,approvedCount:0,pendingCount:0,unknown:false})
     const group=groups.get(key)
     group.rows.push(row)
     if(!active)continue
@@ -15,4 +15,20 @@ export function commissionGroups(rows,includeClosed=false) {
     if(!approved&&row.estimate_available===false)group.unknown=true
   }
   return [...groups.values()].sort((a,b)=>a.branch.localeCompare(b.branch)||a.category.localeCompare(b.category))
+}
+
+export function commissionBranches(groups) {
+  const branches=new Map()
+  for(const group of groups) {
+    if(!branches.has(group.branchKey))branches.set(group.branchKey,{key:group.branchKey,name:group.branch,groups:[]})
+    branches.get(group.branchKey).groups.push(group)
+  }
+  return [...branches.values()]
+}
+
+export function readCommissionView(search,personId) {
+  const params=new URLSearchParams(search)
+  if(params.get('commission_view_person')!==String(personId))return {key:'',month:''}
+  const month=params.get('commission_view_month') || ''
+  return {key:params.get('commission_view_group') || '',month:/^\d{4}-(0[1-9]|1[0-2])$/.test(month)?month:''}
 }
