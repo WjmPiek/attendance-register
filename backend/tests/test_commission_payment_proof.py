@@ -28,7 +28,7 @@ def test_both_documents_are_compulsory(database):
 
 
 @pytest.mark.parametrize('change', [
-    {'reference': 'OTHER-MF'}, {'branch': 'EXAMPLE SOUTH'},
+    {'reference': 'OTHER-MF'},
     {'id_number': 'DIFFERENT'}, {'gross_received': '0'}, {'gross_received': '-100'},
 ])
 def test_unrelated_or_unpaid_receipts_do_not_qualify(database, change):

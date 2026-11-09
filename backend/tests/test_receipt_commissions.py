@@ -207,14 +207,15 @@ def test_matching_mf_with_conflicting_deceased_id_is_blocked(database):
     assert api.settle(payload,OWNER,database)['created']==0
 
 
-def test_same_mf_under_another_branch_does_not_match(database):
+def test_receipt_mf_and_identity_follow_the_mortuary_book_branch(database):
     configure(database)
     quote_and_import(database,import_payload())
     result=stage_receipt(database,[dict(receipt(),branch='EXAMPLE SOUTH')])
     _,q=calculate(database,result['document_ids'])
-    assert all(r['state']=='blocked' for r in q['items'])
+    assert any(r['state']=='ready' for r in q['items'])
+    assert database.execute(text("SELECT branch_key FROM commission_documents WHERE kind='receipt'")).scalar()=='example'
     with pytest.raises(HTTPException,match='does not match'):
-        stage_receipt(database,[dict(receipt(),branch='FOREIGN')])
+        stage_receipt(database,[dict(receipt(),branch='FOREIGN',reference='OTHER')])
 
 
 def test_same_receipt_with_changed_payment_is_rejected(database):
@@ -353,7 +354,7 @@ def test_three_branches_only_registered_branch_excludes_vat(database):
     database.execute(text("UPDATE attendance_branches SET vat_number='4000000000' WHERE id=101"));database.commit()
     names=['EXAMPLE','EXAMPLE SOUTH','EXAMPLE WEST']
     quote_and_import(database,import_payload([dict(record(),branch=name) for name in names]))
-    result=stage_receipt(database,[dict(receipt(),branch=name) for name in names],people=(11,))
+    result=stage_receipt(database,[dict(receipt(),branch=name,source_hash=__import__('hashlib').sha256(name.encode()).hexdigest()) for name in names],people=(11,))
     payload,q=calculate(database,result['document_ids'])
     invoices={r['branch']:r for r in q['items'] if r.get('category')=='invoice_commission'}
     assert invoices['EXAMPLE']['base_amount']=='20504.88'

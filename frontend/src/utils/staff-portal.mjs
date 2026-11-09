@@ -14,6 +14,18 @@ export function commissionTotals(rows, uid) {
   },{approved:0,waiting:0,unknown:false})
 }
 
+export function commissionBranchTotals(rows, uid) {
+  const groups=new Map()
+  for(const row of rows) {
+    if(Number(row.employee_user_id)!==Number(uid) || !['pending','approved'].includes(row.status))continue
+    const key=String(row.earning_branch_id ?? row.branch_name ?? 'unassigned')
+    if(!groups.has(key))groups.set(key,{branchId:row.earning_branch_id,branchName:row.branch_name || row.service_branch || 'Unassigned branch',rows:[]})
+    groups.get(key).rows.push(row)
+  }
+  return [...groups.values()].map(group=>({branchId:group.branchId,branchName:group.branchName,...commissionTotals(group.rows,uid)}))
+    .sort((a,b)=>a.branchName.localeCompare(b.branchName))
+}
+
 export function ownLeave(items,uid) {
   return items.filter(item=>Number(item.applicant_user_id)===Number(uid))
 }

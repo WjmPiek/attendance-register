@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { apiRequest, getCommissionEntries } from '../api/client'
-import { staffRoute, commissionTotals } from '../utils/staff-portal.mjs'
+import { staffRoute, commissionTotals, commissionBranchTotals } from '../utils/staff-portal.mjs'
 import { useCommissionMonth } from '../utils/useCommissionMonth'
 import { notifyAttendanceParent } from '../embeddedAttendance'
 import ServiceClaimPanel from '../components/ServiceClaimPanel'
@@ -25,16 +25,25 @@ const homeButtons=[['attendance','Sign In / Out'],['claim','Claim'],['commission
 const money=value=>`R ${Number(value || 0).toLocaleString('en-ZA',{minimumFractionDigits:2,maximumFractionDigits:2})}`
 
 function StaffCommissionAmounts({me}) {
-  const [month]=useCommissionMonth(),[totals,setTotals]=useState(null),[error,setError]=useState('')
+  const [month]=useCommissionMonth(),[totals,setTotals]=useState(null),[byBranch,setByBranch]=useState([]),[error,setError]=useState('')
   useEffect(()=>{
     let active=true
     const [year,number]=month.split('-').map(Number)
     const load=()=>getCommissionEntries({employeeUserId:me.id,fromDate:new Date(Date.UTC(year,number-2,26)).toISOString().slice(0,10),toDate:`${month}-25`})
-      .then(data=>{if(active){setTotals(commissionTotals([...data.items,...(data.pending_imports||[])],me.id));setError('')}}).catch(e=>{if(active)setError(e.message)})
+      .then(data=>{if(active){const rows=[...data.items,...(data.pending_imports||[])];setTotals(commissionTotals(rows,me.id));setByBranch(commissionBranchTotals(rows,me.id));setError('')}}).catch(e=>{if(active)setError(e.message)})
     setTotals(null);load();const timer=setInterval(load,20000)
     return()=>{active=false;clearInterval(timer)}
   },[month,me.id])
-  return <section>{error&&<p role="alert" className="error-message">{error}</p>}{!totals&&!error&&<p role="status">Loading…</p>}{totals&&<><p className="staff-period">{new Date(`${month}-01T12:00:00Z`).toLocaleDateString('en-ZA',{month:'long',year:'numeric'})}</p><div className="staff-amounts"><section className="approved"><h2>Approved</h2><strong>{money(totals.approved)}</strong></section><section className="waiting"><h2>Waiting to be finalised</h2><strong>{totals.unknown&&totals.waiting===0?'Awaiting calculation':money(totals.waiting)}</strong>{totals.unknown&&totals.waiting>0&&<small>More amounts await documents.</small>}</section></div></>}</section>
+  return <section>{error&&<p role="alert" className="error-message">{error}</p>}{!totals&&!error&&<p role="status">Loading…</p>}{totals&&<>
+    <p className="staff-period">{new Date(`${month}-01T12:00:00Z`).toLocaleDateString('en-ZA',{month:'long',year:'numeric'})}</p>
+    <section className="form-card"><h2>Total across all branches</h2><strong>{money(totals.approved+totals.waiting)}</strong><p>Approved amounts plus estimates waiting to be finalised.{totals.unknown?' Some items still await calculation.':''}</p></section>
+    <div className="staff-amounts"><section className="approved"><h2>Approved</h2><strong>{money(totals.approved)}</strong></section><section className="waiting"><h2>Waiting to be finalised</h2><strong>{totals.unknown&&totals.waiting===0?'Awaiting calculation':money(totals.waiting)}</strong>{totals.unknown&&totals.waiting>0&&<small>More amounts await documents.</small>}</section></div>
+    <h2>Commissions per branch</h2>
+    {!byBranch.length&&<p>No commissions recorded for this period.</p>}
+    {byBranch.map(branch=><section className="form-card" key={branch.branchId ?? branch.branchName}><h3>{branch.branchName}</h3><p>Total: <strong>{money(branch.approved+branch.waiting)}</strong>{branch.unknown?' + items awaiting calculation':''}</p>
+      <div className="staff-amounts"><section className="approved"><h2>Approved</h2><strong>{money(branch.approved)}</strong></section><section className="waiting"><h2>Waiting to be finalised</h2><strong>{branch.unknown&&branch.waiting===0?'Awaiting calculation':money(branch.waiting)}</strong></section></div>
+    </section>)}
+  </>}</section>
 }
 
 export default function StaffPortal({me,onLogout,embedded=false}) {

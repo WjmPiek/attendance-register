@@ -170,7 +170,11 @@ def require_branch(db, fid, value, external_branch_id=None):
     return next((b['id'] for b in available if branch_key(b['name'])==branch_key(value)), None)
 
 
-def check_import_branch(db,fid,record,external_branch_id=None,expected_branch_id=None):
+def check_import_branch(db,fid,record,external_branch_id=None,expected_branch_id=None,document_kind=None):
+    if document_kind in {'invoice','receipt'}:
+        from app.services.mf_evidence import resolve_record
+        record.update(resolve_record(db,fid,document_kind,record))
+        external_branch_id=record.get('external_branch_id')
     if external_branch_id and expected_branch_id:
         raise HTTPException(400,'Choose either a linked branch or an outside branch.')
     if expected_branch_id and expected_branch_id not in {b['id'] for b in branches(db,fid)}:
@@ -302,11 +306,21 @@ def save_options(payload: OptionIn, current_user: User = Depends(get_current_use
 
 
 def save_document(db, fid, kind, record, staff, actor):
+    from app.services.mf_evidence import resolve_record, align_case_evidence
+    db.execute(text('SELECT pg_advisory_xact_lock(:namespace,:fid)'),{'namespace':15015,'fid':fid})
+    align_case_evidence(db,fid,record['reference'],actor)
+    record=resolve_record(db,fid,kind,record)
     require_branch(db, fid, record['branch'], record.get('external_branch_id'))
     bk, mf = branch_key(record['branch']), mf_key(record['reference'])
     if not mf:
         raise HTTPException(400, 'MF number is missing.')
     key = record['receipt_number'].strip().casefold() if kind == 'receipt' else normalise(record['invoice_number']) if kind == 'invoice' else mf
+    if kind in {'invoice','receipt'}:
+        assigned=db.execute(text('SELECT branch_key,source_data FROM commission_documents WHERE franchise_user_id=:fid AND kind=:kind AND source_hash=:hash AND document_key=:key AND deleted_at IS NULL'),
+                            {'fid':fid,'kind':kind,'hash':record['source_hash'],'key':key}).mappings().all()
+        pages=set(record.get('pages') or [record.get('page')])
+        if any(value['branch_key']!=bk and pages.intersection(json.loads(value['source_data']).get('pages') or [json.loads(value['source_data']).get('page')]) for value in assigned):
+            raise HTTPException(409,'This original document is already assigned to another Mortuary Book case. Review that case before reusing the evidence.')
     old = db.execute(text('''SELECT * FROM commission_documents WHERE franchise_user_id=:fid AND kind=:kind AND branch_key=:branch
         AND deleted_at IS NULL AND (document_key=:key OR (:kind IN ('mortuary','invoice') AND mf_key=:mf)) LIMIT 1'''), {'fid': fid, 'kind': kind, 'branch': bk, 'key': key, 'mf': mf}).mappings().first()
     if old:
@@ -325,6 +339,8 @@ def save_document(db, fid, kind, record, staff, actor):
         db.execute(text('''INSERT INTO commission_document_staff(document_id,employee_user_id,removal_role)
             VALUES(:doc,:uid,:role) ON CONFLICT(document_id,employee_user_id) DO NOTHING'''), {'doc': doc_id, 'uid': uid, 'role': role})
     write_audit_log(db,actor_user_id=actor,franchise_user_id=fid,action='commission_document_reuploaded' if old else 'commission_document_saved',entity_type='commission_documents',entity_id=doc_id,new_values={'kind':kind,'record':record,'staff':[{'employee_user_id':uid,'role':role} for uid,role in staff]})
+    if kind=='mortuary':
+        align_case_evidence(db,fid,record['reference'],actor)
     return doc_id, bool(old)
 
 
@@ -353,7 +369,7 @@ def preview_invoices(franchise_user_id: int | None = None, external_branch_id: i
             accepted = []
             for record in parsed:
                 try:
-                    record['earning_branch_id'] = check_import_branch(db, fid, record, external_branch_id,expected_branch_id)
+                    record['earning_branch_id'] = check_import_branch(db, fid, record, external_branch_id,expected_branch_id,document_kind='invoice')
                     from app.services.external_commissions import is_external
                     record['external_branch_id'] = record['earning_branch_id'] if is_external(db,fid,record['earning_branch_id']) else None
                 except HTTPException as exc:
@@ -432,7 +448,7 @@ def preview(franchise_user_id: int | None = None, external_branch_id: int | None
         accepted=[]
         for record in parsed:
             try:
-                record['earning_branch_id'] = check_import_branch(db, fid, record, external_branch_id,expected_branch_id)
+                record['earning_branch_id'] = check_import_branch(db, fid, record, external_branch_id,expected_branch_id,document_kind='receipt')
                 from app.services.external_commissions import is_external
                 record['external_branch_id'] = record['earning_branch_id'] if is_external(db,fid,record['earning_branch_id']) else None
             except HTTPException as exc:
@@ -468,6 +484,8 @@ def stage(payload: StageIn, current_user: User = Depends(get_current_user), db: 
         db.execute(text('SELECT pg_advisory_xact_lock(:namespace,:fid)'), {'namespace': 15015, 'fid': fid})
         ids, duplicates = [], 0
         for allocation in payload.allocations:
+            from app.services.mf_evidence import resolve_record
+            records[allocation.record]=resolve_record(db,fid,'receipt',records[allocation.record])
             staff = []
             for uid in set(allocation.employee_user_ids):
                 person = import_participant(db, current_user, uid, fid)

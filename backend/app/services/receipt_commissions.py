@@ -350,6 +350,15 @@ def require_payment_proof(db, fid, branch_id, reference, book_id=None, receipt_i
 def payment_eligibility(db, row):
     try:
         meta = json.loads(row.get('source_metadata') or '{}')
+        if row.get('status')=='pending' and meta.get('mf_case_claim'):
+            from app.services.case_claims import quote_case_item
+            try:
+                _,quote=quote_case_item(db,{'user_id':row['employee_user_id'],'franchise_user_id':row['franchise_user_id']},row['earning_branch_id'],row['reference'],row['commission_type'],exclude_id=row['id'])
+                return {'payment_eligible':quote['documents_valid'],'payment_block_reason':quote['notice'],'expected_amount':quote['amount'],
+                        'estimate_available':quote['estimate_available'],'earning_branch_id':quote['branch_id'],'branch_name':quote['branch_name'],
+                        'expected_additional_fee':quote['additional_fee']['amount'] if quote['additional_fee'] else '0'}
+            except HTTPException as exc:
+                return {'payment_eligible':False,'payment_block_reason':exc.detail,'expected_amount':'0','estimate_available':False}
         if row.get('status') == 'pending' and meta.get('claim_deceased'):
             from app.api.commission import EntryIn
             from app.services.service_claims import calculate_claim

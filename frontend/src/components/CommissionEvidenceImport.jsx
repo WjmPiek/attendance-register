@@ -21,13 +21,13 @@ export default function CommissionEvidenceImport({ kind, franchiseId }) {
   })
   const save = () => run(async () => {
     const result = await apiRequest(config.endpoint, { method: 'POST', body: JSON.stringify({ preview_token: preview.preview_token, confirmed_franchise: confirmed }) })
-    setNotice(`${result.saved} document(s) saved; ${result.duplicates} duplicate(s) recognised. Documents were allocated to their printed branches. Matching staff claims are recalculated automatically.`)
+    setNotice(`${result.saved} document(s) saved; ${result.duplicates} duplicate(s) recognised. MF evidence follows the Mortuary Book branch. Matching claims are checked automatically and move from Waiting to Approved only after finalisation.`)
     setPreview(null); setConfirmed(false); scrollImportTop()
   })
   return <section className="mortuary-book">
     <ImportFeedback error={error} warnings={preview?.errors} notice={notice}/>
     <section className="form-card"><h2>{config.title}</h2>
-      <p>The printed branch name determines the service branch automatically. Documents are matched by branch, MF File number and deceased name. There is no employee or commission recipient selection during uploads.</p>
+      <p>The Branch Name on the Mortuary Book determines the earning branch and commission rates. Invoice and receipt MF numbers and deceased details link their evidence to that book, even when their printed branch names differ.</p>
       <p>Staff submit their own MF File claims. Enabled branch rates are calculated automatically after matching Mortuary Book, Invoice and receipts are present and the invoice is fully paid.</p>
       <label>Import PDF files<input key={notice} type="file" multiple accept="application/pdf,.pdf" disabled={busy} onChange={e => { const files = Array.from(e.target.files || []); if (files.length) read(files) }}/></label>
       <p className="muted">Up to 30 searchable PDFs; 10 MB per file and 50 MB per batch. Unknown, ambiguous or inactive branches are excluded with a notice for correction. Outside branches must first be registered in the holder’s branch records.</p>
@@ -36,6 +36,7 @@ export default function CommissionEvidenceImport({ kind, franchiseId }) {
     {preview && <section className="form-card"><h3>Check detected branches and file details</h3>
       {preview.records.map((record, index) => <article className="mortuary-record" key={index}>
         <h4>{record.branch} · MF {record.reference}</h4><p>Deceased: {record.deceased}<br/>Service date: {record.service_date}</p>
+        {record.printed_branch && record.printed_branch!==record.branch && <p>Printed on this document: {record.printed_branch}. Matched to the Mortuary Book branch: {record.branch}.</p>}
         {kind === 'mortuary' && <p>Removal staff as printed: {record.driver_in}<br/>Date / time in: {record.date_in} · {record.time_in}</p>}
         {kind === 'invoice' && <p>Invoice: {record.invoice_number}<br/>Invoice total: {money(record.invoice_total)}</p>}
         {kind === 'receipt' && <p>Receipt: {record.receipt_number}<br/>Invoice: {record.invoice_number}<br/>Payment received: {money(record.gross_received)}</p>}

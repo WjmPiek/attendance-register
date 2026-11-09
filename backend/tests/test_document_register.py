@@ -213,7 +213,7 @@ def test_same_employee_earns_separate_branch_fees_and_combined_total(database):
     save_branch_options(database,2,12,{},1);database.commit()
     for name in ['EXAMPLE','EXAMPLE SOUTH']:
         quote_and_import(database,import_payload([dict(record(),branch=name)]))
-        result=stage_receipt(database,[dict(receipt(),branch=name,gross_received='1150.00')],people=())
+        result=stage_receipt(database,[dict(receipt(),branch=name,gross_received='1150.00',source_hash=__import__('hashlib').sha256(name.encode()).hexdigest())],people=())
         payload,_=calculate(database,result['document_ids']);receipts.settle(payload,OWNER,database)
     a=commission.entries(employee_user_id=11,earning_branch_id=101,current_user=OWNER,db=database)
     b=commission.entries(employee_user_id=11,earning_branch_id=102,current_user=OWNER,db=database)
