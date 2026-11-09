@@ -2,9 +2,14 @@ import { useEffect, useState } from 'react'
 import { apiRequest } from '../api/client'
 import { commissionLabels } from './CommissionCheckboxes'
 import { allowedClaimTypes, allowedClaimBranches } from '../utils/claim-permissions.mjs'
+import AutomaticCaseClaim from './AutomaticCaseClaim'
 
 const money = value => `R ${Number(value || 0).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-export default function ServiceClaimPanel({ me, employee, franchiseId, onSaved, simple = false }) {
+export default function ServiceClaimPanel(props) {
+  return props.simple ? <AutomaticCaseClaim me={props.me} onSaved={props.onSaved} /> : <ManualServiceClaimPanel {...props} />
+}
+
+function ManualServiceClaimPanel({ me, employee, franchiseId, onSaved, simple = false }) {
   const uid = employee?.user_id || me.id
   const owner = me.roles.some(role => ['FranchiseUser', 'SuperUser'].includes(role))
   const initial = () => ({ commission_type: '', reference: '', claim_deceased: '', earning_branch_id: '', commission_role: 'driver', service_date: new Date(Date.now() + 7200000).toISOString().slice(0, 10), notes: '' })
