@@ -79,4 +79,18 @@ def parse_invoice_pdf(data):
     reader = PdfReader(BytesIO(data))
     if reader.is_encrypted or not 1 <= len(reader.pages) <= 50:
         raise ValueError('Use an unprotected invoice PDF with 1–50 pages.')
-    return parse_document_pages(reader, parse_invoice_text, 'invoice', layout=True)
+    # Layout extraction can separate a final glyph (e.g. the second f in ff)
+    # into a distant column. Recover it only when the complete printed field
+    # exactly matches one plain-text PDF line after removing whitespace.
+    raw_lines={line.strip() for page in reader.pages for line in (page.extract_text() or '').splitlines() if line.strip()}
+    def parse_print(value):
+        record=parse_invoice_text(value)
+        fields=re.findall(r'^[ \t]*Deceased\s+Name[ \t]+([^\r\n]+)$',value,re.I|re.M)
+        if len(fields)==1:
+            compact=lambda name: re.sub(r'\s+','',name).casefold()
+            full=compact(fields[0])
+            matches=[line for line in raw_lines if compact(line)==full]
+            if len(matches)==1 and full.startswith(compact(record['deceased'])) and len(matches[0])<=255:
+                record['deceased']=' '.join(matches[0].split())
+        return record
+    return parse_document_pages(reader, parse_print, 'invoice', layout=True)

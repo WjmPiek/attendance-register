@@ -78,3 +78,4 @@
 .staff-mf-file ul { list-style:none; margin:0; padding:0 14px; }
 .staff-mf-file li { display:flex; flex-wrap:wrap; justify-content:space-between; gap:8px 14px; padding:10px 0; border-bottom:1px solid #0002; }
 .staff-mf-file p { padding:0 14px; overflow-wrap:anywhere; }
+.staff-commission-reason { flex-basis:100%; line-height:1.5; overflow-wrap:anywhere; }
