@@ -109,15 +109,8 @@ def parse_receipt_pdf(data):
     reader = PdfReader(BytesIO(data))
     if reader.is_encrypted or not 1 <= len(reader.pages) <= 50:
         raise ValueError('Use an unprotected PDF with 1–50 pages.')
-    records, errors = [], []
-    for n, page in enumerate(reader.pages):
-        try:
-            record = parse_receipt_text(page.extract_text() or '')
-            record['page'] = n + 1
-            records.append(record)
-        except (ValueError, TypeError) as exc:
-            errors.append({'page': n + 1, 'error': str(exc)})
-    return records, errors
+    from app.services.pdf_records import parse_document_pages
+    return parse_document_pages(reader, parse_receipt_text, 'receipt')
 
 
 def option_map(db, fid, uid):
@@ -168,12 +161,14 @@ def effective_branch_rates(db,fid,uid,branch_id):
     return {**home.get('rates',{}),**selected.get('rates',{})}
 
 
-def save_branch_options(db, fid, uid, values, actor):
+def save_branch_options(db, fid, uid, values, actor, *, branch_id=None):
     from app.services.attendance_branches import branches
     available = {b['id'] for b in branches(db,fid)}
     normalised = {int(key):(value.model_dump() if hasattr(value,'model_dump') else CommissionBranchOptions(**value).model_dump()) for key,value in values.items()}
     if set(normalised)-available:
         raise HTTPException(403,'Commission branch is outside this holder group.')
+    if branch_id is not None and set(normalised) != {branch_id}:
+        raise HTTPException(400, 'Supply commission settings for the selected branch only.')
     all_types = set()
     for value in normalised.values():
         if not value.get('inherit_home'): all_types.update(value.get('enabled_types',[]))
@@ -189,11 +184,12 @@ def save_branch_options(db, fid, uid, values, actor):
     home=assignment(db,uid)
     if home and normalised.get(home['branch_id'],{}).get('inherit_home'):
         raise HTTPException(400,'The home branch must have its own commission settings.')
-    set_enabled_types(db,fid,uid,list(all_types),actor)
-    db.execute(text('DELETE FROM employee_commission_branch_options WHERE franchise_user_id=:fid AND employee_user_id=:uid'), {'fid':fid,'uid':uid})
-    from app.services.attendance_branches import assignment
-    home=assignment(db,uid)
-    db.execute(text('DELETE FROM employee_commission_branch_overrides WHERE franchise_user_id=:fid AND employee_user_id=:uid'), {'fid':fid,'uid':uid})
+    # A branch editor must never replace another branch's permissions or fees,
+    # even if that other branch was changed after the editor was opened.
+    scope = ' AND branch_id=:branch' if branch_id is not None else ''
+    params = {'fid':fid, 'uid':uid, 'branch':branch_id}
+    db.execute(text('DELETE FROM employee_commission_branch_options WHERE franchise_user_id=:fid AND employee_user_id=:uid' + scope), params)
+    db.execute(text('DELETE FROM employee_commission_branch_overrides WHERE franchise_user_id=:fid AND employee_user_id=:uid' + scope), params)
     for bid,value in normalised.items():
         if value.get('inherit_home'):
             if home and bid==home['branch_id']: raise HTTPException(400,'The home branch must have its own commission settings.')
@@ -206,6 +202,12 @@ def save_branch_options(db, fid, uid, values, actor):
             db.execute(text('''INSERT INTO employee_commission_branch_options(franchise_user_id,employee_user_id,commission_type,branch_id,rate)
                 VALUES(:fid,:uid,:type,:branch,:rate)'''), {'fid':fid,'uid':uid,'type':category,'branch':bid,
                 'rate':value.get('receipt_percentage') if category=='invoice_commission' else None})
+    # Global flags are the union of saved grants, not just the branch being
+    # edited. Branch eligibility still checks the selected branch separately.
+    saved_types = db.execute(text('''SELECT DISTINCT o.commission_type FROM employee_commission_branch_options o
+        JOIN attendance_branches b ON b.id=o.branch_id AND b.franchise_user_id=o.franchise_user_id
+        WHERE o.franchise_user_id=:fid AND o.employee_user_id=:uid AND b.is_active=TRUE'''), params).scalars().all()
+    set_enabled_types(db,fid,uid,saved_types,actor)
 
 
 def set_enabled_types(db, fid, uid, types, actor):

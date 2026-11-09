@@ -21,6 +21,7 @@ from app.core.config import settings
 from app.db.session import get_db
 from app.models.core import User
 from app.services.mortuary import DEFAULT_WEEK, RATE_KEYS, match_employee, normalise, parse_pdf, price_removal
+from app.services.pdf_records import imported_page_count
 
 from app.services.attendance_branches import import_scope, import_staff, import_participant
 
@@ -214,9 +215,9 @@ def preview(franchise_user_id: int | None = None, external_branch_id: int | None
         records.extend(accepted)
         if accepted:
             from app.services.commission_files import store_file
-            store_file(db,fid,sha256(data).hexdigest(),filename,data,current_user.id,'mortuary',len(accepted))
+            store_file(db,fid,sha256(data).hexdigest(),filename,data,current_user.id,'mortuary',imported_page_count(accepted))
         errors.extend(dict(f, filename=filename) for f in failures)
-        if len(records) + len(errors) > 100:
+        if imported_page_count(records) + imported_page_count(errors) > 100:
             raise HTTPException(400, 'Import up to 100 pages per batch.')
     people = import_staff(db, fid)
     suggestions = []

@@ -141,3 +141,60 @@ def test_main_system_profile_handoff_opens_the_same_linked_branch(database):
     assert launch_branch_context(database,2,{'active_franchise_id':2})==102
     assert launch_branch_context(database,2,{}) is None
     with pytest.raises(HTTPException):launch_branch_context(database,2,{'active_franchise_id':9})
+
+
+@pytest.mark.parametrize('manager', [False, True])
+def test_selected_branch_save_keeps_main_and_other_overrides_and_blocks_excluded_earnings(database, manager):
+    configure(database)
+    if manager:
+        database.execute(text('DELETE FROM employee_users WHERE user_id=11'))
+        database.execute(text("INSERT INTO manager_users(id,user_id,franchise_user_id,name,surname,employee_number,is_active) VALUES(11,11,2,'Ewald','Example','11',TRUE)"))
+    database.execute(text("INSERT INTO attendance_branches VALUES(103,2,3,'EXAMPLE EAST',NULL,TRUE,TRUE)"))
+    save_branch_options(database,2,11,{101:{'enabled_types':['removals','invoice_commission'],'rates':{'driver_out':'250','driver_invoice_commission':'4'}}},1)
+    save_branch_options(database,2,12,{},1)
+    database.commit()
+    # Turn off removals at South without submitting the settings for any other branch.
+    api.save_options(api.OptionIn(employee_user_id=11,branch_id=102,
+        commission_branches={102:{'enabled_types':['invoice_commission'],'rates':{'driver_invoice_commission':'6'}}}),OWNER,database)
+    choices=branch_options(database,2,11)
+    assert choices['101']['rates']['driver_out']=='250'
+    assert choices['103']['inherit_home'] and enabled_for_branch(database,2,11,'removals',103)
+    assert not choices['102']['inherit_home'] and not enabled_for_branch(database,2,11,'removals',102)
+    assert choices['102']['rates']['driver_invoice_commission']=='6'
+    with pytest.raises(HTTPException,match='selected branch'):
+        require_manual_eligibility(database,{'user_id':11,'franchise_user_id':2},'removals',102)
+    q=paired_at(database,'EXAMPLE SOUTH')
+    assert next(r for r in q['items'] if r.get('category')=='invoice_commission')['amount']=='60.00'
+    assert not any(r['state']=='ready' and r.get('category')=='removals' for r in q['items'])
+    assert commission.entries(employee_user_id=11,earning_branch_id=102,current_user=OWNER,db=database)['total']==Decimal('60')
+    # Later main-branch changes flow to inherited East, while South stays independent.
+    api.save_options(api.OptionIn(employee_user_id=11,branch_id=101,
+        commission_branches={101:{'enabled_types':['removals'],'rates':{'driver_out':'275'}}}),OWNER,database)
+    choices=branch_options(database,2,11)
+    assert choices['103']['enabled_types']==['removals'] and choices['103']['rates']['driver_out']=='275'
+    assert choices['102']['enabled_types']==['invoice_commission'] and choices['102']['rates']['driver_invoice_commission']=='6'
+    assert enabled_for_branch(database,2,11,'invoice_commission',102)
+
+
+def test_branch_save_can_disable_everything_and_restore_live_inheritance(database):
+    configure(database)
+    database.execute(text("UPDATE employee_commission_options SET rate=7 WHERE employee_user_id=11 AND commission_type='invoice_commission'"))
+    database.commit()
+    api.save_options(api.OptionIn(employee_user_id=11,branch_id=102,receipt_percentage=99,
+        commission_branches={102:{'enabled_types':[]}}),OWNER,database)
+    assert branch_options(database,2,11)['102']['enabled_types']==[]
+    assert enabled_for_branch(database,2,11,'removals',101)
+    assert database.execute(text("SELECT rate FROM employee_commission_options WHERE employee_user_id=11 AND commission_type='invoice_commission'")).scalar()==7
+    api.save_options(api.OptionIn(employee_user_id=11,branch_id=102,
+        commission_branches={102:{'inherit_home':True}}),OWNER,database)
+    assert enabled_for_branch(database,2,11,'removals',102)
+    assert branch_options(database,2,11)['102']['inherit_home']
+
+
+@pytest.mark.parametrize('values', [{}, {101:{'enabled_types':[]}}, {101:{'enabled_types':[]},102:{'enabled_types':[]}}, None])
+def test_scoped_save_rejects_missing_or_other_branch_settings_without_changing_grants(database, values):
+    configure(database)
+    before=branch_options(database,2,11)
+    with pytest.raises(HTTPException):
+        api.save_options(api.OptionIn(employee_user_id=11,branch_id=102,commission_branches=values),OWNER,database)
+    assert branch_options(database,2,11)==before
