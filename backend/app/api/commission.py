@@ -196,26 +196,6 @@ def _participant(db: Session, user: User, user_id: int, write: bool = False):
     raise HTTPException(403, "Staff member is outside your commission scope")
 
 
-def _calculate(structure, payload):
-    qty = Decimal(payload.quantity)
-    if payload.commission_type == "invoice_commission":
-        if payload.invoice_value_before_tax is None:
-            raise HTTPException(400, "Invoice value before tax is required")
-        rate = Decimal(payload.rate_override if payload.rate_override is not None else structure["rate"])
-        amount = Decimal(payload.invoice_value_before_tax) * rate / Decimal("100")
-    elif payload.commission_type == "overtime":
-        if payload.hours is None or payload.hourly_rate is None:
-            raise HTTPException(400, "Overtime hours and hourly rate are required")
-        rate = Decimal(payload.rate_override if payload.rate_override is not None else (structure["overtime_multiplier"] or structure["rate"] or 1))
-        amount = Decimal(payload.hours) * Decimal(payload.hourly_rate) * rate
-    else:
-        if qty != qty.to_integral_value():
-            raise HTTPException(400, "Quantity must be a whole number")
-        rate = Decimal(payload.rate_override if payload.rate_override is not None else structure["rate"])
-        amount = qty * rate
-    return rate, amount.quantize(Decimal("0.01"))
-
-
 def _notify(db, user_id, subject, message, entry_id, severity="info"):
     db.execute(text("""INSERT INTO notifications(user_id,recipient_user_id,notification_type,subject,message,status,is_read,severity,target_tab,related_table,related_id,created_at)
       VALUES(:uid,:uid,'commission',:subject,:message,'pending',FALSE,:severity,'commission','commission_entries',:entry,NOW())"""),
@@ -685,7 +665,7 @@ def entry_history(entry_id:int,current_user:User=Depends(get_current_user),db:Se
     return [dict(row) for row in rows]
 
 
-def _pdf(rows,title):
+def _claim_form_pdf(rows,title):
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import getSampleStyleSheet
@@ -723,7 +703,11 @@ def report_pdf(employee_user_id:int|None=Query(default=None),from_date:date|None
     rows=_rows(db,current_user,employee_user_id,from_date,to_date,status,franchise_user_id=franchise_user_id)
     from app.services.pending_removals import pending_rows
     rows+=pending_rows(db,_franchise_scope(db,current_user,franchise_user_id),current_user,employee_user_id,from_date,to_date,status)
-    return StreamingResponse(_pdf(rows,"Staff Commission & Overtime Report"),media_type='application/pdf',headers={'Content-Disposition':'attachment; filename=commission-overtime-report.pdf'})
+    from app.services.commission_pdf import build_commission_pdf
+    approved=[row for row in rows if row['status']=='approved' and row['payment_eligible']]
+    waiting=[row for row in rows if row['status'] in {'pending','approved'} and not (row['status']=='approved' and row['payment_eligible'])]
+    content=build_commission_pdf(approved,waiting,period_start=from_date or '',period_end=to_date or '')
+    return StreamingResponse(BytesIO(content),media_type='application/pdf',headers={'Content-Disposition':'attachment; filename=commission-overtime-report.pdf'})
 
 @router.get('/entries/{entry_id}/form.pdf')
 def form_pdf(entry_id:int,current_user:User=Depends(get_current_user),db:Session=Depends(get_db)):
@@ -731,5 +715,5 @@ def form_pdf(entry_id:int,current_user:User=Depends(get_current_user),db:Session
     if not entry: raise HTTPException(404,"Entry not found")
     selected=[r for r in _rows(db,current_user,int(entry["employee_user_id"]),franchise_user_id=int(entry["franchise_user_id"])) if int(r['id'])==entry_id]
     if not selected: raise HTTPException(404,"Entry not found")
-    return StreamingResponse(_pdf(selected,"Commission Review Form"),media_type='application/pdf',headers={'Content-Disposition':f'attachment; filename=commission-form-{entry_id}.pdf'})
+    return StreamingResponse(_claim_form_pdf(selected,"Commission Review Form"),media_type='application/pdf',headers={'Content-Disposition':f'attachment; filename=commission-form-{entry_id}.pdf'})
 

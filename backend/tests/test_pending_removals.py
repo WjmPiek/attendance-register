@@ -1,4 +1,5 @@
 import importlib.util
+from io import BytesIO
 from pathlib import Path
 from datetime import date
 from decimal import Decimal
@@ -83,10 +84,11 @@ def test_pending_outside_fee_is_separate_and_pdf_does_not_include_it_as_approved
     assert {r['commission_type'] for r in rows}=={'removals','service_other_branch'}
     assert sum(Decimal(r['expected_amount']) for r in rows)==250
     from pypdf import PdfReader
-    result=commission._pdf(rows,'Pending removal report')
-    content=' '.join(p.extract_text() for p in PdfReader(result).pages)
-    assert 'AWAITING DOCUMENT CHECKS' in content and 'R 250.00' in content
-    assert 'APPROVED TOTAL' in content and 'R 0.00' in content
+    from app.services.commission_pdf import build_commission_pdf
+    result=build_commission_pdf([],rows,title='Pending removal report')
+    content=' '.join(p.extract_text() for p in PdfReader(BytesIO(result)).pages)
+    assert 'Waiting to be finalised: R 250.00' in content
+    assert 'TOTAL APPROVED FOR FINANCE: R 0.00' in content
 
 
 def test_cleanup_removes_only_unused_duplicate_and_records_audit(database):

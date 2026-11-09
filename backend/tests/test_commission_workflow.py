@@ -14,28 +14,10 @@ def payload(**changes):
         "commission_type": "joinings",
         "service_date": "2026-07-24",
         "reference": "JOIN-001",
-        "quantity": Decimal("2"),
+        "quantity": Decimal("1"),
     }
     values.update(changes)
     return commission.EntryIn(**values)
-
-
-def test_joinings_are_supported_and_calculated_by_quantity():
-    assert "joinings" in commission.COMMISSION_TYPES
-    rate, amount = commission._calculate(
-        {"rate": Decimal("75"), "overtime_multiplier": None},
-        payload(),
-    )
-    assert rate == Decimal("75")
-    assert amount == Decimal("150.00")
-
-
-def test_fixed_commission_rejects_fractional_quantity():
-    with pytest.raises(HTTPException, match="whole number"):
-        commission._calculate(
-            {"rate": Decimal("75"), "overtime_multiplier": None},
-            payload(quantity=Decimal("1.5")),
-        )
 
 
 def test_manager_cannot_review_own_submission(monkeypatch):
