@@ -17,7 +17,6 @@ async function mount(items,{paused=false,failId}={}) {
     if(name==='react/jsx-runtime')return jsxRuntime
     if(name==='../api/client')return {getNotifications:async()=>items,markNotificationRead:async id=>{if(id===failId)throw new Error('offline');acknowledged.push(id)}}
     if(name==='../utils/staff-portal.mjs')return {unreadStaffNotifications}
-    if(name==='./StaffPopup')return props=>React.createElement('section',{role:'alertdialog'},props.title,React.createElement('button',{onClick:props.onClose},'OK'))
     throw new Error(name)
   }
   global.window={setInterval:callback=>{poll=callback;return 1},clearInterval:()=>{}}
@@ -40,16 +39,41 @@ test('eight upload reminders become one inline notice and dismiss together witho
   } finally {ui.cleanup()}
 })
 
-test('failed reminder acknowledgements remain inline and other personal updates retain their popup',async()=>{
+test('failed acknowledgements and other personal updates stay inline without blocking navigation',async()=>{
   const ui=await mount([reminder(1),reminder(2),{id:3,recipient_user_id:24,subject:'Leave approved'},{...reminder(4),recipient_user_id:99}],{failId:2})
   try {
-    assert.equal(ui.view.root.findAllByProps({role:'alertdialog'}).length,1)
-    await act(async()=>{await ui.view.root.findByType('aside').findByType('button').props.onClick()})
+    assert.equal(ui.view.root.findAllByProps({role:'alertdialog'}).length,0)
+    await act(async()=>{await ui.view.root.findByProps({'aria-label':'Commission document reminders'}).findByType('button').props.onClick()})
     assert.deepEqual(ui.acknowledged,[1])
     assert.match(JSON.stringify(ui.view.toJSON()),/continue and try again later/)
-    await act(async()=>{await ui.view.root.findByProps({role:'alertdialog'}).findByType('button').props.onClick()})
+    await act(async()=>{await ui.view.root.findByProps({'aria-label':'Staff updates'}).findByType('button').props.onClick()})
     assert.deepEqual(ui.acknowledged,[1,3])
     assert.equal(ui.view.root.findAllByProps({role:'alertdialog'}).length,0)
+  } finally {ui.cleanup()}
+})
+
+test('six identical approvals appear once and one dismissal acknowledges all six',async()=>{
+  const notices=Array.from({length:6},(_,index)=>({id:index+1,recipient_user_id:24,subject:'Commission automatically approved',message:'MF MF111137: approved.'}))
+  const ui=await mount(notices)
+  try {
+    assert.equal(ui.view.root.findAllByProps({role:'alertdialog'}).length,0)
+    assert.equal(ui.view.root.findAllByType('li').length,1)
+    assert.match(JSON.stringify(ui.view.toJSON()),/6/)
+    await act(async()=>{await ui.view.root.findByType('button').props.onClick()})
+    assert.deepEqual(ui.acknowledged,[1,2,3,4,5,6])
+    await ui.poll()
+    assert.equal(ui.view.root.findAllByType('aside').length,0)
+  } finally {ui.cleanup()}
+})
+
+test('failed approval dismissal leaves a retryable notice instead of trapping the user in a popup',async()=>{
+  const ui=await mount([{id:1,recipient_user_id:24,subject:'Commission automatically approved',message:'MF MF111137: approved.'}],{failId:1})
+  try {
+    await act(async()=>{await ui.view.root.findByType('button').props.onClick()})
+    assert.equal(ui.view.root.findAllByProps({role:'alertdialog'}).length,0)
+    assert.equal(ui.view.root.findByType('button').props.disabled,false)
+    assert.match(JSON.stringify(ui.view.toJSON()),/continue using the system and try again later/)
+    assert.deepEqual(ui.acknowledged,[])
   } finally {ui.cleanup()}
 })
 

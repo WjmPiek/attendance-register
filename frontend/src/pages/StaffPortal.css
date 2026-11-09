@@ -63,6 +63,9 @@
 .staff-document-reminder p { margin:0 0 12px; line-height:1.5; }
 .staff-document-reminder details { margin-bottom:12px; }
 .staff-document-reminder summary { cursor:pointer; }
+.staff-update-notice { background:#edf7f0; border-color:#83c99c; color:#185b34; }
+.staff-update-notice ul { padding-left:22px; max-height:240px; overflow-y:auto; }
+.staff-update-notice li { margin-bottom:12px; overflow-wrap:anywhere; }
 .staff-branch-amounts { align-items:start; }
 .staff-branch-amounts > details { border:1px solid; border-radius:14px; min-width:0; overflow:hidden; }
 .staff-branch-amounts > details > summary { cursor:pointer; padding:25px 20px; }

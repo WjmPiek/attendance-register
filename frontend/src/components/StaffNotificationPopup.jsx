@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { getNotifications, markNotificationRead } from '../api/client'
 import { unreadStaffNotifications } from '../utils/staff-portal.mjs'
-import StaffPopup from './StaffPopup'
 
 export default function StaffNotificationPopup({me, paused=false}) {
   const [items,setItems]=useState([]),[busy,setBusy]=useState(false),[error,setError]=useState('')
@@ -20,7 +19,13 @@ export default function StaffNotificationPopup({me, paused=false}) {
     return()=>{active=false;window.clearInterval(timer)}
   },[me.id])
   const reminders=items.filter(item=>item.subject==='Document uploads required')
-  const notification=items.find(item=>item.subject!=='Document uploads required')
+  const updates=items.filter(item=>item.subject!=='Document uploads required')
+  const groupedUpdates=new Map()
+  for(const item of updates) {
+    const key=JSON.stringify([item.subject,item.message])
+    if(!groupedUpdates.has(key))groupedUpdates.set(key,{key,subject:item.subject||'Task update',message:item.message,count:0})
+    groupedUpdates.get(key).count+=1
+  }
   const dismissReminders=async()=>{
     if(dismissingReminders.current)return
     dismissingReminders.current=true;setReminderBusy(true);setReminderError('')
@@ -33,14 +38,17 @@ export default function StaffNotificationPopup({me, paused=false}) {
       if(results.some(result=>result.status==='rejected'))setReminderError('Some reminders could not be dismissed. You can continue and try again later.')
     } finally {dismissingReminders.current=false;setReminderBusy(false)}
   }
-  const close=async()=>{
-    if(closing.current||!notification)return
+  const dismissUpdates=async()=>{
+    if(closing.current)return
     closing.current=true;setBusy(true);setError('')
     try {
-      await markNotificationRead(notification.id)
-      dismissed.current.add(String(notification.id))
+      const results=await Promise.allSettled(updates.map(async item=>{
+        await markNotificationRead(item.id)
+        dismissed.current.add(String(item.id))
+      }))
       setItems(current=>unreadStaffNotifications(current,me.id,dismissed.current))
-    } catch {setError('Could not save your acknowledgement. Please press OK again.')}
+      if(results.some(result=>result.status==='rejected'))setError('Some updates could not be dismissed. You can continue using the system and try again later.')
+    }
     finally {closing.current=false;setBusy(false)}
   }
   if(paused)return null
@@ -51,6 +59,11 @@ export default function StaffNotificationPopup({me, paused=false}) {
       {reminderError&&<p role="alert">{reminderError}</p>}
       <button type="button" disabled={reminderBusy} onClick={dismissReminders}>{reminderBusy?'Dismissing…':'Dismiss document reminders'}</button>
     </aside>}
-    {notification&&<StaffPopup key={notification.id} title={notification.subject||'Task update'} message={notification.message} onClose={close} busy={busy} error={error}/>}
+    {updates.length>0&&<aside className="staff-document-reminder staff-update-notice" aria-label="Staff updates">
+      <p role="status"><strong>Updates</strong> · You can continue using the system.</p>
+      <ul>{[...groupedUpdates.values()].map(group=><li key={group.key}><strong>{group.subject}</strong>{group.count>1&&<span> · {group.count} notifications</span>}{group.message&&<p>{group.message}</p>}</li>)}</ul>
+      {error&&<p role="alert">{error}</p>}
+      <button type="button" disabled={busy} onClick={dismissUpdates}>{busy?'Dismissing…':'Dismiss updates'}</button>
+    </aside>}
   </>
 }
