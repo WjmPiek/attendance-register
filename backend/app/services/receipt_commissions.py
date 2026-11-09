@@ -63,6 +63,7 @@ def receipt_base(gross, registered, vat_rate):
 
 
 def parse_receipt_text(value):
+    value = value.replace('\r\n', '\n').replace('\r', '\n')
     lines = [' '.join(x.split()) for x in value.splitlines() if x.strip()]
     if not re.search(r'\bRECEIPT\b', value, re.I):
         raise ValueError('This page is not an MF File Receipt.')
@@ -78,6 +79,13 @@ def parse_receipt_text(value):
         'service_date': field(r'^Date\s+(.+)$'),
         'gross_received': field(r'^(?:Amnt\s*Rcvd|Amount\s*Received|Total\s*Received)\s*:\s*R?\s*([\d, .]+)$'),
     }
+    # A long deceased name wraps above the ID label in the printed receipt.
+    # Read only this bounded field, never the purchaser printed after the ID.
+    wrapped = re.search(r'^Deceased[ \t]*:[ \t]*([^\r\n]+(?:\r?\n[^\r\n]+)*?)\r?\n[ \t]*ID[ \t]+Num(?:ber)?[ \t]*:', value, re.I | re.M)
+    if wrapped:
+        parts = wrapped.group(1).splitlines()
+        if all(part.strip() and ':' not in part for part in parts):
+            record['deceased'] = ' '.join(' '.join(parts).split())
     # The print template puts the franchise immediately below MARTINS FUNERALS.
     headings = [i for i, line in enumerate(lines) if line.upper() == 'MARTINS FUNERALS']
     record['branch'] = lines[headings[0] + 1] if headings and headings[0] + 1 < len(lines) else ''
