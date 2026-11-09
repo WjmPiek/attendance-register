@@ -15,7 +15,7 @@ def build_commission_pdf(approved, waiting, *, title='Commission statement', per
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.units import mm
-    from reportlab.platypus import BaseDocTemplate, Frame, PageTemplate, NextPageTemplate, PageBreak, Paragraph, Spacer, Table, TableStyle
+    from reportlab.platypus import BaseDocTemplate, Frame, PageTemplate, NextPageTemplate, PageBreak, Paragraph, Table, TableStyle
 
     purple=colors.HexColor('#69499b')
     styles=getSampleStyleSheet()
@@ -55,9 +55,9 @@ def build_commission_pdf(approved, waiting, *, title='Commission statement', per
     def totals(items):
         return (sum((line['amount'] for line in items if line['ready']),Decimal(0)),
                 sum((line['amount'] for line in items if not line['ready']),Decimal(0)))
-    branches=defaultdict(list);people=defaultdict(list)
+    branches=defaultdict(list)
     for line in lines:
-        branches[line['branch_key']].append(line);people[line['person_key']].append(line)
+        branches[line['branch_key']].append(line)
     ordered=sorted(branches.values(),key=lambda items:(items[0]['branch'].casefold(),str(items[0]['branch_key'])))
     stream=BytesIO()
     doc=BaseDocTemplate(stream,pagesize=A4,leftMargin=16*mm,rightMargin=16*mm,topMargin=28*mm,bottomMargin=17*mm,title=title)
@@ -71,42 +71,58 @@ def build_commission_pdf(approved, waiting, *, title='Commission statement', per
             canvas.drawRightString(194*mm,10*mm,f'Page {document.page}');canvas.restoreState()
         return draw
     frame=lambda:Frame(doc.leftMargin,doc.bottomMargin,doc.width,doc.height,id='body',leftPadding=0,rightPadding=0,topPadding=0,bottomPadding=0)
-    doc.addPageTemplates([PageTemplate(id='cover',frames=[frame()],onPage=page_header('Cover - totals by manager / employee'))]+
-        [PageTemplate(id=f'branch-{index}',frames=[frame()],onPage=page_header(items[0]['branch']+' - branch commission details')) for index,items in enumerate(ordered)])
     approved_total,waiting_total=totals(lines)
-    story=[p(title,'Title'),p(f'Period: {period_start} to {period_end}','Note'),p(reference,'Note'),
-        p('TOTAL APPROVED FOR FINANCE: '+money(approved_total),'Section'),
-        p('Waiting to be finalised: '+money(waiting_total)),
-        p('Waiting estimates are excluded from payment totals. Items awaiting calculation are excluded from estimate subtotals. This statement does not execute payroll.','Note'),
-        p('Approved totals by manager / employee - all service branches','Section')]
-    if not people:story.append(p('No commissions for the selected period and scope.'))
-    for items in sorted(people.values(),key=lambda items:(items[0]['person'].casefold(),str(items[0]['person_key']))):
-        story.append(p(items[0]['person'],'Category'))
+    categories=list(COMMISSION_LABELS)+sorted({line['category'] for line in lines}-COMMISSION_LABELS.keys())
+    def people(items):
         grouped=defaultdict(list)
-        for line in items:grouped[(line['branch'],line['category'])].append(line)
-        values=[['Branch','Commission category','Approved','Waiting estimate']]
-        for (branch,category),entries in sorted(grouped.items()):
-            approved_amount,waiting_amount=totals(entries)
-            values.append([branch,label(category),money(approved_amount),money(waiting_amount)+(' + awaiting calculation' if any(not entry['ready'] and entry['row'].get('estimate_available') is False for entry in entries) else '')])
-        a,w=totals(items);values.append(['PERSON TOTAL','',money(a),money(w)])
-        story.extend([table(values,[46,66,33,33],(2,3)),Spacer(1,3*mm)])
-    if waiting:story.append(p('PENDING - NOT APPROVED FOR PAYMENT','Category'))
-    for index,items in enumerate(ordered):
-        story.extend([NextPageTemplate(f'branch-{index}'),PageBreak(),p(items[0]['branch'],'Title')])
+        for line in items:grouped[line['person_key']].append(line)
+        return sorted(grouped.values(),key=lambda entries:(0 if str(entries[0]['row'].get('staff_role') or entries[0]['row'].get('staff_type') or '').lower()=='manager' else 1,entries[0]['person'].casefold(),str(entries[0]['person_key'])))
+    sections=[]
+    for branch_index,items in enumerate(ordered):
+        branch=items[0]['branch']
+        sections.append((f'branch-{branch_index}-cover',branch+' - branch summary',items,True))
+        for person_index,person_items in enumerate(people(items)):
+            sections.append((f'branch-{branch_index}-person-{person_index}',branch+' - '+person_items[0]['person']+' - commission details',person_items,False))
+    if not sections:sections=[('empty','Commission statement',[],True)]
+    doc.addPageTemplates([PageTemplate(id=key,frames=[frame()],onPage=page_header(header)) for key,header,items,cover in sections])
+    story=[]
+    for section_index,(key,header,items,cover) in enumerate(sections):
+        if section_index:story.extend([NextPageTemplate(key),PageBreak()])
+        branch=items[0]['branch'] if items else 'Commission statement'
+        story.append(p(branch if cover else items[0]['person'],'Title'))
+        story.extend([p(title,'Note'),p(f'Period: {period_start} to {period_end}','Note')])
+        if not section_index:
+            story.extend([p('TOTAL APPROVED FOR FINANCE: '+money(approved_total),'Section'),p('Waiting to be finalised: '+money(waiting_total)),p('Report totals above cover all branches. Waiting estimates are excluded from payment totals; items awaiting calculation are excluded from estimate subtotals.','Note')])
+            if waiting:story.append(p('PENDING - NOT APPROVED FOR PAYMENT','Category'))
         a,w=totals(items)
-        story.extend([p('Branch approved total: '+money(a),'Section'),p('Branch waiting estimate: '+money(w),'Note'),p('Summary by manager / employee and category','Category')])
-        grouped=defaultdict(list)
-        for line in items:grouped[(line['person_key'],line['person'],line['category'])].append(line)
-        values=[['Manager / employee','Commission category','Approved','Waiting estimate']]
-        for (_,person,category),entries in sorted(grouped.items(),key=lambda item:(item[0][1].casefold(),item[0][2])):
-            a,w=totals(entries);values.append([person,label(category),money(a),money(w)])
-        story.append(table(values,[51,61,33,33],(2,3)))
-        for category in list(COMMISSION_LABELS)+sorted({line['category'] for line in items}-COMMISSION_LABELS.keys()):
+        story.extend([p(('Branch' if cover else 'Person')+' approved total: '+money(a),'Section'),p(('Branch' if cover else 'Person')+' waiting estimate: '+money(w),'Note')])
+        if not items:
+            story.append(p('No commissions for the selected period and scope.'))
+            continue
+        if cover:
+            story.append(p('Branch summary by commission type and staff','Category'))
+            values=[['Commission type','Manager / employee','Approved','Waiting estimate']]
+            for category in categories:
+                entries=[line for line in items if line['category']==category]
+                for person_items in people(entries):
+                    a,w=totals(person_items)
+                    unknown=any(not line['ready'] and line['row'].get('estimate_available') is False for line in person_items)
+                    values.append([label(category),person_items[0]['person'],money(a),money(w)+(' + awaiting calculation' if unknown else '')])
+                if entries:
+                    a,w=totals(entries);values.append([label(category)+' total','',money(a),money(w)])
+            story.append(table(values,[61,51,33,33],(2,3)))
+            story.append(p('Totals by manager / employee','Category'))
+            values=[['Manager / employee','Approved','Waiting estimate']]
+            for person_items in people(items):
+                a,w=totals(person_items);values.append([person_items[0]['person'],money(a),money(w)])
+            story.append(table(values,[112,33,33],(1,2)))
+            continue
+        for category in categories:
             entries=[line for line in items if line['category']==category]
             if not entries:continue
             a,w=totals(entries)
             story.append(p(label(category)+' subtotal: '+money(a)+(' | Waiting estimate: '+money(w) if any(not line['ready'] for line in entries) else ''),'Category'))
-            values=[['Manager / employee','MF file / notes','Status','Amount earned']]
+            values=[['MF file / notes','Status','Amount earned']]
             for line in sorted(entries,key=lambda line:(line['person'].casefold(),str(line['row'].get('reference')),str(line['row'].get('id')))):
                 row=line['row'];meta=json.loads(row.get('source_metadata') or '{}')
                 notes=[mf(row.get('reference'))]
@@ -114,8 +130,8 @@ def build_commission_pdf(approved, waiting, *, title='Commission statement', per
                 if row.get('carry_forward_notice'):notes.append(row['carry_forward_notice'])
                 if row.get('service_date') and period_start and str(row['service_date'])<str(period_start):notes.append('Earlier-period adjustment')
                 if not line['ready'] and row.get('payment_block_reason'):notes.append(row['payment_block_reason'])
-                values.append([line['person'],'\n'.join(notes),'Approved' if line['ready'] else 'Waiting',
+                values.append(['\n'.join(notes),'Approved' if line['ready'] else 'Waiting',
                     'Awaiting calculation' if not line['ready'] and row.get('estimate_available') is False else money(line['amount'])])
-            story.append(table(values,[51,65,25,37],(3,)))
+            story.append(table(values,[105,33,40],(2,)))
     doc.build(story)
     return stream.getvalue()

@@ -88,11 +88,8 @@ def register(month: str = Query(pattern=r'^\d{4}-(0[1-9]|1[0-2])$'), branch_id: 
     return result
 
 
-@router.get('/case')
-def case_documents(branch_id: int, mf: str = Query(min_length=1,max_length=255), include_deleted: bool = False,
-                   franchise_user_id: int | None = None,current_user: User = Depends(get_current_user),db=Depends(get_db)):
+def case_payload(db,fid,branch_id,mf,include_deleted=False,allow_empty=False):
     """A complete MF folder is independent of upload-month pagination."""
-    fid=import_scope(db,current_user,franchise_user_id)
     branch=db.execute(text('SELECT * FROM attendance_branches WHERE id=:id AND franchise_user_id=:fid'),{'id':branch_id,'fid':fid}).mappings().first()
     if not branch:
         raise HTTPException(403,'Branch is outside this holder group.')
@@ -101,7 +98,7 @@ def case_documents(branch_id: int, mf: str = Query(min_length=1,max_length=255),
     rows=db.execute(text('''SELECT * FROM commission_documents WHERE franchise_user_id=:fid
         AND branch_key=:branch AND mf_key=:mf ORDER BY kind,id'''),
         {'fid':fid,'branch':branch_key(branch['name']),'mf':key}).mappings().all()
-    if not rows:
+    if not rows and not allow_empty:
         raise HTTPException(404,'No documents found for this branch and MF File number.')
     active=[r for r in rows if not r['deleted_at']]
     invoices=[json.loads(r['source_data']) for r in active if r['kind']=='invoice']
@@ -113,14 +110,22 @@ def case_documents(branch_id: int, mf: str = Query(min_length=1,max_length=255),
             require_payment_proof(db,fid,branch_id,key)
             ready=True;reason='All three document types match and the invoice is fully paid.'
         except HTTPException as exc: reason=exc.detail
-    source=json.loads((active or rows)[0]['source_data'])
+    source=json.loads((active or rows)[0]['source_data']) if rows else {}
     case={'branch_id':branch_id,'branch':branch['name'],'mf':key,'reference':source.get('reference',key),'deceased':source.get('deceased'),
           'ready':ready,'reason':reason,'issues':document_issues(active,ready,reason),'invoice_total':str(total) if total is not None else None,
           'total_received':str(money(paid)),'balance':str(money(total-paid)) if total is not None else None,
           'document_counts':{kind:sum(r['kind']==kind for r in active) for kind in ('mortuary','invoice','receipt')}}
-    audit(db,current_user,fid,'commission_mf_folder_viewed',new={'branch_id':branch_id,'mf':key,'include_deleted':include_deleted})
-    db.commit()
     return {'case':case,'documents':[serialise(db,r) for r in rows if include_deleted or not r['deleted_at']]}
+
+
+@router.get('/case')
+def case_documents(branch_id: int, mf: str = Query(min_length=1,max_length=255), include_deleted: bool = False,
+                   franchise_user_id: int | None = None,current_user: User = Depends(get_current_user),db=Depends(get_db)):
+    fid=import_scope(db,current_user,franchise_user_id)
+    result=case_payload(db,fid,branch_id,mf,include_deleted)
+    audit(db,current_user,fid,'commission_mf_folder_viewed',new={'branch_id':branch_id,'mf':result['case']['mf'],'include_deleted':include_deleted})
+    db.commit()
+    return result
 
 
 @router.get('/activity')

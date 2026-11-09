@@ -6,7 +6,8 @@ from app.services.receipt_commissions import payment_eligibility
 
 
 def pending_claims(db, fid, report):
-    rows = db.execute(text('''SELECT c.*,u.full_name AS employee_name,b.name AS service_branch
+    rows = db.execute(text('''SELECT c.*,u.full_name AS employee_name,b.name AS service_branch,
+        CASE WHEN EXISTS(SELECT 1 FROM manager_users m WHERE m.user_id=c.employee_user_id) THEN 'Manager' ELSE 'Employee' END AS staff_role
         FROM commission_entries c JOIN users u ON u.id=c.employee_user_id
         LEFT JOIN attendance_branches b ON b.id=c.earning_branch_id
         WHERE c.franchise_user_id=:fid AND c.status IN ('pending','approved')
