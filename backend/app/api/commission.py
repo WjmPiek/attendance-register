@@ -134,6 +134,13 @@ class ReviewIn(EntryIn):
     status: str = Field(pattern="^(approved|rejected)$")
     review_notes: str | None = None
 
+
+class CaseClaimIn(BaseModel):
+    model_config = {'extra': 'forbid'}
+    earning_branch_id: int = Field(gt=0)
+    reference: str = Field(min_length=1, max_length=255)
+    employee_user_id: int | None = None
+
 class BulkReviewIn(BaseModel):
     entry_ids: list[int]
     status: str = Field(pattern="^(approved|rejected)$")
@@ -382,8 +389,32 @@ def create_entry(payload: EntryIn, current_user: User = Depends(get_current_user
     participant = _participant(db, current_user, uid, write=not own)
     fid = participant['franchise_user_id']
     db.execute(text('SELECT pg_advisory_xact_lock(:namespace,:fid)'), {'namespace': 15015, 'fid': fid})
-    from app.services.service_claims import calculate_claim, insert_surcharge
+    from app.services.service_claims import calculate_claim
     quote = calculate_claim(db, current_user, payload, participant)
+    result = _save_claim_entry(db, current_user, participant, payload, quote)
+    db.commit()
+    return result
+
+
+@router.post('/case-claim')
+def case_claim(payload: CaseClaimIn, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _, _, _, _, kind = _profile(db, current_user)
+    own = kind in {'employee', 'manager'}
+    uid = current_user.id if own else payload.employee_user_id
+    if not uid:
+        raise HTTPException(400, 'Select a staff member.')
+    participant = _participant(db, current_user, uid, write=not own)
+    db.execute(text('SELECT pg_advisory_xact_lock(:namespace,:fid)'), {'namespace':15015,'fid':participant['franchise_user_id']})
+    from app.services.case_claims import allocate_case
+    result = allocate_case(db, current_user, participant, payload.earning_branch_id, payload.reference)
+    db.commit()
+    return result
+
+
+def _save_claim_entry(db, current_user, participant, payload, quote):
+    """Persist a server-checked claim inside the caller's transaction."""
+    from app.services.service_claims import insert_surcharge
+    fid, uid = participant['franchise_user_id'], participant['user_id']
     status = 'approved' if quote['documents_valid'] else 'pending'
     proof = quote['proof'] if quote['documents_valid'] else {}
     metadata = {**proof, 'fee_label':quote.get('fee_label'), 'estimate_available':quote['estimate_available'], 'claim_deceased': payload.claim_deceased, 'commission_role': payload.commission_role,
@@ -411,7 +442,6 @@ def create_entry(payload: EntryIn, current_user: User = Depends(get_current_user
     from app.services.commission_carry_forward import carry_after_cutoff
     carry_after_cutoff(db,fid,{**dict(row),'payment_eligible':quote['documents_valid'],
         'estimate_available':quote['estimate_available'],'expected_amount':quote['amount'],'payment_block_reason':quote['notice']})
-    db.commit()
     return {**dict(row), 'documents_valid': quote['documents_valid'], 'notice': quote['notice']}
 
 
