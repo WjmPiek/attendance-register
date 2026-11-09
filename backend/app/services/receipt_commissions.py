@@ -166,7 +166,9 @@ def effective_branch_rates(db,fid,uid,branch_id):
     values=branch_options(db,fid,uid)
     selected=values.get(str(branch_id),{})
     home=values.get(str(selected.get('home_branch_id')),{})
-    return {**home.get('rates',{}),**selected.get('rates',{})}
+    defaults=db.execute(text('SELECT rates FROM commission_branch_rates WHERE franchise_user_id=:fid AND branch_id=:bid'),{'fid':fid,'bid':branch_id}).scalar()
+    own=selected.get('rates',{}) if not selected.get('inherit_home') else {}
+    return {**home.get('rates',{}),**(json.loads(defaults) if defaults else {}),**own}
 
 
 def save_branch_options(db, fid, uid, values, actor, *, branch_id=None):
@@ -249,8 +251,10 @@ def invoice_commission_rate(db, fid, uid, role, branch_id, policies, settings):
     selected=permission_branch(db,fid,uid,branch_id)
     preference=branch_options(db,fid,uid).get(str(selected),{})
     options=option_map(db,fid,uid)
-    candidates=[preference.get('rates',{}).get(f'{role}_invoice_commission'),preference.get('receipt_percentage'),
+    own=preference if not preference.get('inherit_home') else {}
+    candidates=[own.get('rates',{}).get(f'{role}_invoice_commission'),own.get('receipt_percentage'),
                 effective_branch_rates(db,fid,uid,selected).get(f'{role}_invoice_commission'),
+                preference.get('receipt_percentage'),
                 policies.get(uid,{}).get('rates',{}).get(f'{role}_invoice_commission'),
                 options.get('invoice_commission',{}).get('rate'),
                 effective_policy(policies,uid)['rates'].get(f'{role}_invoice_commission'),settings.get('receipt_percentage')]
