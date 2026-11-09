@@ -28,7 +28,22 @@ export function commissionBranches(groups) {
 
 export function readCommissionView(search,personId) {
   const params=new URLSearchParams(search)
-  if(params.get('commission_view_person')!==String(personId))return {key:'',month:''}
+  if(params.get('commission_view_person')!==String(personId))return {key:'',month:'',mf:''}
   const month=params.get('commission_view_month') || ''
-  return {key:params.get('commission_view_group') || '',month:/^\d{4}-(0[1-9]|1[0-2])$/.test(month)?month:''}
+  return {key:params.get('commission_view_group') || '',month:/^\d{4}-(0[1-9]|1[0-2])$/.test(month)?month:'',mf:commissionMfKey(params.get('commission_view_mf'))}
+}
+
+export function commissionMfKey(reference) {
+  return String(reference || '').split(/ \/ (?:Invoice|Receipt) /i)[0].trim().replace(/^MF[\s-]*/i,'').toUpperCase().replace(/[^A-Z0-9]/g,'')
+}
+
+export function commissionMfFiles(rows) {
+  const files=new Map()
+  for(const row of rows) {
+    const key=commissionMfKey(row.reference)
+    if(!key)continue
+    if(!files.has(key))files.set(key,{key,reference:`MF${key}`,rows:[]})
+    files.get(key).rows.push(row)
+  }
+  return [...files.values()].sort((a,b)=>a.key.localeCompare(b.key,undefined,{numeric:true}))
 }

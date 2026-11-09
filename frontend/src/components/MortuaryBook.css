@@ -188,3 +188,8 @@
 .commission-branch-list .commission-type-link { background:#f5f1fa !important; color:#69499b !important; border:1px solid #ded7e8; }
 .commission-branch-list button:focus-visible { outline:3px solid #aa8fcb; outline-offset:2px; }
 .commission-type-page .claim-status-list { margin-top:16px; }
+.commission-mf-list { display:grid; gap:10px; }
+.commission-mf-list button { width:100%; min-height:48px; text-align:left; padding:14px 18px; }
+.commission-mf-documents { display:grid; gap:16px; }
+.commission-mf-document + .commission-mf-document { padding-top:16px; border-top:1px solid #ded7e8; }
+.commission-mf-claim-details { margin-top:20px; }

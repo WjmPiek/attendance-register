@@ -563,6 +563,56 @@ def entry_detail(entry_id:int,current_user:User=Depends(get_current_user),db:Ses
     return dict(selected)
 
 
+def _claim_document_scope(db,user,employee_user_id,earning_branch_id,reference,commission_type,franchise_user_id=None):
+    participant=_participant(db,user,employee_user_id or user.id)
+    fid=participant['franchise_user_id'];uid=participant['user_id']
+    if franchise_user_id is not None and franchise_user_id!=fid:raise HTTPException(403,'Staff member is outside the selected franchise.')
+    if commission_type not in COMMISSION_TYPES:raise HTTPException(400,'Select a valid commission type.')
+    result=entries(employee_user_id=uid,franchise_user_id=fid,current_user=user,db=db)
+    from app.services.receipt_commissions import mf_key
+    key=mf_key(reference)
+    if not key or not any(row.get('earning_branch_id')==earning_branch_id and row['commission_type']==commission_type and mf_key(row['reference'].split(' / Invoice ',1)[0].split(' / Receipt ',1)[0])==key for row in [*result['items'],*result['pending_imports']]):
+        raise HTTPException(404,'No visible commission matches this staff member, branch, type and MF file.')
+    return fid,key
+
+
+@router.get('/case-documents')
+def claim_documents(earning_branch_id:int,reference:str=Query(min_length=1,max_length=255),commission_type:str=Query(min_length=1,max_length=80),employee_user_id:int|None=None,
+                    franchise_user_id:int|None=None,current_user:User=Depends(get_current_user),db:Session=Depends(get_db)):
+    fid,key=_claim_document_scope(db,current_user,employee_user_id,earning_branch_id,reference,commission_type,franchise_user_id)
+    from app.api.commission_documents import case_payload,audit
+    result=case_payload(db,fid,earning_branch_id,key,allow_empty=True)
+    audit(db,current_user,fid,'commission_claim_documents_viewed',new={'branch_id':earning_branch_id,'mf':key,'employee_user_id':employee_user_id or current_user.id})
+    db.commit()
+    return result
+
+
+@router.get('/case-documents/{document_id}/file')
+def claim_document_file(document_id:int,earning_branch_id:int,reference:str=Query(min_length=1,max_length=255),commission_type:str=Query(min_length=1,max_length=80),employee_user_id:int|None=None,
+                        franchise_user_id:int|None=None,current_user:User=Depends(get_current_user),db:Session=Depends(get_db)):
+    from fastapi.responses import Response
+    from app.api.commission_documents import case_payload,document,audit
+    fid,key=_claim_document_scope(db,current_user,employee_user_id,earning_branch_id,reference,commission_type,franchise_user_id)
+    folder=case_payload(db,fid,earning_branch_id,key,allow_empty=True)
+    if document_id not in {row['id'] for row in folder['documents']}:raise HTTPException(404,'Document is outside this MF file.')
+    row=document(db,fid,document_id)
+    content=db.execute(text('SELECT file_content FROM commission_document_files WHERE franchise_user_id=:fid AND source_hash=:hash'),{'fid':fid,'hash':row['source_hash']}).scalar()
+    if content is None:raise HTTPException(404,'This older upload did not retain its PDF. Its imported details remain available.')
+    from pypdf import PdfReader,PdfWriter
+    reader=PdfReader(BytesIO(bytes(content)))
+    record=json.loads(row['source_data']);pages=record.get('pages') or ([record['page']] if record.get('page') else [])
+    if not pages and len(reader.pages)>1:raise HTTPException(409,'This upload has no page references. Head Office must review the original PDF.')
+    if pages:
+        if any(not isinstance(page,int) or page<1 or page>len(reader.pages) for page in pages):raise HTTPException(409,'Imported page references require Head Office review.')
+        if set(pages)!=set(range(1,len(reader.pages)+1)):
+            writer=PdfWriter()
+            for page in sorted(set(pages)):writer.add_page(reader.pages[page-1])
+            output=BytesIO();writer.write(output);content=output.getvalue()
+    audit(db,current_user,fid,'commission_claim_document_pdf_viewed',document_id,new={'branch_id':earning_branch_id,'mf':key})
+    db.commit()
+    return Response(bytes(content),media_type='application/pdf',headers={'Content-Disposition':f'inline; filename="{row["kind"]}-MF{key}.pdf"','Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'})
+
+
 def _review_service(entry_id, payload, user, db, automatic=False):
     roles, _, _, _, _ = _profile(db, user)
     if not {'FranchiseUser', 'SuperUser'} & roles:

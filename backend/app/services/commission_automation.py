@@ -78,7 +78,8 @@ def report_content(db, fid, report):
     from app.services.receipt_commissions import payment_eligibility
     # Every delivered entry is reserved permanently. Late evidence is included
     # as an earlier-period adjustment instead of disappearing after cutoff.
-    rows = db.execute(text('''SELECT c.*,u.full_name AS employee_name,b.name AS service_branch FROM commission_entries c
+    rows = db.execute(text('''SELECT c.*,u.full_name AS employee_name,b.name AS service_branch,
+        CASE WHEN EXISTS(SELECT 1 FROM manager_users m WHERE m.user_id=c.employee_user_id) THEN 'Manager' ELSE 'Employee' END AS staff_role FROM commission_entries c
         JOIN users u ON u.id=c.employee_user_id LEFT JOIN attendance_branches b ON b.id=c.earning_branch_id
         WHERE c.franchise_user_id=:fid AND c.status='approved' AND COALESCE(c.is_cancelled,FALSE)=FALSE
         AND c.service_date<=:last AND NOT EXISTS (SELECT 1 FROM commission_monthly_report_items i WHERE i.entry_id=c.id)
