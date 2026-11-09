@@ -20,7 +20,7 @@ def removal_estimate(db, fid, uid, record, role, person, policies, branch_id):
 
 
 def pending_rows(db, fid, user, employee_id=None, from_date=None, to_date=None, status=None, search=None, branch_id=None):
-    from app.api.commission import _profile, _participant
+    from app.api.commission import _profile, _participant, _staff_enabled_rows
     from app.api.mortuary import policy_map
     if not fid or status not in (None, 'pending'):
         return []
@@ -90,7 +90,7 @@ def pending_rows(db, fid, user, employee_id=None, from_date=None, to_date=None, 
                 'source_metadata':json.dumps({**record,**details,'role':role}), 'notes':'', 'hours':None,
                 'hourly_rate':None,'invoice_value_before_tax':None,'created_by_user_id':book['created_by_user_id']})
     result+=pending_invoices(db,fid,staff,available,policies,recorded,from_date,to_date,search,branch_id)
-    return result
+    return _staff_enabled_rows(db,user,result)
 
 
 def pending_invoices(db,fid,staff,available,policies,recorded,from_date,to_date,search,branch_id):
