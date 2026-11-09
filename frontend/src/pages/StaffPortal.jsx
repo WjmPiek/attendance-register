@@ -8,6 +8,7 @@ import StaffLeave from '../components/StaffLeave'
 import StaffDocuments from '../components/StaffDocuments'
 import StaffPopup from '../components/StaffPopup'
 import StaffNotificationPopup from '../components/StaffNotificationPopup'
+import BranchCommissionBreakdown from '../components/BranchCommissionBreakdown'
 import MobileAttendancePage from './MobileAttendancePage'
 import AttendanceHistoryPage from './AttendanceHistoryPage'
 import AttendanceApprovalPage from './AttendanceApprovalPage'
@@ -40,9 +41,7 @@ function StaffCommissionAmounts({me}) {
     <div className="staff-amounts"><section className="approved"><h2>Approved</h2><strong>{money(totals.approved)}</strong></section><section className="waiting"><h2>Waiting to be finalised</h2><strong>{totals.unknown&&totals.waiting===0?'Awaiting calculation':money(totals.waiting)}</strong>{totals.unknown&&totals.waiting>0&&<small>More amounts await documents.</small>}</section></div>
     <h2>Commissions per branch</h2>
     {!byBranch.length&&<p>No commissions recorded for this period.</p>}
-    {byBranch.map(branch=><section className="form-card" key={branch.branchId ?? branch.branchName}><h3>{branch.branchName}</h3><p>Total: <strong>{money(branch.approved+branch.waiting)}</strong>{branch.unknown?' + items awaiting calculation':''}</p>
-      <div className="staff-amounts"><section className="approved"><h2>Approved</h2><strong>{money(branch.approved)}</strong></section><section className="waiting"><h2>Waiting to be finalised</h2><strong>{branch.unknown&&branch.waiting===0?'Awaiting calculation':money(branch.waiting)}</strong></section></div>
-    </section>)}
+    {byBranch.map(branch=><BranchCommissionBreakdown branch={branch} key={branch.branchId ?? branch.branchName}/>)}
   </>}</section>
 }
 

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { usesStaffPortal,commissionTotals,commissionBranchTotals,ownLeave,calendarDays,staffRoute,unreadStaffNotifications } from '../src/utils/staff-portal.mjs'
+import { usesStaffPortal,commissionTotals,commissionBranchTotals,commissionFiles,ownLeave,calendarDays,staffRoute,unreadStaffNotifications } from '../src/utils/staff-portal.mjs'
 
 test('employees and managers share the simple portal while holder/admin roles retain management pages',()=>{
   for(const role of ['EmployeeUser','ManagerUser'])assert.equal(usesStaffPortal({roles:[role]}),true)
@@ -26,6 +26,28 @@ test('branch totals reconcile to the combined totals and do not expose other sta
   assert.equal(branches.reduce((sum,row)=>sum+row.approved,0),all.approved)
   assert.equal(branches.reduce((sum,row)=>sum+row.waiting,0),all.waiting)
 })
+test('branch file drilldowns normalise MF numbers and keep statuses, branches and staff separate',()=>{
+  const base={employee_user_id:11,earning_branch_id:4,branch_name:'Northcliff',commission_type:'grave_service',calculated_amount:'75'}
+  const rows=[{...base,id:1,reference:'MF 111137',status:'pending',expected_amount:'80'},
+    {...base,id:2,reference:'111137 / Invoice 466 / Receipt 668',status:'pending',commission_type:'invoice_commission',expected_amount:'0',estimate_available:false},
+    {...base,id:3,reference:'mf-111137',status:'approved',payment_eligible:true,calculated_amount:'100'},
+    {...base,id:4,reference:'MF111137',status:'approved',payment_eligible:false,expected_amount:'20'},
+    {...base,id:5,reference:'MF111137',earning_branch_id:11,branch_name:'Rivonia',status:'pending',expected_amount:'30'},
+    {...base,id:6,reference:'MF111137',employee_user_id:12,status:'pending',expected_amount:'999'},
+    {...base,id:7,reference:'MF111137',status:'rejected',expected_amount:'999'},
+    {...base,id:8,reference:'MF111105',status:'cancelled',expected_amount:'999'}]
+  const branches=commissionBranchTotals(rows,11),north=branches.find(branch=>branch.branchId===4),rivonia=branches.find(branch=>branch.branchId===11)
+  assert.equal(north.files.waiting.length,1)
+  assert.equal(north.files.waiting[0].reference,'MF111137')
+  assert.deepEqual(north.files.waiting[0].items.map(item=>item.id),[1,2,4])
+  assert.equal(north.files.waiting[0].unknown,true)
+  assert.equal(north.files.waiting[0].total,north.waiting)
+  assert.equal(north.files.approved[0].total,north.approved)
+  assert.deepEqual(north.files.approved[0].items.map(item=>item.id),[3])
+  assert.equal(rivonia.files.waiting[0].total,30)
+  assert.deepEqual(commissionFiles([],11),{approved:[],waiting:[]})
+})
+
 test('own leave excludes a manager’s team and the calendar never treats rejected dates as authorised leave',()=>{
   const leave=[{applicant_user_id:11,status:'approved',start_date:'2026-11-02',end_date:'2026-11-06',return_date:'2026-11-09'},
     {applicant_user_id:11,status:'declined',start_date:'2026-11-16',end_date:'2026-11-17'},

@@ -63,3 +63,15 @@
 .staff-document-reminder p { margin:0 0 12px; line-height:1.5; }
 .staff-document-reminder details { margin-bottom:12px; }
 .staff-document-reminder summary { cursor:pointer; }
+.staff-branch-amounts { align-items:start; }
+.staff-branch-amounts > details { border:1px solid; border-radius:14px; min-width:0; overflow:hidden; }
+.staff-branch-amounts > details > summary { cursor:pointer; padding:25px 20px; }
+.staff-branch-amounts > details > summary span { font-size:15px; letter-spacing:1px; }
+.staff-branch-amounts > details > summary strong,.staff-branch-amounts > details > summary small { display:block; margin-top:14px; }
+.staff-branch-amounts summary:focus-visible { outline:3px solid #69499b; outline-offset:-4px; }
+.staff-mf-files { padding:0 16px 16px; }
+.staff-mf-file { background:#ffffffb3; border:1px solid currentColor; border-radius:9px; margin-top:12px; }
+.staff-mf-file > summary { padding:14px; cursor:pointer; overflow-wrap:anywhere; }
+.staff-mf-file ul { list-style:none; margin:0; padding:0 14px; }
+.staff-mf-file li { display:flex; flex-wrap:wrap; justify-content:space-between; gap:8px 14px; padding:10px 0; border-bottom:1px solid #0002; }
+.staff-mf-file p { padding:0 14px; overflow-wrap:anywhere; }
