@@ -28,6 +28,7 @@ from app.services.receipt_commissions import (
 from app.services.audit import write_audit_log
 from app.services.mortuary import normalise
 from app.services.invoice_proof import parse_invoice_pdf
+from app.services.pdf_records import imported_page_count
 
 from app.services.attendance_branches import import_scope, import_staff, import_participant, branches, assignment
 
@@ -37,6 +38,7 @@ router = APIRouter()
 class OptionIn(BaseModel):
     employee_user_id: int
     franchise_user_id: int | None = None
+    branch_id: int | None = Field(default=None, gt=0)
     enabled_types: list[str] = Field(default_factory=list, max_length=8)
     commission_branches: dict[int, CommissionBranchOptions] | None = None
     receipt_percentage: Decimal | None = Field(default=None, ge=0, le=100, decimal_places=4)
@@ -278,8 +280,10 @@ def save_options(payload: OptionIn, current_user: User = Depends(get_current_use
     if person['franchise_user_id'] != fid:
         raise HTTPException(403, 'Employee is outside the selected franchise.')
     old = option_map(db, fid, payload.employee_user_id)
+    if payload.branch_id is not None and payload.commission_branches is None:
+        raise HTTPException(400, 'Supply commission settings for the selected branch only.')
     if payload.commission_branches is not None:
-        save_branch_options(db,fid,payload.employee_user_id,payload.commission_branches,current_user.id)
+        save_branch_options(db,fid,payload.employee_user_id,payload.commission_branches,current_user.id,branch_id=payload.branch_id)
     else:
         # Older clients may update global flags; retain only existing branch grants.
         current = branch_options(db,fid,payload.employee_user_id)
@@ -290,7 +294,8 @@ def save_options(payload: OptionIn, current_user: User = Depends(get_current_use
             if not any(category in value['enabled_types'] for value in current.values()):
                 current.setdefault(home,{'enabled_types':[],'receipt_percentage':None})['enabled_types'].append(category)
         save_branch_options(db,fid,payload.employee_user_id,current,current_user.id)
-    db.execute(text("UPDATE employee_commission_options SET rate=:rate WHERE franchise_user_id=:fid AND employee_user_id=:uid AND commission_type='invoice_commission'"), {'fid': fid, 'uid': payload.employee_user_id, 'rate': payload.receipt_percentage})
+    if payload.branch_id is None and 'receipt_percentage' in payload.model_fields_set:
+        db.execute(text("UPDATE employee_commission_options SET rate=:rate WHERE franchise_user_id=:fid AND employee_user_id=:uid AND commission_type='invoice_commission'"), {'fid': fid, 'uid': payload.employee_user_id, 'rate': payload.receipt_percentage})
     write_audit_log(db, actor_user_id=current_user.id, franchise_user_id=fid, action='employee_commissions_updated', entity_type='employee_commission_options', entity_id=payload.employee_user_id, old_values=old, new_values=payload.model_dump(mode='json'))
     db.commit()
     return {'saved': True}
@@ -356,10 +361,10 @@ def preview_invoices(franchise_user_id: int | None = None, external_branch_id: i
                 record.update(filename=name, source_hash=digest); accepted.append(record)
             if accepted:
                 from app.services.commission_files import store_file
-                store_file(db,fid,digest,name,content,current_user.id,'invoice',len(accepted))
+                store_file(db,fid,digest,name,content,current_user.id,'invoice',imported_page_count(accepted))
                 records.extend(accepted)
             errors.extend(dict(error, filename=name) for error in failures)
-            if len(records) + len(errors) > 100:
+            if imported_page_count(records) + imported_page_count(errors) > 100:
                 raise HTTPException(400, 'Import up to 100 pages per batch.')
         db.commit()
     except Exception:
@@ -435,9 +440,9 @@ def preview(franchise_user_id: int | None = None, external_branch_id: int | None
             record.update(filename=name, source_hash=sha256(content).hexdigest()); records.append(record);accepted.append(record)
         if accepted:
             from app.services.commission_files import store_file
-            store_file(db,fid,sha256(content).hexdigest(),name,content,current_user.id,'receipt',len(accepted))
+            store_file(db,fid,sha256(content).hexdigest(),name,content,current_user.id,'receipt',imported_page_count(accepted))
         errors.extend(dict(e, filename=name) for e in failures)
-        if len(records) + len(errors) > 100:
+        if imported_page_count(records) + imported_page_count(errors) > 100:
             raise HTTPException(400, 'Import up to 100 pages per batch.')
     db.commit()
     return {'records': records, 'errors': errors, 'allocations':suggest_receipt_allocations(db,fid,records,current_user), 'preview_token': signer().dumps({'kind': 'receipts', 'user_id': current_user.id, 'franchise_user_id': fid, 'records': records})}

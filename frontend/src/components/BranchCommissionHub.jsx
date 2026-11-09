@@ -78,8 +78,8 @@ export default function BranchCommissionHub({ franchiseId, branchId = '', onBran
     setBusy(true); setError(''); setSaved('')
     try {
       await apiRequest('/receipt-commissions/options', { method: 'PUT', body: JSON.stringify({ employee_user_id: employee.user_id,
-        franchise_user_id: data.franchise_user_id, commission_branches: editor.values,
-        receipt_percentage: editor.preferences.options.invoice_commission?.rate ?? null }) })
+        franchise_user_id: data.franchise_user_id, branch_id: branch.id,
+        commission_branches: { [branch.id]: editor.values[String(branch.id)] } }) })
       await load(); setSaved(`Commission permissions saved for ${employee.full_name} at ${branch.name}.`)
     } catch (e) { setError(e.message) } finally { setBusy(false) }
   }
@@ -99,7 +99,7 @@ export default function BranchCommissionHub({ franchiseId, branchId = '', onBran
     {!data && !error && <p role="status">Loading staff details…</p>}
     {data && (!employee || !branch || !actionTitles[action]) && <p role="alert">This employee, branch or commission page is unavailable. Return to the branch list and select an active staff member.</p>}
     {employee && branch && action === 'permissions' && (editor ? <section className="form-card">
-      <CommissionCheckboxes branches={[branch]} branchOptions={editor.values} onBranchOptionsChange={values => { setEditor(v => ({ ...v, values })); setSaved('') }}/>
+      <CommissionCheckboxes homeBranchId={editor.preferences.assignment?.branch_id} branches={[branch]} branchOptions={editor.values} onBranchOptionsChange={values => { setEditor(v => ({ ...v, values })); setSaved('') }}/>
       <div className="button-row"><button type="button" disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Save this commission'}</button>
         <button type="button" className="glass-button" disabled={busy} onClick={() => onNavigate('branches')}>Back to branches</button></div>
       {saved && <p role="status" className="success">{saved}</p>}

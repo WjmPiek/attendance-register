@@ -5,9 +5,11 @@ import re
 
 from pypdf import PdfReader
 from app.services.receipt_commissions import printed_money
+from app.services.pdf_records import parse_document_pages, invoice_number_text
 
 
 def parse_invoice_text(value):
+    value = invoice_number_text(value)
     if not re.search(r'\b(?:TAX\s+)?INVOICE\b', value, re.I) or re.search(r'^\s*(?:KWITANSIE\s*/\s*RECEIPT|CREDIT\s+NOTE|QUOTATION)\s*$', value, re.I | re.M):
         raise ValueError('This page must be an original MF Invoice, not a receipt, quotation or credit note.')
     def field(pattern):
@@ -71,10 +73,4 @@ def parse_invoice_pdf(data):
     reader = PdfReader(BytesIO(data))
     if reader.is_encrypted or not 1 <= len(reader.pages) <= 50:
         raise ValueError('Use an unprotected invoice PDF with 1–50 pages.')
-    records, errors = [], []
-    for n, page in enumerate(reader.pages):
-        try:
-            records.append({**parse_invoice_text(page.extract_text(extraction_mode='layout') or ''), 'page': n + 1})
-        except (ValueError, TypeError) as exc:
-            errors.append({'page': n + 1, 'error': str(exc)})
-    return records, errors
+    return parse_document_pages(reader, parse_invoice_text, 'invoice', layout=True)

@@ -42,10 +42,13 @@ def parse_date(value):
 
 
 def parse_register_text(value):
+    # The printed ID Number label can wrap onto two lines.
+    value = re.sub(r'\bID[ \t]*\n[ \t]*Number[ \t]+', 'ID Number ', value, flags=re.I)
     if 'MORTUARY BOOK' not in value.upper():
         raise ValueError('This page is not a Mortuary Book register.')
     lines = [' '.join(x.split()) for x in value.splitlines() if x.strip()]
-    if sum(line.lower().startswith('mf number ') for line in lines) != 1:
+    references = {line.split()[2] for line in lines if line.lower().startswith('mf number ') and len(line.split()) > 2}
+    if len(references) != 1:
         raise ValueError('Each page must contain exactly one Mortuary Book record.')
 
     def field(label, stop=None):
@@ -96,15 +99,8 @@ def parse_pdf(data):
         raise ValueError('Password-protected PDFs are not supported.')
     if not 1 <= len(reader.pages) <= 50:
         raise ValueError('Each PDF must have between 1 and 50 pages.')
-    records, errors = [], []
-    for index, page in enumerate(reader.pages):
-        try:
-            record = parse_register_text(page.extract_text() or '')
-            record['page'] = index + 1
-            records.append(record)
-        except (ValueError, TypeError) as exc:
-            errors.append({'page': index + 1, 'error': str(exc)})
-    return records, errors
+    from app.services.pdf_records import parse_document_pages
+    return parse_document_pages(reader, parse_register_text, 'mortuary')
 
 
 def public_holidays(year):
