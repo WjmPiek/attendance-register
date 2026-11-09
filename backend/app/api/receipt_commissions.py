@@ -726,69 +726,25 @@ def branch_list(franchise_user_id: int | None = None, current_user: User = Depen
 @router.get('/report.pdf')
 def report(month: str, franchise_user_id: int | None = None, branch_id: int | None = None,
            employee_user_id: int | None = None, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    from calendar import monthrange
     from datetime import datetime
     from io import BytesIO
-    from xml.sax.saxutils import escape
     from fastapi.responses import StreamingResponse
-    from reportlab.lib import colors
-    from reportlab.lib.pagesizes import A4, landscape
-    from reportlab.lib.styles import getSampleStyleSheet
-    from reportlab.lib.units import mm
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
     from app.api.commission import _rows
+    from app.services.commission_automation import default_report
+    from app.services.commission_pdf import build_commission_pdf
+    from app.services.pending_removals import pending_rows
     fid = _staff_franchise_id(db, current_user, franchise_user_id)
     if branch_id and branch_id not in {b['id'] for b in branches(db, fid, False)}:
         raise HTTPException(403, 'Branch is outside this holder group.')
     try:
-        from app.services.commission_automation import default_report
         period = default_report(datetime.strptime(month, '%Y-%m'))
-        first, last = period['period_start'], period['period_end']
     except ValueError:
         raise HTTPException(400, 'Select a valid report month.')
-    rows = _rows(db, current_user, employee_user_id=employee_user_id, from_date=first, to_date=last, status='approved', franchise_user_id=fid)
-    grouped = {}
-    for row in rows:
-        if not row['payment_eligible']:
-            continue
-        metadata = json.loads(row.get('source_metadata') or '{}')
-        home = assignment(db, row['employee_user_id']) or {}
-        bid = row.get('earning_branch_id') or metadata.get('earning_branch_id') or home.get('branch_id')
-        if branch_id and bid != branch_id:
-            continue
-        branch_name = next((b['name'] for b in branches(db,fid,False) if b['id']==bid),None) or metadata.get('earning_branch_name') or home.get('branch_name') or 'Unassigned branch'
-        grouped.setdefault(branch_name, {}).setdefault((row['employee_user_id'], row['employee_name']), {}).setdefault(row['commission_type'], []).append((row, metadata))
-    stream = BytesIO(); styles = getSampleStyleSheet()
-    styles['BodyText'].fontSize = 8; styles['BodyText'].leading = 11
-    def para(value):
-        return Paragraph(escape(str(value if value is not None else '—')).replace('\n', '<br/>'), styles['BodyText'])
-    story = [Paragraph('Monthly employee commission statement', styles['Title']), Paragraph(escape(month), styles['Heading2']), para('Approved commissions only. Unmatched, disabled and waiting items do not earn commission.'), Spacer(1, 5 * mm)]
-    grand = Decimal(0)
-    for branch_name, people in sorted(grouped.items()):
-        story.append(Paragraph(escape(branch_name), styles['Heading1'])); branch_total = Decimal(0)
-        for (_, name), categories in sorted(people.items(), key=lambda item: item[0][1]):
-            story.append(Paragraph(escape(name), styles['Heading2'])); employee_total = Decimal(0)
-            for category, entries in categories.items():
-                story.append(Paragraph(escape(COMMISSION_LABELS.get(category, category)), styles['Heading3']))
-                data = [[para(x) for x in ('Date', 'MF / Invoice / Receipts / Branch', 'Deceased / ID', 'Total received', 'Commissionable amount', 'Fee / Rate', 'Commission')]]
-                subtotal = Decimal(0)
-                for row, meta in entries:
-                    amount = money(row['calculated_amount']); subtotal += amount
-                    values = [row['service_date'], f"{row['reference']}\n{row.get('carry_forward_notice') or ''}\nReceipts: {', '.join(meta.get('receipt_numbers', []))}\n{row.get('branch_name') or ''}", f"{meta.get('deceased') or '—'}\n{meta.get('id_number') or '—'}",
-                              f"R {money(meta.get('total_received') or meta['gross_received']):,.2f}" if meta.get('total_received') or meta.get('gross_received') else '—',
-                              f"R {money(row['invoice_value_before_tax']):,.2f}" if row.get('invoice_value_before_tax') is not None else '—',
-                              f"{row['applied_rate']}%" if category == 'invoice_commission' else f"{row['applied_rate']}x" if category == 'overtime' and meta.get('calculation_type')!='fixed' else f"R {money(row['applied_rate']):,.2f}", f'R {amount:,.2f}']
-                    data.append([para(v) for v in values])
-                table = Table(data, colWidths=[20*mm,45*mm,65*mm,32*mm,32*mm,25*mm,32*mm], repeatRows=1, hAlign='LEFT')
-                table.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.HexColor('#eee8f5')),('GRID',(0,0),(-1,-1),.3,colors.HexColor('#ddd5e8')),('VALIGN',(0,0),(-1,-1),'TOP'),('LEFTPADDING',(0,0),(-1,-1),7),('RIGHTPADDING',(0,0),(-1,-1),7),('TOPPADDING',(0,0),(-1,-1),7),('BOTTOMPADDING',(0,0),(-1,-1),7)]))
-                story.extend([table, para(f'{COMMISSION_LABELS.get(category, category)} subtotal: R {subtotal:,.2f}'), Spacer(1,4*mm)])
-                employee_total += subtotal
-            story.append(Paragraph(f'Employee total: R {employee_total:,.2f}', styles['Heading3'])); branch_total += employee_total
-        story.append(Paragraph(f'Branch total: R {branch_total:,.2f}', styles['Heading2'])); grand += branch_total
-    if not grouped:
-        story.append(para('No approved commissions for the selected month and scope.'))
-    story.append(Paragraph(f'Grand total: R {grand:,.2f}', styles['Heading1']))
-    SimpleDocTemplate(stream, pagesize=landscape(A4), leftMargin=14*mm, rightMargin=14*mm, topMargin=14*mm, bottomMargin=14*mm).build(story)
-    stream.seek(0)
-    return StreamingResponse(stream, media_type='application/pdf', headers={'Content-Disposition': f'attachment; filename="commissions-{month}.pdf"'})
-
+    first,last=period['period_start'],period['period_end']
+    rows=_rows(db,current_user,employee_user_id=employee_user_id,from_date=first,to_date=last,
+               franchise_user_id=fid,earning_branch_id=branch_id)
+    rows+=pending_rows(db,fid,current_user,employee_user_id,first,last,branch_id=branch_id)
+    approved=[row for row in rows if row['status']=='approved' and row['payment_eligible']]
+    waiting=[row for row in rows if row['status'] in {'pending','approved'} and not (row['status']=='approved' and row['payment_eligible'])]
+    content=build_commission_pdf(approved,waiting,title='Monthly commission statement',period_start=first,period_end=last,reference=f'Commission cycle {month}')
+    return StreamingResponse(BytesIO(content),media_type='application/pdf',headers={'Content-Disposition':f'attachment; filename="commissions-{month}.pdf"'})

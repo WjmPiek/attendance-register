@@ -1,7 +1,8 @@
 import { useCommissionMonth } from '../utils/useCommissionMonth'
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { getCommissionEntries, downloadCommissionForm, downloadCommissionReport, deleteCommissionEntry } from '../api/client'
 import { commissionLabels } from './CommissionCheckboxes'
+import { commissionGroups } from '../utils/commission-groups.mjs'
 
 const money = value => `R ${Number(value || 0).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 const metadata = row => { try { return JSON.parse(row.source_metadata || '{}') } catch { return {} } }
@@ -13,15 +14,15 @@ const saveBlob = (blob, name) => {
 export default function StaffCommissionOverview({ employeeId, franchiseId, refreshKey, me, onReview, onHistory }) {
   const [month, setMonth] = useCommissionMonth(), [rows, setRows] = useState([]), [showClosed, setShowClosed] = useState(false)
   const [error, setError] = useState(''), [loading, setLoading] = useState(true), [busy, setBusy] = useState(false), [revision, setRevision] = useState(0)
-  const [categoryTotals, setCategoryTotals] = useState([])
+  const [expanded,setExpanded]=useState({})
   const canManage = me.roles.some(role => ['FranchiseUser', 'SuperUser'].includes(role))
   const [year, number] = month.split('-').map(Number)
   const filters = { employeeUserId: employeeId, franchiseUserId: franchiseId, fromDate: /^\d{4}-\d{2}$/.test(month) ? new Date(Date.UTC(year, number - 2, 26)).toISOString().slice(0, 10) : '', toDate: `${month}-25` }
   useEffect(() => {
     if (!/^\d{4}-\d{2}$/.test(month)) return undefined
     let active = true
-    setRows([]); setCategoryTotals([]); setLoading(true); setError('')
-    const load = () => getCommissionEntries(filters).then(data => { if (active) { setRows([...data.items,...(data.pending_imports||[])]); setCategoryTotals(data.branch_category_totals || []); setError(''); setLoading(false) } }).catch(e => { if (active) { setError(e.message); setLoading(false) } })
+    setRows([]); setExpanded({}); setLoading(true); setError('')
+    const load = () => getCommissionEntries(filters).then(data => { if (active) { setRows([...data.items,...(data.pending_imports||[])]); setError(''); setLoading(false) } }).catch(e => { if (active) { setError(e.message); setLoading(false) } })
     load()
     const timer = setInterval(load, 20000)
     return () => { active = false; clearInterval(timer) }
@@ -29,9 +30,9 @@ export default function StaffCommissionOverview({ employeeId, franchiseId, refre
   const run = async action => { setBusy(true); setError(''); try { await action() } catch (e) { setError(e.message) } finally { setBusy(false) } }
   const active = rows.filter(row => ['pending', 'approved'].includes(row.status))
   const approved = active.filter(row => row.status === 'approved' && row.payment_eligible).reduce((sum, row) => sum + Number(row.calculated_amount), 0)
-  const blocked = active.filter(row => !row.payment_eligible)
+  const blocked = active.filter(row => !(row.status==='approved'&&row.payment_eligible))
   const awaitingDocuments = blocked.reduce((sum, row) => sum + Number(row.expected_amount ?? row.calculated_amount ?? 0), 0)
-  const visible = rows.filter(row => showClosed || ['pending', 'approved'].includes(row.status))
+  const groups=commissionGroups(rows,showClosed)
   const closedCount = rows.length - active.length
   const cancel = row => run(async () => {
     if (window.confirm('Cancel this claim? Its audit history will be retained.')) { await deleteCommissionEntry(row.id); setRevision(value => value + 1) }
@@ -40,22 +41,20 @@ export default function StaffCommissionOverview({ employeeId, franchiseId, refre
     <h2>Monthly commissions</h2>
     <label>Commission cycle ending<input type="month" required value={month} onChange={e => { if (e.target.value) setMonth(e.target.value) }}/></label>
     <p className="muted">{filters.fromDate} to {filters.toDate}. Late verified claims are carried forward in the finance statement.</p>
-    <p className="muted">Green means the documents match and the invoice is fully paid. Red means uploads or corrections are required.</p>
     {loading ? <p role="status">Loading commissions…</p> : !error && <>
       <div className="claim-validated"><span>Approved total</span><strong>{money(approved)}</strong></div>
-      <div className="claim-blocked commission-awaiting-total"><span>Total awaiting document checks</span><strong>{money(awaitingDocuments)}</strong><p>{blocked.length} commission item{blocked.length === 1 ? '' : 's'} awaiting documents or correction. Includes service claims and calculated removal and invoice commissions. Not approved for payment.</p></div>
+      <div className="claim-blocked commission-awaiting-total"><span>Total awaiting document checks</span><strong>{money(awaitingDocuments)}</strong><p>{blocked.length} item{blocked.length === 1 ? '' : 's'} waiting to be finalised.</p></div>
     </>}
     {error && <p role="alert" className="error-message">{error}</p>}
-    {!loading && !error && categoryTotals.length > 0 && <div className="table-wrap"><table><thead><tr><th>Service branch</th><th>Commission category</th><th>Approved</th><th>Pending estimate</th></tr></thead><tbody>{categoryTotals.map(group => <tr key={`${group.branch_id}:${group.commission_type}`}><td>{group.branch_name}</td><td>{commissionLabels[group.commission_type] || group.commission_type}</td><td className="success-message">{group.approved_count} item(s) · {money(group.approved_total)}</td><td className="error-message">{group.pending_count} item(s) · {money(group.pending_total)}</td></tr>)}</tbody></table></div>}
-    <button type="button" className="glass-button" disabled={busy || loading || !rows.length} onClick={() => run(async () => saveBlob(await downloadCommissionReport(filters), `commissions-${month}.pdf`))}>Download monthly PDF</button>
-    {closedCount > 0 && <label className="mortuary-confirm"><input type="checkbox" checked={showClosed} onChange={e => setShowClosed(e.target.checked)}/>Show rejected and cancelled claims ({closedCount})</label>}
-    <div className="claim-status-list">{visible.map(row => {
+    {!loading&&!error&&groups.length>0&&<div className="table-wrap"><table className="commission-group-table"><thead><tr><th>Service branch</th><th>Commission category</th><th>Approved</th><th>Pending estimate</th></tr></thead><tbody>{groups.map((group,index)=><Fragment key={group.key}>
+      <tr><td>{group.branch}</td><td><button type="button" className="commission-group-toggle" aria-expanded={Boolean(expanded[group.key])} aria-controls={`commission-group-${index}`} onClick={()=>setExpanded(current=>({...current,[group.key]:!current[group.key]}))}>{expanded[group.key]?'▾':'▸'} {commissionLabels[group.category] || group.category}</button></td><td className="success-message">{group.approvedCount} item(s) · {money(group.approved)}</td><td className="error-message">{group.pendingCount} item(s) · {money(group.pending)}{group.unknown?' + awaiting calculation':''}</td></tr>
+      {expanded[group.key]&&<tr id={`commission-group-${index}`}><td colSpan={4}><div className="claim-status-list">{group.rows.map(row => {
       const meta = metadata(row), isActive = ['pending', 'approved'].includes(row.status)
-      return <article key={row.id} className={isActive ? row.payment_eligible ? 'claim-validated' : 'claim-blocked' : 'commission-closed-claim'}>
-        <h3>{commissionLabels[row.commission_type] || row.commission_type.replaceAll('_', ' ')}</h3>
+      return <article key={row.id} className={isActive ? row.status==='approved'&&row.payment_eligible ? 'claim-validated' : 'claim-blocked' : 'commission-closed-claim'}>
+        <h3>{`MF${String(row.reference || '').replace(/^MF[\s-]*/i,'')}`}</h3>
         {(row.fee_label||meta.fee_label)&&<p>{row.fee_label||meta.fee_label}</p>}
         <strong>{row.estimate_available === false ? 'Amount awaiting document checks' : money(row.expected_amount ?? row.calculated_amount)}</strong>
-        <p>{row.service_date} · MF {row.reference}</p>{isActive && row.carry_forward_notice && <p className="commission-carry-notice" role="status">{row.carry_forward_notice} {row.status === 'approved' && row.payment_eligible ? 'Included in this cycle’s approved total.' : row.payment_eligible ? 'Documents verified; awaiting automatic approval.' : 'Awaiting documents; excluded from approved payment.'}</p>}
+        <p>{row.service_date}</p>{isActive && row.carry_forward_notice && <p className="commission-carry-notice" role="status">{row.carry_forward_notice} {row.status === 'approved' && row.payment_eligible ? 'Included in this cycle’s approved total.' : row.payment_eligible ? 'Documents verified; awaiting automatic approval.' : 'Awaiting documents; excluded from approved payment.'}</p>}
         {row.branch_name && <p>{row.branch_name}</p>}
         <p>{!isActive ? row.status === 'cancelled' ? 'Cancelled' : 'Rejected' : !row.payment_eligible ? `Document uploads or corrections required: ${row.payment_block_reason}` : row.status === 'approved' ? meta.automatic_approval ? 'Automatically approved' : 'Approved' : 'Documents validated — automatic approval queued'}</p>
         <details className="commission-entry-details"><summary>Details and documents</summary>
@@ -71,8 +70,11 @@ export default function StaffCommissionOverview({ employeeId, franchiseId, refre
           {row.document_estimate&&<p>Calculated from the saved {row.commission_type==='invoice_commission'?'invoice and allocated staff':'Mortuary Book'}. Correct the source document or commission permissions to change this estimate. Included in the monthly PDF.</p>}
         </details>
       </article>
-    })}</div>
-    {!loading && !error && !visible.length && <p>No commissions for the selected month.</p>}
+    })}</div></td></tr>}
+    </Fragment>)}</tbody></table></div>}
+    <button type="button" className="glass-button" disabled={busy || loading || !rows.length} onClick={() => run(async () => saveBlob(await downloadCommissionReport(filters), `commissions-${month}.pdf`))}>Download monthly PDF</button>
+    {closedCount > 0 && <label className="mortuary-confirm"><input type="checkbox" checked={showClosed} onChange={e => setShowClosed(e.target.checked)}/>Show rejected and cancelled claims ({closedCount})</label>}
+    {!loading && !error && !groups.length && <p>No commissions for the selected month.</p>}
   </section>
 }
 
