@@ -411,13 +411,13 @@ def case_claim(payload: CaseClaimIn, current_user: User = Depends(get_current_us
     return result
 
 
-def _save_claim_entry(db, current_user, participant, payload, quote):
+def _save_claim_entry(db, current_user, participant, payload, quote, pending_case=False):
     """Persist a server-checked claim inside the caller's transaction."""
     from app.services.service_claims import insert_surcharge
     fid, uid = participant['franchise_user_id'], participant['user_id']
-    status = 'approved' if quote['documents_valid'] else 'pending'
+    status = 'approved' if quote['documents_valid'] and not pending_case else 'pending'
     proof = quote['proof'] if quote['documents_valid'] else {}
-    metadata = {**proof, 'fee_label':quote.get('fee_label'), 'estimate_available':quote['estimate_available'], 'claim_deceased': payload.claim_deceased, 'commission_role': payload.commission_role,
+    metadata = {**proof, 'mf_case_claim':pending_case, 'fee_label':quote.get('fee_label'), 'estimate_available':quote['estimate_available'], 'claim_deceased': payload.claim_deceased, 'commission_role': payload.commission_role,
                 'claim_notice': quote['notice'], 'calculation_type': quote['calculation_type'], 'deceased': payload.claim_deceased, 'automatic_approval': quote['documents_valid']}
     reviewed_at = datetime.now() if status == 'approved' else None
     reviewed_by = None

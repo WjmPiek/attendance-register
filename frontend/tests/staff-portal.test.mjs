@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { usesStaffPortal,commissionTotals,ownLeave,calendarDays,staffRoute,unreadStaffNotifications } from '../src/utils/staff-portal.mjs'
+import { usesStaffPortal,commissionTotals,commissionBranchTotals,ownLeave,calendarDays,staffRoute,unreadStaffNotifications } from '../src/utils/staff-portal.mjs'
 
 test('employees and managers share the simple portal while holder/admin roles retain management pages',()=>{
   for(const role of ['EmployeeUser','ManagerUser'])assert.equal(usesStaffPortal({roles:[role]}),true)
@@ -13,6 +13,18 @@ test('two commission totals count verified approved amounts and keep queued or i
     {employee_user_id:11,status:'rejected',payment_eligible:true,calculated_amount:'999'},
     {employee_user_id:12,status:'approved',payment_eligible:true,calculated_amount:'999'}]
   assert.deepEqual(commissionTotals(rows,11),{approved:100,waiting:75,unknown:false})
+})
+
+test('branch totals reconcile to the combined totals and do not expose other staff',()=>{
+  const rows=[{employee_user_id:11,earning_branch_id:9,branch_name:'Benoni',status:'approved',payment_eligible:true,calculated_amount:'100'},
+    {employee_user_id:11,earning_branch_id:9,branch_name:'Benoni',status:'pending',payment_eligible:true,expected_amount:'50'},
+    {employee_user_id:11,earning_branch_id:10,branch_name:'Daveyton',status:'pending',expected_amount:'75'},
+    {employee_user_id:11,earning_branch_id:10,branch_name:'Daveyton',status:'pending',expected_amount:'0',estimate_available:false},
+    {employee_user_id:12,earning_branch_id:10,branch_name:'Daveyton',status:'approved',payment_eligible:true,calculated_amount:'999'}]
+  const branches=commissionBranchTotals(rows,11),all=commissionTotals(rows,11)
+  assert.deepEqual(branches.map(row=>[row.branchName,row.approved,row.waiting,row.unknown]),[['Benoni',100,50,false],['Daveyton',0,75,true]])
+  assert.equal(branches.reduce((sum,row)=>sum+row.approved,0),all.approved)
+  assert.equal(branches.reduce((sum,row)=>sum+row.waiting,0),all.waiting)
 })
 test('own leave excludes a manager’s team and the calendar never treats rejected dates as authorised leave',()=>{
   const leave=[{applicant_user_id:11,status:'approved',start_date:'2026-11-02',end_date:'2026-11-06',return_date:'2026-11-09'},

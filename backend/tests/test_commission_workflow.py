@@ -123,7 +123,7 @@ def test_review_duplicate_check_excludes_current_entry():
 
 
 def test_submission_insert_does_not_reuse_status_in_sql_case_expression():
-    source = inspect.getsource(commission.create_entry)
+    source = inspect.getsource(commission._save_claim_entry)
     assert "CASE WHEN :status" not in source
     assert ":reviewed_at,:reviewed_by" in source
 

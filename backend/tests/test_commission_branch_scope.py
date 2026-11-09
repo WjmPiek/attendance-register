@@ -22,7 +22,7 @@ def isolated_options(db, first, second):
 
 def paired_at(db, name, recipients=(11,)):
     quote_and_import(db,import_payload([dict(record(),branch=name)]))
-    result=stage_receipt(db,[dict(receipt(),branch=name,gross_received='1150.00')],people=recipients)
+    result=stage_receipt(db,[dict(receipt(),branch=name,gross_received='1150.00',source_hash=__import__('hashlib').sha256(name.encode()).hexdigest())],people=recipients)
     payload,q=calculate(db,result['document_ids'])
     api.settle(payload,OWNER,db)
     return q

@@ -29,10 +29,20 @@ def auto_approve_holder(db, fid, document_ids=None):
     pending = db.execute(text("SELECT * FROM commission_entries WHERE franchise_user_id=:fid AND status='pending' AND COALESCE(is_cancelled,FALSE)=FALSE ORDER BY id"), {'fid': fid}).mappings().all()
     for row in pending:
         meta = json.loads(row.get('source_metadata') or '{}')
-        if not meta.get('claim_deceased'):
+        if meta.get('mf_case_claim'):
+            from app.services.case_claims import quote_case_item
+            try:
+                payload,quote=quote_case_item(db,{'user_id':row['employee_user_id'],'franchise_user_id':fid},row['earning_branch_id'],row['reference'],row['commission_type'],exclude_id=row['id'])
+            except HTTPException:
+                continue
+            if not quote['documents_valid']:
+                continue
+            values=payload.model_dump()
+        elif not meta.get('claim_deceased'):
             continue  # Legacy entries need their missing claim details completed.
-        values = {key: row[key] for key in EntryIn.model_fields if key in row}
-        values.update(claim_deceased=meta['claim_deceased'], commission_role=meta.get('commission_role', 'driver'))
+        else:
+            values = {key: row[key] for key in EntryIn.model_fields if key in row}
+            values.update(claim_deceased=meta['claim_deceased'], commission_role=meta.get('commission_role', 'driver'))
         try:
             with db.begin_nested():
                 _review_service(row['id'], ReviewIn(**values, status='approved', review_notes='Automatically approved: matching documents and fully paid invoice.'), actor, db, automatic=True)
