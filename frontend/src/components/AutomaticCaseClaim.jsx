@@ -28,10 +28,10 @@ export default function AutomaticCaseClaim({ me, onSaved }) {
   }
   return <section className="mortuary-book service-claim-panel"><section className="form-card">
     <h2>Claim my commissions</h2>
-    <p>Select the Mortuary Book branch and enter the MF File Number. Your enabled commissions are saved under Waiting to be finalised, even before documents are uploaded. Amounts move to Approved only after finalisation.</p>
+    <p>Select the branch and enter the MF File Number. Your enabled commissions are saved under Waiting to be finalised, even before documents are uploaded. Amounts move to Approved only after finalisation.</p>
     {error && <p role="alert" className="error-message">{error}</p>}
     {!branches ? !error && <p role="status">Loading your branches…</p> : !branches.length ? <p>No commissions are enabled for you. Ask the franchise holder to check your commission settings.</p> : <form className="form-grid" onSubmit={submit}>
-      <label>Service branch<select required disabled={busy} value={branch} onChange={event => {setBranch(event.target.value);setResult(null)}}><option value="">Choose the printed branch</option>{branches.map(item => <option key={item.id} value={item.id}>{item.outside?'Outside branch: ':''}{item.name}</option>)}</select></label>
+      <label>Service branch<select required disabled={busy} value={branch} onChange={event => {setBranch(event.target.value);setResult(null)}}><option value="">Choose the branch</option>{branches.map(item => <option key={item.id} value={item.id}>{item.outside?'Outside branch: ':''}{item.name}</option>)}</select></label>
       <label>MF File Number<input required disabled={busy} maxLength={255} value={reference} onChange={event => {setReference(event.target.value);setResult(null)}} /></label>
       <button type="submit" disabled={busy}>{busy?'Saving claim…':'Submit MF claim'}</button>
     </form>}
