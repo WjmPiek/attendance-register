@@ -478,8 +478,11 @@ def _staff_enabled_rows(db, user, rows):
                 scopes[scope_key]=None
         global_options,branches=grants[key]
         category=row['commission_type']
-        if global_options.get(category,{}).get('enabled') and category in branches.get(str(scopes[scope_key]),{}).get('enabled_types',[]):
-            visible.append(row)
+        if not (global_options.get(category,{}).get('enabled') and category in branches.get(str(scopes[scope_key]),{}).get('enabled_types',[])):continue
+        if category=='removals':
+            from app.services.case_claims import removal_applicability
+            if removal_applicability(db,fid,uid,bid,row.get('reference','')) is False:continue
+        visible.append(row)
     return visible
 
 

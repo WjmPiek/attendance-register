@@ -28,6 +28,8 @@ def auto_approve_holder(db, fid, document_ids=None):
     count = 0
     pending = db.execute(text("SELECT * FROM commission_entries WHERE franchise_user_id=:fid AND status='pending' AND COALESCE(is_cancelled,FALSE)=FALSE ORDER BY id"), {'fid': fid}).mappings().all()
     for row in pending:
+        from app.services.case_claims import cancel_unrelated_removal
+        if cancel_unrelated_removal(db,row,owner):continue
         meta = json.loads(row.get('source_metadata') or '{}')
         if meta.get('mf_case_claim'):
             from app.services.case_claims import quote_case_item
