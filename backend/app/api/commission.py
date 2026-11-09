@@ -452,6 +452,37 @@ def notify_document_uploaders(db, fid, entry_id, reference, reason):
         _notify(db, uid, 'Document uploads required', f'MF {reference}: {reason}. Upload the closed file documents under Upload proof.', entry_id, 'warning')
 
 
+def _staff_enabled_rows(db, user, rows):
+    """Staff pages expose only currently enabled items for each earning branch.
+
+    Retain the full ledger for holder/admin reporting and audit history.
+    """
+    if _profile(db,user)[4] not in {'manager','employee'}:
+        return rows
+    from app.services.receipt_commissions import option_map, branch_options
+    from app.services.external_commissions import permission_branch
+    grants={};locations={};scopes={};visible=[]
+    for row in rows:
+        fid,uid,bid=row['franchise_user_id'],row['employee_user_id'],row.get('earning_branch_id')
+        if fid not in locations:
+            locations[fid]=set(db.execute(text('SELECT id FROM attendance_branches WHERE franchise_user_id=:fid AND is_active=TRUE'),{'fid':fid}).scalars())
+        if bid not in locations[fid]:continue
+        key=(fid,uid)
+        if key not in grants:
+            grants[key]=(option_map(db,fid,uid),branch_options(db,fid,uid))
+        scope_key=(fid,uid,bid)
+        if scope_key not in scopes:
+            try:scopes[scope_key]=permission_branch(db,fid,uid,bid)
+            except HTTPException as exc:
+                if exc.status_code!=403:raise
+                scopes[scope_key]=None
+        global_options,branches=grants[key]
+        category=row['commission_type']
+        if global_options.get(category,{}).get('enabled') and category in branches.get(str(scopes[scope_key]),{}).get('enabled_types',[]):
+            visible.append(row)
+    return visible
+
+
 def _rows(db, user, employee_user_id=None, from_date=None, to_date=None, status=None, search=None, franchise_user_id=None, earning_branch_id=None):
     roles, fid, manager_profile_id, own_user_id, kind = _profile(db, user)
     fid = _franchise_scope(db, user, franchise_user_id)
@@ -504,7 +535,7 @@ def _rows(db, user, employee_user_id=None, from_date=None, to_date=None, status=
     from app.services.receipt_commissions import payment_eligibility
     result = []
     from app.services.commission_carry_forward import carry_info
-    for row in rows:
+    for row in _staff_enabled_rows(db,user,rows):
         meta = json.loads(row.get('source_metadata') or '{}')
         result.append({**dict(row), **payment_eligibility(db, row), **carry_info(db,row['id']), 'claim_deceased': meta.get('claim_deceased'), 'commission_role': meta.get('commission_role', 'driver')})
     return result
