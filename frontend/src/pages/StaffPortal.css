@@ -59,3 +59,7 @@
 
 .staff-popup p { white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.5; margin:0 0 24px; }
 .staff-popup { max-height:calc(100dvh - 40px); overflow-y:auto; }
+.staff-document-reminder { max-width:840px; margin:18px auto 0; padding:18px; border:1px solid #dfc78f; border-radius:12px; background:#fff9ec; color:#57421c; overflow-wrap:anywhere; }
+.staff-document-reminder p { margin:0 0 12px; line-height:1.5; }
+.staff-document-reminder details { margin-bottom:12px; }
+.staff-document-reminder summary { cursor:pointer; }
