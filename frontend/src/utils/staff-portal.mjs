@@ -14,6 +14,27 @@ export function commissionTotals(rows, uid) {
   },{approved:0,waiting:0,unknown:false})
 }
 
+export function commissionFiles(rows, uid) {
+  const groups={approved:new Map(),waiting:new Map()}
+  for(const row of rows) {
+    if(Number(row.employee_user_id)!==Number(uid) || !['pending','approved'].includes(row.status))continue
+    const approved=row.status==='approved' && row.payment_eligible
+    const reference=String(row.reference || '').split(/ \/ (?:Invoice|Receipt) /i)[0].trim()
+      .replace(/^MF[\s-]*/i,'').toUpperCase().replace(/[^A-Z0-9]/g,'')
+    const key=reference || `unreferenced:${row.id}`
+    const files=groups[approved?'approved':'waiting']
+    if(!files.has(key))files.set(key,{key,reference:reference?`MF${reference}`:'MF number unavailable',items:[],total:0,unknown:false})
+    const file=files.get(key)
+    const value=Number(approved?row.calculated_amount:row.expected_amount ?? row.calculated_amount ?? 0)
+    const amount=Number.isFinite(value)?value:0
+    const unknown=!approved && row.estimate_available===false
+    file.items.push({id:row.id,category:row.commission_type,amount,unknown})
+    file.total+=amount
+    file.unknown ||= unknown
+  }
+  return Object.fromEntries(Object.entries(groups).map(([status,files])=>[status,[...files.values()].sort((a,b)=>a.reference.localeCompare(b.reference,undefined,{numeric:true}))]))
+}
+
 export function commissionBranchTotals(rows, uid) {
   const groups=new Map()
   for(const row of rows) {
@@ -22,7 +43,7 @@ export function commissionBranchTotals(rows, uid) {
     if(!groups.has(key))groups.set(key,{branchId:row.earning_branch_id,branchName:row.branch_name || row.service_branch || 'Unassigned branch',rows:[]})
     groups.get(key).rows.push(row)
   }
-  return [...groups.values()].map(group=>({branchId:group.branchId,branchName:group.branchName,...commissionTotals(group.rows,uid)}))
+  return [...groups.values()].map(group=>({branchId:group.branchId,branchName:group.branchName,...commissionTotals(group.rows,uid),files:commissionFiles(group.rows,uid)}))
     .sort((a,b)=>a.branchName.localeCompare(b.branchName))
 }
 
