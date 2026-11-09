@@ -10,6 +10,12 @@ from app.services.pdf_records import parse_document_pages, invoice_number_text
 
 def parse_invoice_text(value):
     value = invoice_number_text(value)
+    # The print's left-hand legal text can touch the right-hand TOTAL label,
+    # producing "forTOTAL R ..." in PDF text extraction. Restore that boundary
+    # only for an uppercase label followed by a monetary value at the row end.
+    # "SubTOTAL" becomes "Sub TOTAL", which the subtotal exclusion still rejects.
+    value = re.sub(r'(?<=[a-z])(?=TOTAL[ \t]*:?[ \t]*R?[ \t]*[\d, .]+[ \t]*$)',
+                   ' ', value, flags=re.M)
     if not re.search(r'\b(?:TAX\s+)?INVOICE\b', value, re.I) or re.search(r'^\s*(?:KWITANSIE\s*/\s*RECEIPT|CREDIT\s+NOTE|QUOTATION)\s*$', value, re.I | re.M):
         raise ValueError('This page must be an original MF Invoice, not a receipt, quotation or credit note.')
     def field(pattern):

@@ -4,7 +4,7 @@ from io import BytesIO
 import pytest
 from reportlab.pdfgen import canvas
 
-from app.services.invoice_proof import parse_invoice_pdf
+from app.services.invoice_proof import parse_invoice_pdf, parse_invoice_text
 from app.services.mortuary import parse_pdf
 from app.services.receipt_commissions import parse_receipt_pdf
 from app.services.pdf_records import imported_page_count
@@ -99,3 +99,26 @@ def test_contradictory_totals_and_unreadable_pages_are_reported():
     assert rows==[] and len(errors)==1 and 'unambiguous' in errors[0]['error']
     rows,errors=parse_pdf(pdf(SAMPLE,'Unreadable unrelated page'))
     assert len(rows)==1 and len(errors)==1 and errors[0]['page']==2
+
+
+def test_non_vat_invoice_total_touching_legal_footer_is_verified_across_pages():
+    value=INVOICE.replace('4000000000','').replace('R 1 000.00','R 1 150.00').replace('VAT (15%)    R 150.00','VAT (15%)    R 0.00')
+    value=value.replace('Account must be paid prior to service.                TOTAL',
+                        'The Franchisor accepts no responsibility forTOTAL')
+    rows,errors=parse_invoice_pdf(pdf(value,'SIGNATURE OF RECIPIENT'))
+    assert errors==[] and len(rows)==1 and rows[0]['pages']==[1,2]
+    assert rows[0]['invoice_total']=='1150.00' and rows[0]['commission_base']=='1150.00'
+    assert rows[0]['vat_registered'] is False and rows[0]['vat_issue'] is None
+
+
+@pytest.mark.parametrize('label',['SubTOTAL','subTOTAL','SUBTOTAL','Sub TOTAL'])
+def test_subtotal_alone_is_never_accepted_as_the_invoice_total(label):
+    value=INVOICE.replace('Account must be paid prior to service.                TOTAL      R 1 150.00','')
+    value=value.replace('Sub Total',label)
+    with pytest.raises(ValueError,match='unambiguous'):
+        parse_invoice_text(value)
+
+
+def test_joined_total_does_not_hide_conflicting_printed_totals():
+    with pytest.raises(ValueError,match='unambiguous'):
+        parse_invoice_text(INVOICE+'\nLegal text forTOTAL R 9 999.00\n')
