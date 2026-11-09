@@ -28,6 +28,7 @@ import BranchCommissionHub from '../components/BranchCommissionHub.jsx'
 import StaffMenu from '../components/StaffMenu.jsx'
 import { staffPages, useStaffNavigation } from '../api/staffNavigation'
 import CommissionCheckboxes from '../components/CommissionCheckboxes.jsx'
+import StaffPasswordReset from '../components/StaffPasswordReset.jsx'
 import { getCurrentLocation } from "../utils/location";
 import { getDistance } from "../utils/distance";
 
@@ -280,6 +281,8 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
   const [err, setErr] = useState('')
   const [staff, setStaff] = useState(emptyStaff)
   const [editing, setEditing] = useState(null)
+  const [passwordTarget, setPasswordTarget] = useState(null)
+  useEffect(() => { setPasswordTarget(null) }, [selectedFranchiseId, viewBranchId, activeSubTab])
   const [viewItem, setViewItem] = useState(null)
   const [viewTitle, setViewTitle] = useState('')
   const [workHubEmployee, setWorkHubEmployee] = useState(null)
@@ -568,21 +571,10 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
-  const resetPassword = async (type, id, label) => {
-    const password = window.prompt('Enter a new password for ' + label + '. Minimum 8 characters.', '')
-    if (password === null) return
-    if (!password || password.length < 8) {
-      setErr('Password must be at least 8 characters.')
-      return
-    }
+  const resetPassword = (type, id, label) => {
     setMsg('')
     setErr('')
-    try {
-      await resetStaffPassword(type, id, password)
-      setMsg('Password reset for ' + label + '.')
-    } catch (error) {
-      setErr(error.message || 'Failed to reset password')
-    }
+    setPasswordTarget({ type, id, label })
   }
 
   const uploadStaffIrp5 = async (type, staffMember) => {
@@ -998,6 +990,13 @@ export default function FranchiseStaffPage({ me, onNavigate }) {
 
       {msg ? <p className="success">{msg}</p> : null}
       {err ? <p className="error">{err}</p> : null}
+      {canManageStaff && passwordTarget && <StaffPasswordReset key={`${passwordTarget.type}:${passwordTarget.id}`} label={passwordTarget.label}
+        onCancel={() => setPasswordTarget(null)} onReset={async password => {
+          const target = passwordTarget
+          await resetStaffPassword(target.type, target.id, password)
+          setMsg('Password reset for ' + target.label + '.')
+          setPasswordTarget(current => current === target ? null : current)
+        }} />}
 
       {activeSubTab === 'card' && createdCard ? (
         <section className="form-card newly-created-id-page">
