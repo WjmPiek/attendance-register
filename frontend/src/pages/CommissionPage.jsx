@@ -23,6 +23,7 @@ export default function CommissionPage({ me }) {
   const [employees,setEmployees]=useState([])
   const [franchises,setFranchises]=useState([]), [selectedFranchise,setSelectedFranchise]=useState(null)
   const [overviewKey, setOverviewKey] = useState(0)
+  const [typePage,setTypePage]=useState(false)
   const [editing,setEditing]=useState(null)
   const [selectedEmployee,setSelectedEmployee]=useState(null)
   const [employeeSearch,setEmployeeSearch]=useState('')
@@ -140,13 +141,13 @@ export default function CommissionPage({ me }) {
   }
 
   return <section className="card attendance-tab-panel staff-commission-page">
-    {registerCard}
+    {!typePage&&registerCard}
     <div className="tab-page-section"><div className="section-heading"><div>{selectedEmployee&&<button type="button" className="glass-button" onClick={closeEmployee}>{isManager?'← My commissions':'← All employees'}</button>}<h1>{selectedEmployee?`${selectedEmployee.full_name} — Commissions`:'My Commissions'}</h1><p>{selectedEmployee?`${selectedEmployee.employee_role||'Employee'}${selectedEmployee.employee_number?` · ${selectedEmployee.employee_number}`:''}`:isSelfSubmitter?'View commissions and submit service claims.':'View this staff member’s commissions and document status.'}</p></div></div>{error&&<div className="error-message">{error}</div>}{notice&&<div className="success-message">{notice}</div>}</div>
 
 
 
-    <StaffCommissionOverview employeeId={selectedEmployee?.user_id || me.id} franchiseId={selectedFranchise?.id} refreshKey={overviewKey} me={me} onReview={openReview} onHistory={async entry => setHistory({entry,items:await getCommissionEntryHistory(entry.id)})}/>
-    {!viewingLinkedEmployee && <details className="commission-add-claim"><summary>Add a service commission</summary><ServiceClaimPanel me={me} employee={selectedEmployee} franchiseId={selectedFranchise?.id} onSaved={refresh}/></details>}
+    <StaffCommissionOverview employeeId={selectedEmployee?.user_id || me.id} franchiseId={selectedFranchise?.id} refreshKey={overviewKey} me={me} onViewChange={setTypePage} onReview={openReview} onHistory={async entry => setHistory({entry,items:await getCommissionEntryHistory(entry.id)})}/>
+    {!typePage&&!viewingLinkedEmployee && <details className="commission-add-claim"><summary>Add a service commission</summary><ServiceClaimPanel me={me} employee={selectedEmployee} franchiseId={selectedFranchise?.id} onSaved={refresh}/></details>}
 
     {isManager&&!selectedEmployee&&<div className="tab-page-section"><div className="section-heading"><div><h2>Employees linked to me</h2><p>Your totals above contain only your own commission. Select an employee to view that employee’s claims. Qualifying commissions approve automatically.</p></div></div><div className="commission-employee-list">{linkedEmployees.map(employee=>staffButton(employee))}{!linkedEmployees.length&&<div className="empty-state">No employees are linked to this manager.</div>}</div></div>}
 
