@@ -35,7 +35,7 @@ function StaffCommissionAmounts({me}) {
     setTotals(null);load();const timer=setInterval(load,20000)
     return()=>{active=false;clearInterval(timer)}
   },[month,me.id])
-  return <section>{error&&<p role="alert" className="error-message">{error}</p>}{!totals&&!error&&<p role="status">Loading…</p>}{totals&&<>
+  return <section className="staff-commission-amounts">{error&&<p role="alert" className="error-message">{error}</p>}{!totals&&!error&&<p role="status">Loading…</p>}{totals&&<>
     <p className="staff-period">{new Date(`${month}-01T12:00:00Z`).toLocaleDateString('en-ZA',{month:'long',year:'numeric'})}</p>
     <section className="form-card"><h2>Total across all branches</h2><strong>{money(totals.approved+totals.waiting)}</strong><p>Approved amounts plus estimates waiting to be finalised.{totals.unknown?' Some items still await calculation.':''}</p></section>
     <div className="staff-amounts"><section className="approved"><h2>Approved</h2><strong>{money(totals.approved)}</strong></section><section className="waiting"><h2>Waiting to be finalised</h2><strong>{totals.unknown&&totals.waiting===0?'Awaiting calculation':money(totals.waiting)}</strong>{totals.unknown&&totals.waiting>0&&<small>More amounts await documents.</small>}</section></div>

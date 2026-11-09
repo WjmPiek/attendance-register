@@ -79,3 +79,13 @@
 .staff-mf-file li { display:flex; flex-wrap:wrap; justify-content:space-between; gap:8px 14px; padding:10px 0; border-bottom:1px solid #0002; }
 .staff-mf-file p { padding:0 14px; overflow-wrap:anywhere; }
 .staff-commission-reason { flex-basis:100%; line-height:1.5; overflow-wrap:anywhere; }
+.staff-portal .staff-commission-amounts { display:grid; gap:20px; width:100%; min-width:0; }
+.staff-portal .staff-commission-amounts > .form-card { width:100%; max-width:none; min-width:0; margin:0; }
+.staff-portal .staff-commission-amounts > h2,.staff-portal .staff-commission-amounts > .staff-period { margin:0 !important; }
+.staff-portal .staff-commission-amounts h2 { font-size:20px !important; line-height:1.4 !important; }
+.staff-portal .staff-commission-amounts .staff-amounts h2 { font-size:16px !important; }
+.staff-portal .staff-commission-amounts h3 { font-size:18px !important; line-height:1.4 !important; }
+.staff-branch-amounts > details > summary { min-height:160px; }
+.staff-mf-file li { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:start; }
+.staff-mf-file li > span:last-of-type { text-align:right; }
+.staff-commission-reason { grid-column:1 / -1; }

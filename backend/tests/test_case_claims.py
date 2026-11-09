@@ -119,15 +119,15 @@ def test_printed_removal_role_is_inferred_and_other_peoples_removal_cannot_be_cl
     assert next(row for row in result['items'] if row['category']=='grave_service')['amount']=='45.00'
 
 
-def test_missing_removal_staff_blocks_that_item_but_not_other_enabled_fees(database):
+def test_staff_not_named_under_driver_in_receive_only_other_enabled_fees(database):
     setup(database)
     book=dict(record(),names=['Aubrey'],driver='Aubrey',driver_in='Aubrey')
     request=import_payload([book])
     request.allocations=[request.allocations[0].model_copy(update={'employee_user_id':12})]
     quote_and_import(database,request);stage_receipt(database,people=())
     result=claim(database)
-    assert result['created']==3
-    assert next(row for row in result['items'] if row['category']=='removals')['estimate_available'] is False
+    assert result['created']==2
+    assert all(row['category']!='removals' for row in result['items'])
     from app.services.commission_automation import auto_approve_holder
     auto_approve_holder(database,2);database.commit()
     assert database.execute(text("SELECT COUNT(*) FROM commission_entries WHERE commission_type='removals' AND status='approved'")).scalar()==0
