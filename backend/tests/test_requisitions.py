@@ -237,7 +237,7 @@ def test_submit_totals_exact_cents_and_email_snapshot(system):
         client.put(
             f"/api/requisitions/requests/{rid}", json={"details": {}, "lines": []}
         ).status_code
-        == 409
+        == 400
     )
     assert (
         client.get(f"/api/requisitions/months/{mid}").json()["balance_cents"] == 50000
@@ -248,9 +248,17 @@ def test_submit_totals_exact_cents_and_email_snapshot(system):
         assert messages[0].document.startswith(b"%PDF-")
         assert messages[0].workbook.startswith(b"PK")
         wb = load_workbook(BytesIO(messages[0].workbook))
-        assert wb.sheetnames == ["Card Transactions", "Requisition Forms"]
+        assert wb.sheetnames == [
+            "KAART TRANSAKSIES",
+            "Rekwisisie Vorm - 1",
+            "Instruksies",
+        ]
         assert wb.worksheets[0]["K10"].value == 500
-        assert wb.worksheets[0]["G15"].value == 750.35
+        assert wb.worksheets[0]["G86"].value == 750.35
+        assert wb.worksheets[1]["B11"].value == "MF123"
+        assert wb.worksheets[1]["B14"].value == "Example Person"
+        assert wb.worksheets[1]["D35"].value == "=SUM(D28:D34)"
+        assert wb.worksheets[1]["C10"].value == r.json()["number"]
     actor[0] = 4
     for path in [
         f"/requests/{rid}",
@@ -279,7 +287,7 @@ def test_card_cash_eft_receipts_idempotency_and_month_rollover(system):
         r = transaction(client, rid, kind, amount)
         assert r.status_code == 200, r.text
     ledger = client.get(f"/api/requisitions/months/{mid}").json()
-    assert ledger["balance_cents"] == 299965
+    assert ledger["balance_cents"] == 99965
     assert len(ledger["transactions"]) == 5
     receipt = ledger["transactions"][0]["id"]
     assert client.get(
@@ -288,7 +296,9 @@ def test_card_cash_eft_receipts_idempotency_and_month_rollover(system):
     wb = load_workbook(
         BytesIO(client.get(f"/api/requisitions/months/{mid}/workbook").content)
     )
-    assert wb.active["K11"].value == "=K10+G11-I11"
+    assert wb.active["K11"].value == "=K10+G11-I11-J11"
+    for row in (59, 69, 81):
+        assert wb.active[f"K{row}"].value == f"=K{row-1}+G{row}-I{row}-J{row}"
     assert client.post(f"/api/requisitions/months/{mid}/close").status_code == 200
     assert transaction(client, rid, "card", "1.00").status_code == 409
     r = client.post(
@@ -304,17 +314,17 @@ def test_card_cash_eft_receipts_idempotency_and_month_rollover(system):
     new_mid = r.json()["id"]
     assert (
         client.get(f"/api/requisitions/months/{new_mid}").json()["opening_cents"]
-        == 299965
+        == 99965
     )
     assert (
         transaction(client, rid, "card", "49.65", day="2026-12-01").status_code == 200
     )
     # A later receipt retains the original November requisition number.
     later = client.get(f"/api/requisitions/months/{new_mid}").json()
-    assert later["balance_cents"] == 295000
+    assert later["balance_cents"] == 95000
     assert later["transactions"][0]["number"]
     assert (
-        client.get(f"/api/requisitions/months/{mid}").json()["balance_cents"] == 299965
+        client.get(f"/api/requisitions/months/{mid}").json()["balance_cents"] == 99965
     )
     actor[0] = 4
     assert (
@@ -375,14 +385,233 @@ def test_blank_export_and_untrusted_excel_text(system):
     wb = load_workbook(
         BytesIO(client.get(f"/api/requisitions/months/{mid}/workbook").content)
     )
-    form = wb["Requisition Forms"]
-    assert all(c.data_type != "f" for row in form for c in row if c.column != 3)
+    form = wb["Rekwisisie Vorm - 1"]
+    assert all(c.data_type != "f" for row in form for c in row if c.column != 4)
     blank = load_workbook(
         BytesIO(
             client.get(f"/api/requisitions/months/{mid}/workbook?blank=true").content
         )
     )
     assert blank.active["K10"].value == 0
+    assert blank.sheetnames == [
+        "KAART TRANSAKSIES",
+        "Rekwisisie Vorm - 1",
+        "Rekwisisie Vorm - 2",
+        "Rekwisisie Vorm - 3",
+        "Instruksies",
+    ]
+    assert blank["Rekwisisie Vorm - 1"]["D10"].value is None
+
+
+def test_template_fields_logos_and_expanding_payment_and_ledger_rows(system):
+    client, engine, actor = system
+    mid, rid, _ = create_case(client)
+    details = {
+        "id_number": "0000000000000",
+        "date_of_death": "2026-11-01",
+        "funeral_date": "2026-11-04",
+        "service_required": "Cremation",
+    }
+    lines = [
+        {
+            "category": f"Expense {i}",
+            "description": f"Service {i}",
+            "method": ["eft", "cash", "card"][i % 3],
+            "amount": "10.00",
+        }
+        for i in range(10)
+    ]
+    response = client.put(
+        f"/api/requisitions/requests/{rid}", json={"details": details, "lines": lines}
+    )
+    assert response.status_code == 200, response.text
+    assert client.post(f"/api/requisitions/requests/{rid}/submit").status_code == 200
+    from app.models.requisitions import RequisitionTransaction
+
+    with Session(engine) as db:
+        for i in range(73):
+            db.add(
+                RequisitionTransaction(
+                    month_id=mid,
+                    requisition_id=rid,
+                    client_key=str(uuid4()),
+                    transaction_date=date(2026, 11, 4),
+                    kind="funding" if i == 0 else "card",
+                    supplier="Example",
+                    description="Extended ledger",
+                    amount_cents=100000 if i == 0 else 1,
+                    actor_id=1,
+                    actor_name="User 1",
+                    receipt_name="test.pdf",
+                    receipt_mime="application/pdf",
+                    receipt_content=book_pdf(),
+                )
+            )
+        db.commit()
+    wb = load_workbook(
+        BytesIO(client.get(f"/api/requisitions/months/{mid}/workbook").content)
+    )
+    form = wb["Rekwisisie Vorm - 1"]
+    assert form["B15"].value == details["id_number"]
+    assert form["B15"].data_type == "s" and form["B15"].number_format == "@"
+    assert form["B16"].value.date() == date(2026, 11, 1)
+    assert form["B17"].value.date() == date(2026, 11, 4)
+    assert form["B18"].value == "Cremation"
+    assert form["A28"].value == "Expense 0"
+    assert form["B28"].value == "Service 0 (EFT)"
+    assert form["D38"].value == "=SUM(D28:D37)"
+    assert len(form._images) == 1 and len(wb.active._images) == 2
+    assert wb.active["K84"].value == "=K83"
+    assert wb.active["K83"].value == "=K82+G83-I83-J83"
+    assert wb.active["I84"].value == "=SUM(I11:I83)"
+
+
+def test_unpriced_and_zero_amount_items_stay_editable_but_never_enter_the_emailed_pdf(
+    system,
+):
+    from pypdf import PdfReader
+
+    client, engine, actor = system
+    mid, rid, _ = create_case(client)
+    initial = client.get(f"/api/requisitions/requests/{rid}").json()
+    assert initial["number"].startswith("REQ-1-2026-") and initial["revision"] == 0
+    lines = [
+        {
+            "category": "Flowers",
+            "description": "Priced flowers",
+            "method": "card",
+            "amount": "15.25",
+        },
+        {
+            "category": "Other",
+            "description": "UNPRICED_SPECIAL",
+            "method": "eft",
+            "amount": None,
+        },
+        {
+            "category": "Schedule B",
+            "description": "ZERO_AMOUNT_ITEM",
+            "method": "cash",
+            "amount": "0.00",
+        },
+        {"category": "Canvas", "description": "", "method": "card", "amount": None},
+    ]
+    response = client.put(
+        f"/api/requisitions/requests/{rid}",
+        json={"details": {}, "lines": lines, "expected_revision": 0},
+    )
+    assert response.status_code == 200, response.text
+    assert len(response.json()["lines"]) == 4 and response.json()["total_cents"] == 1525
+    response = client.post(f"/api/requisitions/requests/{rid}/submit")
+    assert (
+        response.status_code == 200 and response.json()["number"] == initial["number"]
+    )
+    assert response.json()["revision"] == 1
+    with Session(engine) as db:
+        message = db.scalar(select(RequisitionEmail))
+        text = "\n".join(
+            page.extract_text() for page in PdfReader(BytesIO(message.document)).pages
+        )
+        assert "Priced flowers" in text and "15.25" in text
+        assert (
+            "UNPRICED_SPECIAL" not in text
+            and "ZERO_AMOUNT_ITEM" not in text
+            and "Canvas" not in text
+        )
+        wb = load_workbook(BytesIO(message.workbook))
+        form = wb["Rekwisisie Vorm - 1"]
+        assert form["A28"].value == "Flowers" and form["D28"].value == 15.25
+        assert form["A29"].value is None and form["D29"].value is None
+
+
+def test_employee_can_revise_submitted_form_with_same_number_and_preserved_history(
+    system,
+):
+    from app.models.requisitions import RequisitionRevision
+    from pypdf import PdfReader
+
+    client, engine, actor = system
+    mid, unused, bid = create_case(client)
+    client.delete(f"/api/requisitions/requests/{unused}")
+    for uid in (2, 3):
+        assert (
+            client.put(
+                "/api/requisitions/grants", json={"user_id": uid, "enabled": True}
+            ).status_code
+            == 200
+        )
+    actor[0] = 2
+    payload = {"month_id": mid, "book_id": bid, "request_date": "2026-11-03"}
+    initial = client.post("/api/requisitions/requests", json=payload).json()
+    rid = initial["id"]
+    number = initial["number"]
+    assert number.startswith("REQ-2-2026-") and initial["employee_id"] == 2
+    assert (
+        client.post("/api/requisitions/requests", json=payload).json()["number"]
+        == number
+    )
+    body = {
+        "details": {},
+        "lines": [
+            {
+                "category": "Flowers",
+                "description": "Employee flowers",
+                "method": "card",
+                "amount": "100.00",
+            },
+            {
+                "category": "Other",
+                "description": "NEEDS_AMOUNT_LATER",
+                "method": "eft",
+                "amount": None,
+            },
+        ],
+        "expected_revision": 0,
+    }
+    assert client.put(f"/api/requisitions/requests/{rid}", json=body).status_code == 200
+    assert (
+        client.post(f"/api/requisitions/requests/{rid}/submit").json()["revision"] == 1
+    )
+    actor[0] = 3
+    body["expected_revision"] = 1
+    body["lines"][0]["amount"] = "123.45"
+    assert client.put(f"/api/requisitions/requests/{rid}", json=body).status_code == 403
+    actor[0] = 1
+    assert client.post(f"/api/requisitions/months/{mid}/close").status_code == 200
+    actor[0] = 2
+    response = client.put(f"/api/requisitions/requests/{rid}", json=body)
+    assert response.status_code == 200, response.text
+    assert response.json()["revision"] == 2 and response.json()["number"] == number
+    assert client.put(f"/api/requisitions/requests/{rid}", json=body).status_code == 409
+    body["expected_revision"] = 2
+    assert (
+        client.put(f"/api/requisitions/requests/{rid}", json=body).json()["revision"]
+        == 2
+    )
+    with Session(engine) as db:
+        history = db.scalars(
+            select(RequisitionRevision)
+            .where(RequisitionRevision.requisition_id == rid)
+            .order_by(RequisitionRevision.revision)
+        ).all()
+        assert [json.loads(h.snapshot)["total_cents"] for h in history] == [
+            10000,
+            12345,
+        ]
+        documents = [
+            e
+            for e in db.scalars(select(RequisitionEmail).order_by(RequisitionEmail.id))
+            if e.document
+        ]
+        assert len(documents) == 2
+        texts = [
+            "\n".join(p.extract_text() for p in PdfReader(BytesIO(e.document)).pages)
+            for e in documents
+        ]
+        assert "100.00" in texts[0] and "Revision: 1" in texts[0]
+        assert "123.45" in texts[1] and "Revision: 2" in texts[1]
+        assert all("NEEDS_AMOUNT_LATER" not in t for t in texts)
+        assert db.get(RequisitionMonth, mid).closing_cents == 50000
 
 
 def test_outbox_delivery_does_not_resend_sent_or_uncertain(system, monkeypatch):
@@ -476,13 +705,14 @@ def test_migration_creates_the_complete_model_contract():
     Base.metadata.create_all(
         engine, tables=[t for t in Base.metadata.sorted_tables if t.name not in names]
     )
-    path = Path(__file__).parents[1] / "alembic/versions/030_requisitions.py"
-    spec = importlib.util.spec_from_file_location("requisition_migration", path)
-    migration = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(migration)
     with engine.begin() as connection:
-        migration.op = Operations(MigrationContext.configure(connection))
-        migration.upgrade()
+        for name in ("030_requisitions", "031_requisition_revisions"):
+            path = Path(__file__).parents[1] / f"alembic/versions/{name}.py"
+            spec = importlib.util.spec_from_file_location(name, path)
+            migration = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(migration)
+            migration.op = Operations(MigrationContext.configure(connection))
+            migration.upgrade()
     inspector = inspect(engine)
     for table in TABLES:
         assert {c["name"] for c in inspector.get_columns(table.name)} == {

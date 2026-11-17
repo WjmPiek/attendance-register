@@ -17,7 +17,7 @@ from fastapi import (
     UploadFile,
 )
 from fastapi.responses import Response
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, get_user_role_names
@@ -58,28 +58,33 @@ class CreateIn(BaseModel):
 
 
 class LineIn(BaseModel):
-    description: str = Field(min_length=1, max_length=1000)
+    category: str = Field(default="", max_length=255)
+    description: str = Field(default="", max_length=1000)
     method: Literal["eft", "cash", "card"]
-    amount: Decimal = Field(gt=0, le=10000000, decimal_places=2)
+    amount: Decimal | None = Field(default=None, ge=0, le=10000000, decimal_places=2)
 
-    @field_validator("description")
-    @classmethod
-    def not_blank(cls, value):
-        if not value.strip():
-            raise ValueError("Enter a payment description.")
-        return value.strip()
+    @model_validator(mode="after")
+    def priced_description(self):
+        self.description = self.description.strip()
+        if self.amount and not self.description:
+            raise ValueError("Enter a description for every item with an amount.")
+        return self
 
 
 class SaveIn(BaseModel):
     # Imported evidence remains immutable; additional fields are captured explicitly.
     details: dict[str, str] = Field(default_factory=dict, max_length=30)
     lines: list[LineIn] = Field(max_length=100)
+    expected_revision: int | None = Field(default=None, ge=0)
 
     @field_validator("details")
     @classmethod
     def bounded_details(cls, value):
         if any(len(k) > 100 or len(v) > 1000 for k, v in value.items()):
             raise ValueError("Deceased detail fields are too long.")
+        for key in ("date_of_death", "funeral_date"):
+            if value.get(key):
+                date.fromisoformat(value[key])
         return value
 
 
@@ -510,7 +515,7 @@ def month_detail(
         running += (
             t.amount_cents
             if t.kind == "funding"
-            else -t.amount_cents if t.kind == "card" else 0
+            else -t.amount_cents if t.kind in {"card", "eft"} else 0
         )
         transactions.append(
             {
@@ -635,7 +640,7 @@ def create_request(
         details = {
             k: str(v)
             for k, v in json.loads(book.details).items()
-            if k in ("id_number", "collected_at", "date_in", "time_in", "service_date")
+            if k in ("id_number", "date_of_death", "funeral_date", "service_required")
         }
         item = Requisition(
             month_id=m.id,
@@ -650,6 +655,7 @@ def create_request(
         )
         db.add(item)
         db.flush()
+        service.assign_request_number(item)
         audit(
             db,
             current_user,
@@ -658,6 +664,9 @@ def create_request(
             item.id,
             {"book_id": book.id},
         )
+        db.commit()
+    if not item.number:
+        service.assign_request_number(item)
         db.commit()
     return service.req_data(db, item)
 
@@ -678,41 +687,83 @@ def request_detail(
 def save_request(
     request_id: int,
     payload: SaveIn,
+    background_tasks: BackgroundTasks,
     franchise_user_id: int | None = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     fid, admin = service.scope(db, current_user, franchise_user_id)
-    req, _ = service.request_row(db, fid, request_id, True)
-    if req.status != "draft":
+    req, month = service.request_row(db, fid, request_id)
+    service.lock_branch(db, month.branch_id)
+    db.refresh(req)
+    if (
+        payload.expected_revision is not None
+        and payload.expected_revision != req.revision
+    ):
         raise HTTPException(
-            409,
-            "Submitted requisitions are immutable. Create another application for additional services.",
+            409, "This form has a newer revision. Reopen it before saving your changes."
         )
     if req.employee_id != current_user.id and not admin:
-        raise HTTPException(403, "Only the author or holder can edit this draft.")
+        raise HTTPException(
+            403, "Only the employee who created this form or the holder can edit it."
+        )
+    was_submitted = req.status == "submitted"
+    if not was_submitted:
+        service.month_row(db, fid, month.id, True)
+    old_snapshot = service.req_data(db, req)
     lines = [
         {
+            "category": l.category.strip(),
             "description": l.description,
             "method": l.method,
-            "amount_cents": service.cents(l.amount),
+            "amount_cents": service.cents(l.amount) if l.amount is not None else None,
         }
         for l in payload.lines
     ]
-    if sum(l["amount_cents"] for l in lines) > 1000000000:
+    total = sum((l["amount_cents"] or 0) for l in lines)
+    if total > 1000000000:
         raise HTTPException(400, "Requisition total exceeds R10 million.")
+    if was_submitted and total <= 0:
+        raise HTTPException(
+            400, "A revised requisition must include at least one item with an amount."
+        )
+    new_details = json.dumps(payload.details)
+    # Repeated saves of the same submitted content must not email it twice.
+    if (
+        was_submitted
+        and json.loads(req.lines) == lines
+        and json.loads(req.details) == payload.details
+    ):
+        return service.req_data(db, req)
+    if was_submitted:
+        service.record_revision(
+            db, req, None
+        )  # Also retain an imported/legacy first version.
     req.lines = json.dumps(lines)
-    req.details = json.dumps(payload.details)
-    req.total_cents = sum(l["amount_cents"] for l in lines)
+    service.assign_request_number(req)
+    req.details = new_details
+    req.total_cents = total
+    if was_submitted:
+        req.revision += 1
+        service.record_revision(db, req, current_user.id)
+        service.queue_email(
+            db,
+            month,
+            service.branch(db, fid, month.branch_id)["name"],
+            f"Revised {req.number} / Revision {req.revision}",
+            req,
+        )
     audit(
         db,
         current_user,
         fid,
-        "requisition_draft_saved",
+        "requisition_revised" if was_submitted else "requisition_draft_saved",
         req.id,
-        {"total_cents": req.total_cents},
+        {"before": old_snapshot, "after": service.req_data(db, req)},
     )
     db.commit()
+    if was_submitted:
+        background_tasks.add_task(service.deliver_pending)
     return service.req_data(db, req)
 
 
@@ -758,9 +809,11 @@ def submit_request(
         return service.req_data(db, req)
     if not json.loads(req.lines) or req.total_cents <= 0:
         raise HTTPException(400, "Add at least one payment before submitting.")
-    req.number = f"REQ-{m.branch_id}-{m.month[:4]}-{req.id:06d}"
+    service.assign_request_number(req)
     req.status = "submitted"
+    req.revision = 1
     req.submitted_at = datetime.utcnow()
+    service.record_revision(db, req, current_user.id)
     name = service.branch(db, fid, m.branch_id)["name"]
     service.queue_email(db, m, name, "Submitted " + req.number, req)
     audit(

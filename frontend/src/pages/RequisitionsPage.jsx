@@ -8,8 +8,18 @@ import {
   lineTotal,
 } from "../utils/requisitions";
 import "./RequisitionsPage.css";
+import {
+  REQUISITION_ITEMS,
+  paymentDetailLabel,
+  selectRequisitionItem,
+} from "../utils/requisition-items.mjs";
 
-const emptyLine = () => ({ description: "", method: "eft", amount: "" });
+const emptyLine = () => ({
+  category: "",
+  description: "",
+  method: "eft",
+  amount: "",
+});
 const initialTransaction = () => ({
   requisition_id: "",
   client_key: crypto.randomUUID(),
@@ -182,7 +192,8 @@ export default function RequisitionsPage({ me }) {
           setLines(
             r.lines.map((l) => ({
               ...l,
-              amount: (l.amount_cents / 100).toFixed(2),
+              amount:
+                l.amount_cents == null ? "" : (l.amount_cents / 100).toFixed(2),
             }))
           );
           setDetails(r.details);
@@ -202,7 +213,8 @@ export default function RequisitionsPage({ me }) {
       r.lines.length
         ? r.lines.map((l) => ({
             ...l,
-            amount: (l.amount_cents / 100).toFixed(2),
+            amount:
+              l.amount_cents == null ? "" : (l.amount_cents / 100).toFixed(2),
           }))
         : [emptyLine()]
     );
@@ -223,10 +235,12 @@ export default function RequisitionsPage({ me }) {
       method: "PUT",
       body: JSON.stringify({
         details,
+        expected_revision: req.revision || 0,
         lines: lines.map((l) => ({
+          category: l.category || "",
           description: l.description,
           method: l.method,
-          amount: l.amount,
+          amount: l.amount === "" ? null : l.amount,
         })),
       }),
     });
@@ -250,9 +264,7 @@ export default function RequisitionsPage({ me }) {
     return <p>Requisitions access has not been enabled for your account.</p>;
   const selectedBranch = access.branches.find((b) => String(b.id) === branch);
   const locked = data?.status !== "open",
-    ownDraft =
-      req?.status === "draft" &&
-      (req.employee_id === me.id || access.can_manage);
+    canEditRequest = req && (req.employee_id === me.id || access.can_manage);
   return (
     <section className="requisitions-page" aria-label="Requisitions">
       <header className="req-heading">
@@ -699,12 +711,16 @@ export default function RequisitionsPage({ me }) {
                 onSubmit={(e) => {
                   e.preventDefault();
                   act(async () => {
-                    await save();
-                    setNotice("Draft saved.");
+                    const saved = await save();
+                    setNotice(
+                      saved.status === "submitted"
+                        ? `Revision ${saved.revision} saved. The updated form and register are queued for email.`
+                        : "Draft saved."
+                    );
                   });
                 }}
               >
-                <fieldset disabled={!ownDraft || busy}>
+                <fieldset disabled={!canEditRequest || busy}>
                   <legend>Deceased and service details</legend>
                   <div className="req-form-grid">
                     {[
@@ -712,15 +728,26 @@ export default function RequisitionsPage({ me }) {
                         ...Object.keys(details),
                         "date_of_death",
                         "funeral_date",
+                        "service_required",
                         "service_venue",
                         "coffin_casket",
                         "additional_details",
                       ]),
                     ].map((key) => (
                       <label key={key}>
-                        {key.replaceAll("_", " ")}
+                        {{
+                          id_number: "Deceased ID number",
+                          date_of_death: "Date of death",
+                          funeral_date: "Date of service",
+                          service_required: "Service required",
+                        }[key] || key.replaceAll("_", " ")}
                         <input
                           maxLength={1000}
+                          type={
+                            ["date_of_death", "funeral_date"].includes(key)
+                              ? "date"
+                              : "text"
+                          }
                           value={details[key] || ""}
                           onChange={(e) =>
                             setDetails({ ...details, [key]: e.target.value })
@@ -735,14 +762,43 @@ export default function RequisitionsPage({ me }) {
                   List EFT, cash and card requests together. They are grouped by
                   payment method in the submitted form.
                 </p>
-                <fieldset disabled={!ownDraft || busy}>
+                <fieldset disabled={!canEditRequest || busy}>
                   <legend>Payment items</legend>
                   {lines.map((line, i) => (
                     <div className="req-payment-row" key={i}>
                       <label>
-                        Payment / supplier / service
+                        Payment item
+                        <select
+                          required={Number(line.amount) > 0}
+                          value={line.category || ""}
+                          onChange={(e) =>
+                            setLines(
+                              lines.map((l, j) =>
+                                i === j
+                                  ? selectRequisitionItem(l, e.target.value)
+                                  : l
+                              )
+                            )
+                          }
+                        >
+                          <option value="">Choose an item</option>
+                          {line.category &&
+                            !REQUISITION_ITEMS.includes(line.category) && (
+                              <option value={line.category}>
+                                {line.category}
+                              </option>
+                            )}
+                          {REQUISITION_ITEMS.map((item) => (
+                            <option key={item} value={item}>
+                              {item}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        {paymentDetailLabel(line.category)}
                         <input
-                          required
+                          required={Number(line.amount) > 0}
                           maxLength={1000}
                           value={line.description}
                           onChange={(e) =>
@@ -776,10 +832,9 @@ export default function RequisitionsPage({ me }) {
                       <label>
                         Amount (ZAR)
                         <input
-                          required
                           type="number"
                           step="0.01"
-                          min="0.01"
+                          min="0"
                           max="10000000"
                           value={line.amount}
                           onChange={(e) =>
@@ -802,7 +857,7 @@ export default function RequisitionsPage({ me }) {
                       </button>
                     </div>
                   ))}
-                  {ownDraft && (
+                  {canEditRequest && (
                     <button
                       type="button"
                       disabled={lines.length >= 100}
@@ -816,46 +871,74 @@ export default function RequisitionsPage({ me }) {
                   <span>Total requested</span>
                   <strong>{rand(lineTotal(lines))}</strong>
                 </div>
-                {ownDraft ? (
+                <p>
+                  Only items with an amount greater than zero appear in the
+                  emailed PDF. Unpriced items stay here so you can complete them
+                  later.
+                </p>
+                {canEditRequest ? (
                   <div className="req-actions">
-                    <button disabled={busy}>Save draft</button>
                     <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() =>
-                        act(async () => {
-                          await apiRequest(url("/requests/" + req.id), {
-                            method: "DELETE",
-                          });
-                          back();
-                        }, "Draft discarded.")
+                      disabled={
+                        busy ||
+                        (req.status === "submitted" && lineTotal(lines) <= 0)
                       }
                     >
-                      Discard draft
+                      {req.status === "draft"
+                        ? "Save draft"
+                        : "Save changes & email revision"}
                     </button>
-                    <button
-                      type="button"
-                      disabled={busy || !lines.length}
-                      onClick={(e) => {
-                        if (!e.currentTarget.form.reportValidity()) return;
-                        act(async () => {
-                          await save();
-                          const r = await apiRequest(
-                            url("/requests/" + req.id + "/submit"),
-                            { method: "POST" }
-                          );
-                          setReq(r);
-                          setNotice(
-                            "Submitted. The requisition and updated monthly register are queued for wjm@martinsdirect.com."
-                          );
-                        });
-                      }}
-                    >
-                      Submit & email
-                    </button>
+                    {req.status === "draft" && (
+                      <>
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() =>
+                            act(async () => {
+                              await apiRequest(url("/requests/" + req.id), {
+                                method: "DELETE",
+                              });
+                              back();
+                            }, "Draft discarded.")
+                          }
+                        >
+                          Discard draft
+                        </button>
+                        <button
+                          type="button"
+                          disabled={busy || lineTotal(lines) <= 0}
+                          onClick={(e) => {
+                            if (!e.currentTarget.form.reportValidity()) return;
+                            act(async () => {
+                              await save();
+                              const result = await apiRequest(
+                                url("/requests/" + req.id + "/submit"),
+                                { method: "POST" }
+                              );
+                              setReq(result);
+                              setNotice(
+                                "Submitted. The requisition and updated monthly register are queued for wjm@martinsdirect.com."
+                              );
+                            });
+                          }}
+                        >
+                          Submit & email
+                        </button>
+                      </>
+                    )}
                   </div>
                 ) : (
-                  <p>Submitted forms are retained as read-only records.</p>
+                  <p>
+                    Only the employee who created this form or the holder can
+                    edit it.
+                  </p>
+                )}
+                {req.status === "submitted" && (
+                  <p>
+                    Revision {req.revision || 1}. Saving changes retains this
+                    REQ number and emails the revised form. Recorded payments
+                    and closed balances remain in the ledger.
+                  </p>
                 )}
               </form>
               <button
@@ -891,7 +974,7 @@ export default function RequisitionsPage({ me }) {
                 </div>
                 <p>
                   Card balance = opening balance + confirmed funding − card
-                  spending. EFT and cash payments are recorded separately.
+                  purchases − EFT payments. Cash is recorded separately.
                 </p>
                 <div className="table-wrap">
                   <table>

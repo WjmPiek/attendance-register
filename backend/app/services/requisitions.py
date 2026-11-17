@@ -1,4 +1,4 @@
-"""Money is integer cents; only posted card funding and card spending affect balance."""
+"""Money is integer cents; posted funding, card purchases and EFTs affect balance."""
 
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -12,6 +12,7 @@ from app.models.requisitions import (
     RequisitionGrant,
     RequisitionMonth,
     Requisition,
+    RequisitionRevision,
     RequisitionBook,
     RequisitionTransaction,
     RequisitionEmail,
@@ -116,6 +117,36 @@ def cents(value):
     return int(Decimal(str(value)) * 100)
 
 
+def assign_request_number(req):
+    """Allocate once to the original employee; submission never renumbers it."""
+    if not req.number:
+        req.number = f"REQ-{req.employee_id}-{req.request_date.year}-{req.id:06d}"
+    return req.number
+
+
+def priced_lines(req):
+    return [
+        line for line in json.loads(req.lines) if (line.get("amount_cents") or 0) > 0
+    ]
+
+
+def record_revision(db, req, actor_id):
+    if not db.scalar(
+        select(RequisitionRevision.id).where(
+            RequisitionRevision.requisition_id == req.id,
+            RequisitionRevision.revision == req.revision,
+        )
+    ):
+        db.add(
+            RequisitionRevision(
+                requisition_id=req.id,
+                revision=req.revision,
+                actor_id=actor_id,
+                snapshot=json.dumps(req_data(db, req)),
+            )
+        )
+
+
 def balance(db, month):
     rows = db.scalars(
         select(RequisitionTransaction).where(
@@ -126,7 +157,7 @@ def balance(db, month):
         (
             t.amount_cents
             if t.kind == "funding"
-            else -t.amount_cents if t.kind == "card" else 0
+            else -t.amount_cents if t.kind in {"card", "eft"} else 0
         )
         for t in rows
     )
@@ -144,6 +175,7 @@ def req_data(db, req):
         "employee_name": req.employee_name,
         "request_date": req.request_date.isoformat(),
         "status": req.status,
+        "revision": req.revision,
         "reference": book.reference,
         "deceased": book.deceased,
         "details": json.loads(req.details),
@@ -153,180 +185,9 @@ def req_data(db, req):
 
 
 def workbook_bytes(db, month, branch_name, blank=False):
-    # This is a runtime app export, using the application's existing Excel dependency.
-    from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill, Alignment
-    from openpyxl.utils import get_column_letter
+    from app.services.requisition_workbook import export_workbook
 
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Card Transactions"
-    for row, label, value in [
-        (2, "MONTH", month.month),
-        (3, "BRANCH", branch_name),
-        (4, "HOLDER", month.holder),
-    ]:
-        ws.cell(row, 1, label)
-        ws.cell(row, 3, value)
-    headers = [
-        "Date",
-        "Transaction type",
-        "Transaction by",
-        "Supplier",
-        "MF file",
-        "Service/Product Description",
-        "Card Reimbursement",
-        "Rek. No",
-        "Card Transaction",
-        "EFT's",
-        "Card Balance",
-        "Cash",
-        "Receipt",
-    ]
-    for col, value in enumerate(headers, 1):
-        ws.cell(9, col, value)
-    ws["B10"] = "Brought Forward Balance"
-    ws["F10"] = "Brought forward from last month"
-    ws["K10"] = month.opening_cents / 100 if not blank else 0
-    transactions = (
-        []
-        if blank
-        else db.scalars(
-            select(RequisitionTransaction)
-            .where(RequisitionTransaction.month_id == month.id)
-            .order_by(
-                RequisitionTransaction.transaction_date, RequisitionTransaction.id
-            )
-        ).all()
-    )
-    for row, t in enumerate(transactions, 11):
-        req = db.get(Requisition, t.requisition_id)
-        book = db.get(RequisitionBook, req.book_id)
-        values = [
-            t.transaction_date,
-            t.kind,
-            t.actor_name,
-            t.supplier,
-            book.reference,
-            t.description,
-            t.amount_cents / 100 if t.kind == "funding" else 0,
-            req.number,
-            t.amount_cents / 100 if t.kind == "card" else 0,
-            t.amount_cents / 100 if t.kind == "eft" else 0,
-            f"=K{row-1}+G{row}-I{row}",
-            t.amount_cents / 100 if t.kind == "cash" else 0,
-            t.receipt_name,
-        ]
-        for col, value in enumerate(values, 1):
-            ws.cell(row, col, value)
-        ws.cell(row, 1).number_format = "dd/mm/yyyy"
-    end = 10 + len(transactions)
-    ws.cell(end + 2, 6, "Closing card balance")
-    ws.cell(end + 2, 11, f"=K{end}")
-    # Separate disclosure avoids treating requested money as money already loaded.
-    ws.cell(
-        end + 4,
-        1,
-        "Submitted card requests (await funding; excluded from card balance)",
-    )
-    requests = (
-        []
-        if blank
-        else db.scalars(
-            select(Requisition)
-            .where(Requisition.month_id == month.id, Requisition.status == "submitted")
-            .order_by(Requisition.id)
-        ).all()
-    )
-    for r, req in enumerate(requests, end + 5):
-        ws.cell(r, 1, req.number)
-        ws.cell(r, 6, "Card amount requested")
-        ws.cell(
-            r,
-            7,
-            sum(
-                line["amount_cents"]
-                for line in json.loads(req.lines)
-                if line["method"] == "card"
-            )
-            / 100,
-        )
-    form = wb.create_sheet("Requisition Forms")
-    cursor = 1
-    for req in requests or [None]:
-        book = db.get(RequisitionBook, req.book_id) if req else None
-        pairs = [
-            ("Branch", branch_name),
-            ("Date", str(req.request_date) if req else ""),
-            ("Employee", req.employee_name if req else ""),
-            ("Requisition number", req.number if req else ""),
-            ("MF file", book.reference if book else ""),
-            ("Deceased", book.deceased if book else ""),
-        ]
-        if req:
-            pairs += [
-                (k.replace("_", " ").title(), str(v))
-                for k, v in json.loads(req.details).items()
-            ]
-        for label, value in pairs:
-            form.cell(cursor, 1, label)
-            form.cell(cursor, 2, value)
-            cursor += 1
-        start = cursor + 1
-        form.cell(cursor, 1, "Payment requested")
-        form.cell(cursor, 2, "Method")
-        form.cell(cursor, 3, "Amount (ZAR)")
-        cursor += 1
-        for line in sorted(
-            json.loads(req.lines) if req else [],
-            key=lambda l: {"eft": 0, "cash": 1, "card": 2}[l["method"]],
-        ):
-            form.cell(cursor, 1, line["description"])
-            form.cell(cursor, 2, line["method"].upper())
-            form.cell(cursor, 3, line["amount_cents"] / 100)
-            cursor += 1
-        form.cell(cursor, 2, "TOTAL")
-        form.cell(cursor, 3, f"=SUM(C{start}:C{cursor-1})" if cursor > start else 0)
-        cursor += 4
-    for sheet in wb:
-        sheet.freeze_panes = "A11" if sheet == ws else "A1"
-        for col in range(1, sheet.max_column + 1):
-            sheet.column_dimensions[get_column_letter(col)].width = (
-                24 if col != 6 else 44
-            )
-        sheet.column_dimensions["A"].width = 38
-        for row in sheet:
-            for cell in row:
-                # Untrusted text must never become an Excel formula.
-                if cell.data_type == "f" and not (
-                    sheet == ws
-                    and cell.column == 11
-                    or sheet == form
-                    and cell.column == 3
-                    and cell.value.startswith("=SUM(")
-                ):
-                    cell.data_type = "s"
-                cell.alignment = Alignment(vertical="top", wrap_text=True)
-                if (
-                    sheet == ws
-                    and cell.row >= 10
-                    and cell.column in (7, 9, 10, 11, 12)
-                    or sheet == form
-                    and cell.column == 3
-                ):
-                    cell.number_format = '"R "#,##0.00;[Red]-"R "#,##0.00'
-        sheet.sheet_properties.pageSetUpPr.fitToPage = True
-        sheet.page_setup.orientation = "landscape"
-        sheet.page_setup.paperSize = sheet.PAPERSIZE_A3
-        sheet.page_setup.fitToWidth = 1
-        sheet.page_setup.fitToHeight = 0
-    for cell in ws[9]:
-        cell.fill = PatternFill("solid", fgColor="D2E5C0")
-        cell.font = Font(bold=True)
-    wb.calculation.fullCalcOnLoad = True
-    out = BytesIO()
-    wb.save(out)
-    return out.getvalue()
+    return export_workbook(db, month, branch_name, blank)
 
 
 def request_pdf(db, req, branch_name):
@@ -347,6 +208,9 @@ def request_pdf(db, req, branch_name):
     content = [
         Paragraph("Requisition " + escape(req.number or "Draft"), styles["Title"])
     ]
+    content.append(p(f"Status: {req.status.title()}"))
+    if req.revision:
+        content.append(p(f"Revision: {req.revision}"))
     for key, value in [
         ("Branch", branch_name),
         ("Date", req.request_date),
@@ -357,20 +221,21 @@ def request_pdf(db, req, branch_name):
     ]:
         content.append(p(f'{key.replace("_"," ").title()}: {value}'))
     content.append(Spacer(1, 16))
-    rows = [["Payment requested", "Method", "Amount (ZAR)"]]
+    rows = [["Expense", "Payment requested", "Method", "Amount (ZAR)"]]
     for line in sorted(
-        json.loads(req.lines),
+        priced_lines(req),
         key=lambda l: {"eft": 0, "cash": 1, "card": 2}[l["method"]],
     ):
         rows.append(
             [
+                p(line.get("category", "")),
                 p(line["description"]),
                 line["method"].upper(),
                 f"R {line['amount_cents']/100:,.2f}",
             ]
         )
-    rows.append(["TOTAL", "", f"R {req.total_cents/100:,.2f}"])
-    table = Table(rows, colWidths=[300, 65, 100], repeatRows=1)
+    rows.append(["TOTAL", "", "", f"R {req.total_cents/100:,.2f}"])
+    table = Table(rows, colWidths=[85, 235, 55, 90], repeatRows=1)
     table.setStyle(
         TableStyle(
             [

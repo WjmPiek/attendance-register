@@ -250,10 +250,9 @@
   line-height: 1.35;
 }
 .requisitions-page .req-payment-row {
-  grid-template-columns: minmax(150px, 3fr) minmax(100px, 1fr) minmax(
-      100px,
-      1fr
-    ) auto;
+  grid-template-columns:
+    minmax(150px, 3fr) minmax(100px, 1fr) minmax(100px, 1fr)
+    auto;
 }
 .requisitions-page .req-tabs button.active,
 .requisitions-page .req-actions button:last-child,
@@ -265,4 +264,16 @@
 .req-staff-sidebar nav {
   display: grid;
   gap: 12px;
+}
+
+.requisitions-page .req-payment-row {
+  grid-template-columns: minmax(100px, 1fr) minmax(160px, 2fr) minmax(
+      90px,
+      0.7fr
+    ) minmax(100px, 0.8fr) auto;
+}
+@media (max-width: 1150px) {
+  .requisitions-page .req-payment-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }

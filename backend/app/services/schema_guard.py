@@ -9,6 +9,7 @@ from sqlalchemy import inspect
 REQUIRED_TABLES = {
     'requisition_grants', 'requisition_sources', 'requisition_books', 'requisition_months', 'requisitions',
     'requisition_transactions', 'requisition_emails',
+    'requisition_revisions',
     'commission_carry_forwards',
     'employee_commission_branch_overrides',
     'commission_document_files', 'external_commission_branches', 'commission_delivery_settings', 'commission_monthly_reports', 'commission_monthly_report_items',

@@ -74,10 +74,22 @@ class Requisition(Base):
     request_date: Mapped[date] = mapped_column(Date)
     number: Mapped[str | None] = mapped_column(String(100), unique=True, nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="draft")
+    revision: Mapped[int] = mapped_column(Integer, default=0)
     details: Mapped[str] = mapped_column(Text, default="{}")
     lines: Mapped[str] = mapped_column(Text, default="[]")
     total_cents: Mapped[int] = mapped_column(Integer, default=0)
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class RequisitionRevision(Base):
+    __tablename__ = "requisition_revisions"
+    __table_args__ = (UniqueConstraint("requisition_id", "revision"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    requisition_id: Mapped[int] = mapped_column(ForeignKey("requisitions.id"))
+    revision: Mapped[int] = mapped_column(Integer)
+    actor_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    snapshot: Mapped[str] = mapped_column(Text)
 
 
 class RequisitionTransaction(Base):
@@ -108,7 +120,9 @@ class RequisitionEmail(Base):
     subject: Mapped[str] = mapped_column(String(500))
     message: Mapped[str] = mapped_column(Text)
     workbook: Mapped[bytes] = mapped_column(LargeBinary, deferred=True)
-    document: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True, deferred=True)
+    document: Mapped[bytes | None] = mapped_column(
+        LargeBinary, nullable=True, deferred=True
+    )
     status: Mapped[str] = mapped_column(String(20), default="pending")
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -122,6 +136,7 @@ TABLES = [
     RequisitionBook.__table__,
     RequisitionMonth.__table__,
     Requisition.__table__,
+    RequisitionRevision.__table__,
     RequisitionTransaction.__table__,
     RequisitionEmail.__table__,
 ]
