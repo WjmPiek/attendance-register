@@ -47,6 +47,12 @@ export async function apiBlob(path, options = {}) {
   return response.blob()
 }
 
+export async function apiForm(path, form) {
+  const response = await fetch(`${API_BASE_URL}${path}`, {method:'POST',headers:buildHeaders({},false),body:form})
+  if (!response.ok) throw await parseApiError(response)
+  return response.json()
+}
+
 export async function login(loginName, password) {
   return apiRequest('/auth/login', { method: 'POST', body: JSON.stringify({ email: loginName, password }) })
 }

@@ -1,0 +1,268 @@
+.requisitions-page {
+  max-width: 1450px;
+  margin: auto;
+  padding: 12px;
+  color: #21352b;
+}
+.req-heading,
+.req-section-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+}
+.req-heading h1 {
+  font-size: 32px;
+  margin: 6px 0;
+}
+.req-heading p {
+  margin: 6px 0 20px;
+}
+.req-eyebrow {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: #547562;
+}
+.req-web-badge {
+  background: #e7eee8;
+  padding: 8px 14px;
+  border-radius: 20px;
+  white-space: nowrap;
+  font-size: 13px;
+}
+.req-selectors,
+.req-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 18px;
+  margin: 20px 0;
+}
+.requisitions-page label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.requisitions-page input,
+.requisitions-page select {
+  min-width: 0;
+  padding: 11px;
+  border: 1px solid #cbd8cf;
+  border-radius: 6px;
+  background: white;
+  color: #21352b;
+  font: inherit;
+}
+.requisitions-page button {
+  cursor: pointer;
+  padding: 10px 15px;
+  border: 1px solid #b7c9bd;
+  border-radius: 6px;
+  background: #f5f8f4;
+  color: #244c38;
+  font: inherit;
+}
+.requisitions-page button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.requisitions-page button:focus-visible,
+.requisitions-page input:focus-visible,
+.requisitions-page select:focus-visible {
+  outline: 3px solid #b4c9b8;
+  outline-offset: 2px;
+}
+.req-tabs {
+  display: flex;
+  border-bottom: 1px solid #cbd8cf;
+  gap: 8px;
+  padding-bottom: 12px;
+  flex-wrap: wrap;
+}
+.req-tabs .active {
+  background: #28533c;
+  color: white;
+  border-color: #28533c;
+}
+.req-summary {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.5fr;
+  gap: 16px;
+  margin: 22px 0;
+}
+.req-summary article {
+  padding: 22px;
+  border: 1px solid #d3dfd6;
+  background: #fff;
+  border-radius: 10px;
+}
+.req-summary span {
+  display: block;
+  font-size: 12px;
+  color: #547562;
+  margin-bottom: 10px;
+}
+.req-summary strong {
+  font-size: 24px;
+}
+.requisitions-page .form-card {
+  margin: 18px 0;
+  padding: 24px;
+  border: 1px solid #d4ded5;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: none;
+}
+.requisitions-page .form-card h2 {
+  font-size: 20px;
+  margin: 0 0 12px;
+}
+.requisitions-page .form-card p {
+  line-height: 1.6;
+  color: #56665c;
+}
+.req-payment-row {
+  display: grid;
+  grid-template-columns: 3fr 1fr 1fr auto;
+  gap: 14px;
+  align-items: end;
+  margin-bottom: 14px;
+}
+.req-total {
+  display: flex;
+  justify-content: space-between;
+  padding: 22px;
+  background: #edf3eb;
+  margin: 20px 0;
+  font-size: 22px;
+}
+.req-actions {
+  display: flex;
+  gap: 12px;
+  margin: 16px 0;
+}
+.req-actions button:last-child {
+  background: #28533c;
+  color: #fff;
+}
+.requisitions-page fieldset {
+  border: 1px solid #d5dfd6;
+  padding: 18px;
+  margin: 20px 0;
+  min-width: 0;
+}
+.requisitions-page legend {
+  padding: 0 8px;
+  font-size: 14px;
+  font-weight: 700;
+}
+.requisitions-page .req-grant {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+}
+.req-grant input {
+  width: 18px;
+  height: 18px;
+}
+.req-warning {
+  background: #fff2d3;
+  border: 1px solid #e0c88e;
+  padding: 14px;
+  border-radius: 6px;
+}
+.req-delivery ul {
+  list-style: none;
+  padding: 0;
+}
+.req-delivery li {
+  border-top: 1px solid #e0e6df;
+  padding: 16px 0;
+}
+.req-delivery li span {
+  display: block;
+  margin: 8px 0;
+  color: #59705e;
+}
+.requisitions-page table {
+  font-size: 13px;
+  width: 100%;
+  border-collapse: collapse;
+}
+.requisitions-page th,
+.requisitions-page td {
+  padding: 13px 10px;
+  text-align: left;
+  border-bottom: 1px solid #e0e6df;
+  vertical-align: top;
+}
+.requisitions-page th {
+  background: #f0f4ed;
+  white-space: nowrap;
+}
+.requisitions-page .table-wrap {
+  overflow-x: auto;
+}
+.staff-portal .req-staff-layout {
+  display: contents;
+}
+.staff-portal .req-staff-layout:has(.req-staff-sidebar) {
+  display: flex;
+}
+.req-staff-sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  border-right: 1px solid #d4ded5;
+  padding: 24px;
+}
+.req-staff-sidebar button {
+  padding: 12px;
+  background: #28533c;
+  color: white;
+  border: 0;
+  border-radius: 6px;
+}
+.staff-portal-main:has(.requisitions-page) {
+  max-width: none;
+  width: 100%;
+}
+.staff-portal:has(.req-staff-sidebar) .staff-portal-main {
+  margin: 0;
+  min-width: 0;
+  flex: 1;
+}
+.requisitions-page {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.requisitions-page .form-card {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+}
+.requisitions-page .req-section-heading h2 {
+  font-size: 20px;
+  line-height: 1.35;
+}
+.requisitions-page .req-payment-row {
+  grid-template-columns: minmax(150px, 3fr) minmax(100px, 1fr) minmax(
+      100px,
+      1fr
+    ) auto;
+}
+.requisitions-page .req-tabs button.active,
+.requisitions-page .req-actions button:last-child,
+.req-staff-sidebar button {
+  background: var(--martins-primary, #6b4aa0);
+  border-color: var(--martins-primary, #6b4aa0);
+  color: white;
+}
+.req-staff-sidebar nav {
+  display: grid;
+  gap: 12px;
+}
