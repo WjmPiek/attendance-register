@@ -24,8 +24,11 @@ import AttendanceExceptionPopup from '../components/AttendanceExceptionPopup'
 import StaffPortal from './StaffPortal'
 import { usesStaffPortal } from '../utils/staff-portal.mjs'
 import { formatJohannesburgDateTime } from '../utils/dateTime'
+import RequisitionsPage from './RequisitionsPage'
+import {useRequisitionsAccess} from '../utils/requisitions'
 
 function ManagementDashboardPage({ me, roles, entities, onLogout, embedded = false }) {
+  const canRequisition = useRequisitionsAccess(me.id)
   const [menuOpen, setMenuOpen] = useState(false)
   useEffect(() => {
     const closeOnEscape = (event) => {
@@ -66,6 +69,7 @@ function ManagementDashboardPage({ me, roles, entities, onLogout, embedded = fal
 
   const fullTabs = useMemo(() => [
     { id: 'home', label: 'Overview', visible: !isEmployee || isFinanceEmployee || isSuperUser || isFranchiseUser },
+    { id: 'requisitions', label: 'Requisitions', visible: canRequisition && !isMobileLayout },
     { id: 'attendance', label: 'Mobile Sign In', visible: isSignCapable },
     { id: 'employee-card', label: 'Employee Card', visible: isEmployee || isManagerUser },
     { id: 'history', label: 'History', visible: isSignCapable || isApprovalCapable },
@@ -74,7 +78,7 @@ function ManagementDashboardPage({ me, roles, entities, onLogout, embedded = fal
     { id: 'profile', label: 'My Profile', visible: isStaffSelfService },
     { id: 'business', label: 'Business', visible: isFranchiseUser },
     { id: 'franchises', label: 'Franchise Approvals', visible: isSuperUser },
-  ].filter((tab) => tab.visible), [isSignCapable, isApprovalCapable, isSuperUser, isFranchiseUser, isEmployee, isManagerUser, isFinanceEmployee, isStaffSelfService, canManagePayroll, canUsePayroll, canImportProof])
+  ].filter((tab) => tab.visible), [isSignCapable, isApprovalCapable, isSuperUser, isFranchiseUser, isEmployee, isManagerUser, isFinanceEmployee, isStaffSelfService, canManagePayroll, canUsePayroll, canImportProof, canRequisition, isMobileLayout])
 
   const mobileStaffTabs = useMemo(() => [
     { id: 'attendance', label: 'Mobile Sign In', visible: isSignCapable },
@@ -124,6 +128,7 @@ function ManagementDashboardPage({ me, roles, entities, onLogout, embedded = fal
       const tab = new URLSearchParams(window.location.search).get('tab') || defaultTab
       if (availableTabIds.has(tab)) setActiveTab(tab)
     }
+    syncTab()
     window.addEventListener('popstate', syncTab)
     return () => window.removeEventListener('popstate', syncTab)
   }, [availableTabIds, defaultTab])
@@ -186,6 +191,7 @@ function ManagementDashboardPage({ me, roles, entities, onLogout, embedded = fal
           </div>
         ) : null}
         {activeTab === 'home' ? <OverviewDashboardPage me={me} onNavigate={openTab} /> : null}
+        {activeTab === 'requisitions' && canRequisition && !isMobileLayout ? <RequisitionsPage me={me} /> : null}
         {activeTab === 'attendance' && isSignCapable ? <MobileAttendancePage me={me} onDone={goBackToMobileMenu} /> : null}
         {activeTab === 'employee-card' && (isEmployee || isManagerUser) ? <DigitalIdCard /> : null}
         {activeTab === 'history' && (isSignCapable || isApprovalCapable) ? <AttendanceHistoryPage me={me} /> : null}

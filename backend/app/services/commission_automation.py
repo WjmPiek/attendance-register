@@ -160,6 +160,11 @@ def reconcile_holder(fid):
 
 
 def run_automation():
+    try:
+        from app.services.requisitions import deliver_pending
+        deliver_pending()
+    except Exception:
+        logger.exception('Requisition email delivery queued for retry')
     with SessionLocal() as db:
         holders = db.execute(text('SELECT id FROM franchise_users WHERE COALESCE(is_active,TRUE)=TRUE')).scalars().all()
     for fid in holders:
