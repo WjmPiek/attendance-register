@@ -38,6 +38,23 @@ export function useRequisitionsAccess(userId) {
   return allowed;
 }
 
+export function useMortuaryAccess(userId) {
+  const [allowed, setAllowed] = useState(false);
+  useEffect(() => {
+    let active = true;
+    const load = () => {
+      if (!isRequisitionsWeb()) { setAllowed(false); return; }
+      apiRequest('/requisitions/mortuary-access').then(result => {
+        if (active) setAllowed(Boolean(result.enabled) && isRequisitionsWeb());
+      }).catch(() => { if (active) setAllowed(false); });
+    };
+    const media = window.matchMedia('(max-width: 760px)');
+    load(); media.addEventListener('change', load);
+    return () => { active=false; media.removeEventListener('change',load); };
+  }, [userId]);
+  return allowed;
+}
+
 export const rand = (cents) =>
   `R ${(Number(cents || 0) / 100).toLocaleString("en-ZA", {
     minimumFractionDigits: 2,

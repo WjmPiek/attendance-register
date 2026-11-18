@@ -197,7 +197,7 @@ def export_workbook(db, month, branch_name, blank=False):
         for col in range(1, 14):
             ledger.cell(row, col).value = None
         ledger.cell(row, 1, row - 10)
-        ledger.cell(row, 11, f"=K{row-1}+G{row}-I{row}-J{row}")
+        ledger.cell(row, 11, f"=K{row-1}+G{row}-I{row}-J{row}-L{row}")
         for col in (7, 9, 10, 11, 12):
             ledger.cell(row, col).number_format = MONEY
     for row, t in enumerate(transactions, 11):
@@ -207,9 +207,11 @@ def export_workbook(db, month, branch_name, blank=False):
         for col, value in {
             "C": {
                 "funding": "Card Reimbursement",
+                "allocation": "Requisition amount",
                 "card": "Card Transaction",
                 "eft": "EFT",
                 "cash": "Cash Paid",
+                "cash_payment": "Cash Paid",
             }[t.kind],
             "D": t.actor_name,
             "E": t.supplier,
@@ -218,8 +220,17 @@ def export_workbook(db, month, branch_name, blank=False):
             "M": t.receipt_name,
         }.items():
             text_cell(ledger, f"{col}{row}", value)
-        for col, kind in [("G", "funding"), ("I", "card"), ("J", "eft"), ("L", "cash")]:
-            ledger[f"{col}{row}"] = t.amount_cents / 100 if t.kind == kind else 0
+        for col, kinds in [
+            ("G", {"funding", "allocation"}),
+            ("I", {"card"}),
+            ("J", {"eft"}),
+            ("L", {"cash", "cash_payment"}),
+        ]:
+            ledger[f"{col}{row}"] = t.amount_cents / 100 if t.kind in kinds else 0
+        if (
+            t.kind == "cash"
+        ):  # Preserve balances of older, separately funded cash entries.
+            ledger[f"K{row}"] = f"=K{row-1}+G{row}-I{row}-J{row}"
         ledger.row_dimensions[row].height = max(
             30, 15 * ((len(t.description) // 30) + 2)
         )
@@ -239,16 +250,13 @@ def export_workbook(db, month, branch_name, blank=False):
     text_cell(
         ledger,
         f"A{totals+3}",
-        "Submitted requisitions (requested amounts; actual funding recorded above)",
+        "Submitted requisitions (included in the register above)",
     )
     for row, req in enumerate(requests, totals + 4):
         ledger.merge_cells(start_row=row, start_column=1, end_row=row, end_column=5)
         text_cell(ledger, f"A{row}", req.number)
-        text_cell(ledger, f"F{row}", "Card amount requested")
-        ledger[f"G{row}"] = (
-            sum(l["amount_cents"] for l in priced_lines(req) if l["method"] == "card")
-            / 100
-        )
+        text_cell(ledger, f"F{row}", "Requisition total")
+        ledger[f"G{row}"] = req.total_cents / 100
         ledger[f"G{row}"].number_format = MONEY
     ledger.freeze_panes = "F11"
     # Finalised exports have no input dropdowns pointing at the source's obsolete
@@ -264,12 +272,13 @@ def export_workbook(db, month, branch_name, blank=False):
     notes = wb.create_sheet("Instruksies")
     notes.append(["Requisitions — current system workflow"])
     for line in [
-        "Card balance = opening balance + actual reimbursements - card purchases - EFTs.",
-        "Requested amounts do not increase the balance until funding is recorded.",
-        "Cash is recorded separately and does not change the card balance.",
-        "Submit every service application to email its form and updated monthly register to wjm@martinsdirect.com.",
+        "Balance = opening balance + submitted requisitions - card, EFT and cash payments.",
+        "Submission adds the total automatically. Revisions post only the difference.",
+        "Older separately funded cash records retain their original accounting treatment.",
+        "Submission emails the requisition PDF to wjm@martinsdirect.com. Blank and zero items are omitted.",
         "Every posting requires receipt/payment proof stored under the branch in Attendance.",
-        "Close the month after reconciliation. Its closing balance carries into the next month.",
+        "The next monthly register carries the previous closing balance automatically.",
+        "Monthly card reports are emailed on the 30th at 17:00 South African time (February: last day).",
     ]:
         notes.append([line])
     notes.column_dimensions["A"].width = 110

@@ -86,6 +86,42 @@ def parse_register_text(value):
     record['date_in'] = parse_date(record['date_in'])
     record['time_in'] = time.fromisoformat(record['time_in']).strftime('%H:%M')
     record['names'] = driver_names(record['driver_in'])
+    optional = {
+        "client_name": (
+            "Client Name and Surname",
+            "Name and Surname of Applicant",
+            "Applicant Name",
+            "Client Name",
+        ),
+        "client_contact_number": (
+            "Client Contact Number",
+            "Applicant Contact Number",
+            "Client Telephone",
+        ),
+        "client_address": ("Client Address", "Applicant Address"),
+        "service_required": ("Service Required", "Type of Service"),
+    }
+    for key, labels in optional.items():
+        value = next(
+            (
+                field(label)
+                for label in sorted(labels, key=len, reverse=True)
+                if field(label)
+            ),
+            "",
+        )
+        if value:
+            record[key] = value
+    for key, labels in {
+        "date_of_death": ("Date of Death",),
+        "funeral_date": ("Date of Service", "Funeral Date"),
+    }.items():
+        value = next((field(label) for label in labels if field(label)), "")
+        if value:
+            try:
+                record[key] = parse_date(value)
+            except ValueError:
+                pass
     if not 1 <= len(record['names']) <= 10:
         raise ValueError('Check the Driver In names on this page.')
     return record

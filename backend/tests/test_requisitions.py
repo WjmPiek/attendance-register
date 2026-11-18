@@ -39,6 +39,11 @@ def system(monkeypatch):
             )
         )
         db.execute(text("CREATE TABLE external_commission_branches(branch_id INTEGER)"))
+        db.execute(
+            text(
+                "CREATE TABLE employee_commission_options(franchise_user_id INTEGER,employee_user_id INTEGER,enabled BOOLEAN)"
+            )
+        )
         for uid, role in [
             (1, "FranchiseUser"),
             (2, "EmployeeUser"),
@@ -100,6 +105,12 @@ def system(monkeypatch):
     app.dependency_overrides[get_db] = database
     app.dependency_overrides[get_current_user] = user
     monkeypatch.setattr(service, "deliver_pending", lambda: None)
+    from app.services import requisition_workflow, commission_automation
+
+    monkeypatch.setattr(
+        requisition_workflow, "stage_commission_book", lambda *args: None
+    )
+    monkeypatch.setattr(commission_automation, "reconcile_holder", lambda *args: None)
     with TestClient(app) as client:
         yield client, engine, actor
 
@@ -240,7 +251,7 @@ def test_submit_totals_exact_cents_and_email_snapshot(system):
         == 400
     )
     assert (
-        client.get(f"/api/requisitions/months/{mid}").json()["balance_cents"] == 50000
+        client.get(f"/api/requisitions/months/{mid}").json()["balance_cents"] == 375000
     )
     with Session(engine) as db:
         messages = db.scalars(select(RequisitionEmail)).all()
@@ -254,7 +265,7 @@ def test_submit_totals_exact_cents_and_email_snapshot(system):
             "Instruksies",
         ]
         assert wb.worksheets[0]["K10"].value == 500
-        assert wb.worksheets[0]["G86"].value == 750.35
+        assert wb.worksheets[0]["G86"].value == 3250
         assert wb.worksheets[1]["B11"].value == "MF123"
         assert wb.worksheets[1]["B14"].value == "Example Person"
         assert wb.worksheets[1]["D35"].value == "=SUM(D28:D34)"
@@ -274,10 +285,11 @@ def test_card_cash_eft_receipts_idempotency_and_month_rollover(system):
     mid, rid, _ = create_case(client)
     client.post(f"/api/requisitions/requests/{rid}/submit")
     key = str(uuid4())
-    r = transaction(client, rid, "funding", "3250.00", key=key)
-    assert r.status_code == 200, r.text
-    assert transaction(client, rid, "funding", "3250.00", key=key).json()["duplicate"]
-    assert transaction(client, rid, "funding", "3251.00", key=key).status_code == 409
+    assert transaction(client, rid, "funding", "3250.00", key=key).status_code == 400
+    # The submitted total is already credited. Receipt retries do not debit twice.
+    assert transaction(client, rid, "card", "1.00", key=key).status_code == 200
+    assert transaction(client, rid, "card", "1.00", key=key).json()["duplicate"]
+    assert transaction(client, rid, "card", "2.00", key=key).status_code == 409
     for kind, amount in [
         ("card", "600.35"),
         ("card", "150.00"),
@@ -287,8 +299,8 @@ def test_card_cash_eft_receipts_idempotency_and_month_rollover(system):
         r = transaction(client, rid, kind, amount)
         assert r.status_code == 200, r.text
     ledger = client.get(f"/api/requisitions/months/{mid}").json()
-    assert ledger["balance_cents"] == 99965
-    assert len(ledger["transactions"]) == 5
+    assert ledger["balance_cents"] == 49900
+    assert len(ledger["transactions"]) == 6
     receipt = ledger["transactions"][0]["id"]
     assert client.get(
         f"/api/requisitions/transactions/{receipt}/receipt"
@@ -296,9 +308,9 @@ def test_card_cash_eft_receipts_idempotency_and_month_rollover(system):
     wb = load_workbook(
         BytesIO(client.get(f"/api/requisitions/months/{mid}/workbook").content)
     )
-    assert wb.active["K11"].value == "=K10+G11-I11-J11"
+    assert wb.active["K11"].value == "=K10+G11-I11-J11-L11"
     for row in (59, 69, 81):
-        assert wb.active[f"K{row}"].value == f"=K{row-1}+G{row}-I{row}-J{row}"
+        assert wb.active[f"K{row}"].value == f"=K{row-1}+G{row}-I{row}-J{row}-L{row}"
     assert client.post(f"/api/requisitions/months/{mid}/close").status_code == 200
     assert transaction(client, rid, "card", "1.00").status_code == 409
     r = client.post(
@@ -314,17 +326,17 @@ def test_card_cash_eft_receipts_idempotency_and_month_rollover(system):
     new_mid = r.json()["id"]
     assert (
         client.get(f"/api/requisitions/months/{new_mid}").json()["opening_cents"]
-        == 99965
+        == 49900
     )
     assert (
         transaction(client, rid, "card", "49.65", day="2026-12-01").status_code == 200
     )
     # A later receipt retains the original November requisition number.
     later = client.get(f"/api/requisitions/months/{new_mid}").json()
-    assert later["balance_cents"] == 95000
+    assert later["balance_cents"] == 44935
     assert later["transactions"][0]["number"]
     assert (
-        client.get(f"/api/requisitions/months/{mid}").json()["balance_cents"] == 99965
+        client.get(f"/api/requisitions/months/{mid}").json()["balance_cents"] == 49900
     )
     actor[0] = 4
     assert (
@@ -338,7 +350,7 @@ def test_authority_validation_import_atomicity_and_funding_permissions(system):
     mid, rid, _ = create_case(client)
     bad = client.post(
         "/api/requisitions/books/import?branch_id=101",
-        files={"file": ("wrong.pdf", book_pdf("Rivonia"), "application/pdf")},
+        files={"file": ("wrong.pdf", book_pdf("Outside"), "application/pdf")},
     )
     assert bad.status_code == 400
     assert len(client.get("/api/requisitions/books?branch_id=101").json()) == 1
@@ -360,7 +372,7 @@ def test_authority_validation_import_atomicity_and_funding_permissions(system):
     client.put("/api/requisitions/grants", json={"user_id": 2, "enabled": True})
     actor[0] = 2
     assert transaction(client, rid, "funding", "10.00").status_code == 403
-    assert transaction(client, rid, "eft", "10.00").status_code == 403
+    assert transaction(client, rid, "eft", "10.00").status_code == 200
     assert transaction(client, rid, "card", "10.00").status_code == 200
     assert (
         client.post(
@@ -461,9 +473,9 @@ def test_template_fields_logos_and_expanding_payment_and_ledger_rows(system):
     assert form["B28"].value == "Service 0 (EFT)"
     assert form["D38"].value == "=SUM(D28:D37)"
     assert len(form._images) == 1 and len(wb.active._images) == 2
-    assert wb.active["K84"].value == "=K83"
-    assert wb.active["K83"].value == "=K82+G83-I83-J83"
-    assert wb.active["I84"].value == "=SUM(I11:I83)"
+    assert wb.active["K85"].value == "=K84"
+    assert wb.active["K84"].value == "=K83+G84-I84-J84-L84"
+    assert wb.active["I85"].value == "=SUM(I11:I84)"
 
 
 def test_unpriced_and_zero_amount_items_stay_editable_but_never_enter_the_emailed_pdf(
@@ -611,7 +623,7 @@ def test_employee_can_revise_submitted_form_with_same_number_and_preserved_histo
         assert "100.00" in texts[0] and "Revision: 1" in texts[0]
         assert "123.45" in texts[1] and "Revision: 2" in texts[1]
         assert all("NEEDS_AMOUNT_LATER" not in t for t in texts)
-        assert db.get(RequisitionMonth, mid).closing_cents == 50000
+        assert db.get(RequisitionMonth, mid).closing_cents == 60000
 
 
 def test_outbox_delivery_does_not_resend_sent_or_uncertain(system, monkeypatch):
@@ -638,7 +650,7 @@ def test_outbox_delivery_does_not_resend_sent_or_uncertain(system, monkeypatch):
     real()
     assert len(delivered) == 1
     assert delivered[0][0] == "wjm@martinsdirect.com"
-    assert len(delivered[0][1]["attachments"]) == 2
+    assert len(delivered[0][1]["attachments"]) == 1
 
 
 def test_unsent_email_retries_but_uncertain_smtp_delivery_is_held(system, monkeypatch):
@@ -706,7 +718,11 @@ def test_migration_creates_the_complete_model_contract():
         engine, tables=[t for t in Base.metadata.sorted_tables if t.name not in names]
     )
     with engine.begin() as connection:
-        for name in ("030_requisitions", "031_requisition_revisions"):
+        for name in (
+            "030_requisitions",
+            "031_requisition_revisions",
+            "032_requisition_reports",
+        ):
             path = Path(__file__).parents[1] / f"alembic/versions/{name}.py"
             spec = importlib.util.spec_from_file_location(name, path)
             migration = importlib.util.module_from_spec(spec)

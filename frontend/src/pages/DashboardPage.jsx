@@ -24,7 +24,7 @@ import AttendanceExceptionPopup from '../components/AttendanceExceptionPopup'
 import StaffPortal from './StaffPortal'
 import { usesStaffPortal } from '../utils/staff-portal.mjs'
 import { formatJohannesburgDateTime } from '../utils/dateTime'
-import RequisitionsPage from './RequisitionsPage'
+import RequisitionsPage from './SimpleRequisitionsPage'
 import {useRequisitionsAccess} from '../utils/requisitions'
 
 function ManagementDashboardPage({ me, roles, entities, onLogout, embedded = false }) {

@@ -161,6 +161,9 @@ def reconcile_holder(fid):
 
 def run_automation():
     try:
+        from app.services.requisition_workflow import queue_monthly_reports
+        with SessionLocal() as report_db:
+            queue_monthly_reports(report_db)
         from app.services.requisitions import deliver_pending
         deliver_pending()
     except Exception:

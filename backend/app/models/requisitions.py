@@ -3,6 +3,7 @@
 from datetime import date, datetime
 from sqlalchemy import (
     Integer,
+    Boolean,
     BigInteger,
     String,
     Text,
@@ -128,6 +129,24 @@ class RequisitionEmail(Base):
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     next_attempt_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    recipient: Mapped[str] = mapped_column(String(255), default="wjm@martinsdirect.com")
+    include_workbook: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class RequisitionReportSetting(Base):
+    __tablename__ = "requisition_report_settings"
+    franchise_user_id: Mapped[int] = mapped_column(
+        ForeignKey("franchise_users.id"), primary_key=True
+    )
+    recipient: Mapped[str] = mapped_column(String(255), default="wjm@martinsdirect.com")
+
+
+class RequisitionMonthlyReport(Base):
+    __tablename__ = "requisition_monthly_reports"
+    month_id: Mapped[int] = mapped_column(
+        ForeignKey("requisition_months.id"), primary_key=True
+    )
+    email_id: Mapped[int] = mapped_column(ForeignKey("requisition_emails.id"))
 
 
 TABLES = [
@@ -139,4 +158,6 @@ TABLES = [
     RequisitionRevision.__table__,
     RequisitionTransaction.__table__,
     RequisitionEmail.__table__,
+    RequisitionReportSetting.__table__,
+    RequisitionMonthlyReport.__table__,
 ]
