@@ -65,7 +65,7 @@ export function calendarDays(month,items) {
   return cells
 }
 
-const pages=new Set(['home','claim','commissions','leave','leave-apply','leave-approved','leave-rejected','leave-pending','payslips','irp5','more','attendance','history','id-card','profile','upload','team','team-commissions','approvals','attendance-approvals','leave-requests','manage-payslips','manage-irp5','requisitions'])
+const pages=new Set(['home','claim','commissions','leave','leave-apply','leave-approved','leave-rejected','leave-pending','payslips','irp5','more','attendance','history','id-card','profile','upload','team','team-commissions','approvals','attendance-approvals','leave-requests','manage-payslips','manage-irp5','requisitions','mortuary'])
 export function staffRoute(search) {
   const query=new URLSearchParams(search)
   if(query.has('office_qr'))return 'attendance'

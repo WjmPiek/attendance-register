@@ -156,8 +156,8 @@ def balance(db, month):
     return month.opening_cents + sum(
         (
             t.amount_cents
-            if t.kind == "funding"
-            else -t.amount_cents if t.kind in {"card", "eft"} else 0
+            if t.kind in {"funding", "allocation"}
+            else -t.amount_cents if t.kind in {"card", "eft", "cash_payment"} else 0
         )
         for t in rows
     )
@@ -251,17 +251,24 @@ def request_pdf(db, req, branch_name):
     return out.getvalue()
 
 
-def queue_email(db, month, branch_name, reason, req=None):
+def queue_email(db, month, branch_name, reason, req=None, recipient=None):
     db.flush()
     email = RequisitionEmail(
         month_id=month.id,
         subject=f"{branch_name} / {month.month} / {reason}",
-        message=f"{reason}\nBranch: {branch_name}\nMonth: {month.month}\nCard balance: R {balance(db,month)/100:,.2f}\nAttached: updated monthly card transaction register and requisitions.",
+        message=f"{reason}\nBranch: {branch_name}\nMonth: {month.month}\nCard balance: R {balance(db,month)/100:,.2f}\nAttached: "
+        + (
+            "requisition PDF."
+            if req
+            else "monthly card transaction register and requisitions."
+        ),
         workbook=workbook_bytes(db, month, branch_name),
         document=request_pdf(db, req, branch_name) if req else None,
         status="pending",
         attempts=0,
         next_attempt_at=datetime.utcnow(),
+        recipient=recipient or RECIPIENT,
+        include_workbook=req is None,
     )
     db.add(email)
     db.flush()
@@ -293,19 +300,23 @@ def deliver_pending():
             item.status = "sending"
             item.attempts += 1
             db.commit()
-            attachments = [
-                (
-                    f"card-transactions-{item.month_id}-{eid}.xlsx",
-                    item.workbook,
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                )
-            ]
+            attachments = (
+                [
+                    (
+                        f"card-transactions-{item.month_id}-{eid}.xlsx",
+                        item.workbook,
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    )
+                ]
+                if item.include_workbook
+                else []
+            )
             if item.document:
                 attachments.append(
                     (f"requisition-{eid}.pdf", item.document, "application/pdf")
                 )
             state, sent, error, diagnostics = send_smtp_email(
-                RECIPIENT, item.subject, item.message, attachments=attachments
+                item.recipient, item.subject, item.message, attachments=attachments
             )
             item.status = (
                 "uncertain" if diagnostics.get("delivery_uncertain") else state

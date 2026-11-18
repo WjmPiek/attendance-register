@@ -17,7 +17,14 @@ from fastapi import (
     UploadFile,
 )
 from fastapi.responses import Response
-from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+    EmailStr,
+)
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, get_user_role_names
@@ -35,6 +42,126 @@ from app.models.requisitions import (
 from app.services import requisitions as service
 
 router = APIRouter()
+
+
+class StartIn(BaseModel):
+    book_id: int = Field(gt=0)
+
+
+class ReportIn(BaseModel):
+    recipient: EmailStr
+
+
+@router.get("/mortuary-access")
+def mortuary_access(
+    franchise_user_id: int | None = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services.requisition_workflow import upload_scope
+
+    try:
+        fid = upload_scope(db, current_user, franchise_user_id)
+    except HTTPException as exc:
+        if exc.status_code == 403:
+            return {"enabled": False}
+        raise
+    return {"enabled": True, "franchise_user_id": fid}
+
+
+@router.post("/workflow/start")
+def start_form(
+    payload: StartIn,
+    franchise_user_id: int | None = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services.requisition_workflow import ensure_month
+    from app.core.timezone import now_sa_naive
+
+    fid, _ = service.scope(db, current_user, franchise_user_id)
+    book = db.get(RequisitionBook, payload.book_id)
+    if not book or book.franchise_user_id != fid:
+        raise HTTPException(404, "Mortuary book not found.")
+    today = now_sa_naive().date()
+    month = ensure_month(
+        db, fid, book.branch_id, today, current_user.full_name, current_user.id
+    )
+    day = (
+        today
+        if today.strftime("%Y-%m") == month.month
+        else date.fromisoformat(month.month + "-01")
+    )
+    return create_request(
+        CreateIn(month_id=month.id, book_id=book.id, request_date=day),
+        fid,
+        current_user,
+        db,
+    )
+
+
+@router.get("/workflow/requests")
+def request_files(
+    franchise_user_id: int | None = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    fid, _ = service.scope(db, current_user, franchise_user_id)
+    from app.services.attendance_branches import branches
+
+    allowed = set(b["id"] for b in branches(db, fid))
+    rows = db.scalars(
+        select(Requisition)
+        .join(RequisitionMonth, Requisition.month_id == RequisitionMonth.id)
+        .where(
+            RequisitionMonth.franchise_user_id == fid,
+            RequisitionMonth.branch_id.in_(allowed),
+        )
+        .order_by(Requisition.id.desc())
+        .limit(200)
+    ).all()
+    return [service.req_data(db, r) for r in rows]
+
+
+@router.get("/report-settings")
+def report_settings(
+    franchise_user_id: int | None = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.models.requisitions import RequisitionReportSetting
+
+    fid, _ = service.scope(db, current_user, franchise_user_id, manage=True)
+    setting = db.get(RequisitionReportSetting, fid)
+    return {"recipient": setting.recipient if setting else service.RECIPIENT}
+
+
+@router.put("/report-settings")
+def save_report_settings(
+    payload: ReportIn,
+    franchise_user_id: int | None = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.models.requisitions import RequisitionReportSetting
+
+    fid, _ = service.scope(db, current_user, franchise_user_id, manage=True)
+    service.lock_branch(db, -fid)
+    setting = db.get(RequisitionReportSetting, fid)
+    if not setting:
+        setting = RequisitionReportSetting(franchise_user_id=fid)
+        db.add(setting)
+    setting.recipient = str(payload.recipient)
+    audit(
+        db,
+        current_user,
+        fid,
+        "requisition_report_recipient_changed",
+        fid,
+        {"recipient": setting.recipient},
+    )
+    db.commit()
+    return {"saved": True}
 
 
 class MonthIn(BaseModel):
@@ -271,43 +398,62 @@ def grant(
 
 @router.post("/books/import")
 def import_book(
-    branch_id: int,
+    background_tasks: BackgroundTasks,
+    branch_id: int | None = None,
     franchise_user_id: int | None = None,
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    fid, _ = service.scope(db, current_user, franchise_user_id)
-    selected = service.branch(db, fid, branch_id)
-    data, mime, filename = file_content(file)
-    if mime != "application/pdf":
-        raise HTTPException(400, "Upload the original Mortuary Book PDF.")
+    from app.services import requisition_workflow as workflow
+    from app.services.attendance_branches import branches
     from app.services.mortuary import parse_pdf
     from app.services.receipt_commissions import branch_key
 
+    fid = workflow.upload_scope(db, current_user, franchise_user_id)
+    data, mime, filename = file_content(file)
+    if mime != "application/pdf":
+        raise HTTPException(400, "Please upload the original mortuary book PDF.")
     try:
         records, errors = parse_pdf(data)
     except Exception:
         raise HTTPException(
-            400, "Cannot read this Mortuary Book PDF. Use an unprotected original."
+            400,
+            "This PDF could not be read. Please use the original, unprotected mortuary book PDF.",
         )
-    mismatches = [
-        r for r in records if branch_key(r["branch"]) != branch_key(selected["name"])
-    ]
-    if errors or mismatches or not records:
+    if errors or not records:
         raise HTTPException(
             400,
-            {
-                "message": "No records imported. Check all pages and the selected branch.",
-                "page_errors": errors,
-                "wrong_branch_pages": [r.get("page") for r in mismatches],
-            },
+            "Some pages could not be read as a mortuary book. Please check the PDF and try again.",
         )
-    service.lock_branch(db, branch_id)
-    items = []
-    digest = sha256(data).hexdigest()
-    # One original PDF can contain many MF files; retain its bytes only once.
+    choices = branches(db, fid)
+    for record in records:
+        key = branch_key(record["branch"])
+        matches = [b for b in choices if branch_key(b["name"]) == key]
+        if not matches:
+            matches = [
+                b
+                for b in choices
+                if branch_key(b["name"])
+                and set(branch_key(b["name"]).split()) <= set(key.split())
+            ]
+        if len(matches) != 1:
+            raise HTTPException(
+                400,
+                f"The book says '{record['branch']}'. Ask your manager to link that branch before uploading it.",
+            )
+        record.update(
+            printed_branch=record["branch"],
+            branch=matches[0]["name"],
+            earning_branch_id=matches[0]["id"],
+            external_branch_id=None,
+            source_hash=sha256(data).hexdigest(),
+            filename=filename,
+        )
+    for bid in sorted({r["earning_branch_id"] for r in records}):
+        service.lock_branch(db, bid)
     service.lock_branch(db, -fid)
+    digest = sha256(data).hexdigest()
     source = db.scalar(
         select(RequisitionSource).where(
             RequisitionSource.franchise_user_id == fid,
@@ -320,43 +466,56 @@ def import_book(
         )
         db.add(source)
         db.flush()
+    items = []
     for record in records:
+        bid = record["earning_branch_id"]
         reference = record["reference"].strip().upper()
-        old = db.scalar(
+        book = db.scalar(
             select(RequisitionBook).where(
-                RequisitionBook.branch_id == branch_id,
-                RequisitionBook.reference == reference,
+                RequisitionBook.branch_id == bid, RequisitionBook.reference == reference
             )
         )
-        if old:
-            if json.loads(old.details).get("deceased") != record.get("deceased"):
-                raise HTTPException(
-                    409,
-                    "An imported MF file has different deceased details. Review the original book.",
-                )
-            items.append({"id": old.id, "reference": old.reference, "duplicate": True})
-            continue
-        item = RequisitionBook(
-            franchise_user_id=fid,
-            branch_id=branch_id,
-            reference=reference,
-            deceased=record.get("deceased", ""),
-            details=json.dumps(record, default=str),
-            source_id=source.id,
-            uploaded_by=current_user.id,
+        duplicate = bool(book)
+        if book and book.deceased != record.get("deceased", ""):
+            raise HTTPException(
+                409,
+                "This MF file already has a different deceased name. Please ask your manager to check it.",
+            )
+        if not book:
+            book = RequisitionBook(
+                franchise_user_id=fid,
+                branch_id=bid,
+                reference=reference,
+                deceased=record.get("deceased", ""),
+                details=json.dumps(record, default=str),
+                source_id=source.id,
+                uploaded_by=current_user.id,
+            )
+            db.add(book)
+            db.flush()
+        workflow.stage_commission_book(db, fid, record, data, filename, current_user.id)
+        items.append(
+            {
+                "id": book.id,
+                "reference": book.reference,
+                "deceased": book.deceased,
+                "branch_id": bid,
+                "branch_name": record["branch"],
+                "duplicate": duplicate,
+            }
         )
-        db.add(item)
-        db.flush()
-        items.append({"id": item.id, "reference": reference, "duplicate": False})
     audit(
         db,
         current_user,
         fid,
         "requisition_book_imported",
-        branch_id,
-        {"sha256": sha256(data).hexdigest(), "records": items},
+        source.id,
+        {"records": items, "sha256": digest},
     )
     db.commit()
+    from app.services.commission_automation import reconcile_holder
+
+    background_tasks.add_task(reconcile_holder, fid)
     return {"items": items}
 
 
@@ -514,8 +673,8 @@ def month_detail(
     for t in tx:
         running += (
             t.amount_cents
-            if t.kind == "funding"
-            else -t.amount_cents if t.kind in {"card", "eft"} else 0
+            if t.kind in {"funding", "allocation"}
+            else -t.amount_cents if t.kind in {"card", "eft", "cash_payment"} else 0
         )
         transactions.append(
             {
@@ -640,7 +799,16 @@ def create_request(
         details = {
             k: str(v)
             for k, v in json.loads(book.details).items()
-            if k in ("id_number", "date_of_death", "funeral_date", "service_required")
+            if k
+            in (
+                "id_number",
+                "date_of_death",
+                "funeral_date",
+                "service_required",
+                "client_name",
+                "client_contact_number",
+                "client_address",
+            )
         }
         item = Requisition(
             month_id=m.id,
@@ -746,6 +914,9 @@ def save_request(
     if was_submitted:
         req.revision += 1
         service.record_revision(db, req, current_user.id)
+        from app.services.requisition_workflow import allocate
+
+        allocate(db, req, month, current_user)
         service.queue_email(
             db,
             month,
@@ -814,6 +985,9 @@ def submit_request(
     req.revision = 1
     req.submitted_at = datetime.utcnow()
     service.record_revision(db, req, current_user.id)
+    from app.services.requisition_workflow import allocate
+
+    allocate(db, req, m, current_user, initial=True)
     name = service.branch(db, fid, m.branch_id)["name"]
     service.queue_email(db, m, name, "Submitted " + req.number, req)
     audit(
@@ -843,7 +1017,7 @@ def post_transaction(
     except ValidationError as exc:
         raise HTTPException(422, str(exc))
     fid, _ = service.scope(
-        db, current_user, franchise_user_id, manage=data.kind in ("funding", "eft")
+        db, current_user, franchise_user_id, manage=data.kind == "funding"
     )
     req, request_month = service.request_row(db, fid, data.requisition_id)
     if req.status != "submitted":
@@ -856,10 +1030,35 @@ def post_transaction(
         )
     )
     if not m:
-        raise HTTPException(
-            409, "Create the monthly register for the receipt date first."
+        from app.services.requisition_workflow import ensure_month
+
+        m = ensure_month(
+            db,
+            fid,
+            request_month.branch_id,
+            data.transaction_date,
+            current_user.full_name,
+            current_user.id,
         )
     m = service.month_row(db, fid, m.id, True)
+    if m.month != data.transaction_date.strftime("%Y-%m"):
+        raise HTTPException(
+            409,
+            "That receipt month is no longer open. Ask your manager to check the receipt date.",
+        )
+    if data.kind == "funding" and db.scalar(
+        select(RequisitionTransaction.id)
+        .where(
+            RequisitionTransaction.requisition_id == req.id,
+            RequisitionTransaction.kind == "allocation",
+        )
+        .limit(1)
+    ):
+        raise HTTPException(
+            400,
+            "The requisition amount is already on the card register. Add the receipt for a payment instead.",
+        )
+    posted_kind = "cash_payment" if data.kind == "cash" else data.kind
     content, mime, name = file_content(receipt)
     existing = db.scalar(
         select(RequisitionTransaction).where(
@@ -879,7 +1078,7 @@ def post_transaction(
         ) != (
             req.id,
             data.transaction_date,
-            data.kind,
+            posted_kind,
             data.supplier,
             data.description,
             service.cents(data.amount),
@@ -895,7 +1094,7 @@ def post_transaction(
         requisition_id=req.id,
         client_key=str(data.client_key),
         transaction_date=data.transaction_date,
-        kind=data.kind,
+        kind=posted_kind,
         supplier=data.supplier,
         description=data.description,
         amount_cents=service.cents(data.amount),
@@ -907,12 +1106,6 @@ def post_transaction(
     )
     db.add(item)
     db.flush()
-    service.queue_email(
-        db,
-        m,
-        service.branch(db, fid, m.branch_id)["name"],
-        f"{data.kind.title()} recorded / {req.number}",
-    )
     audit(
         db,
         current_user,
@@ -927,7 +1120,6 @@ def post_transaction(
         },
     )
     db.commit()
-    background_tasks.add_task(service.deliver_pending)
     return {"id": item.id, "duplicate": False}
 
 

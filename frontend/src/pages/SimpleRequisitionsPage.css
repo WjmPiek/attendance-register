@@ -1,0 +1,12 @@
+.req-simple {max-width:1200px;}
+.req-simple fieldset {border:0;padding:0;margin:0;min-width:0;}
+.req-simple .form-card {max-width:none;}
+.req-simple-actions {display:flex;gap:12px;flex-wrap:wrap;margin:20px 0;}
+.req-simple-actions button:first-child {background:#28533c;color:white;}
+.req-simple-line {display:grid;grid-template-columns:1.2fr 1.5fr 1fr 1fr auto;gap:12px;align-items:end;margin:18px 0;padding-bottom:18px;border-bottom:1px solid #d4ded5;}
+.req-simple table {width:100%;border-collapse:collapse;}
+.req-simple th,.req-simple td {padding:12px;text-align:left;border-bottom:1px solid #d4ded5;vertical-align:top;}
+.req-simple input[readonly] {background:#f3f6f3;}
+.req-simple .req-simple-check {flex-direction:row;align-items:center;margin:14px 0;}
+.req-simple-check input {width:auto;}
+@media(max-width:1000px){.req-simple-line{grid-template-columns:1fr 1fr;}}

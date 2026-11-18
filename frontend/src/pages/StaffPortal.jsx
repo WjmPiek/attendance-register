@@ -20,10 +20,10 @@ import Irp5DocumentsPage from './Irp5DocumentsPage'
 import MyProfilePage from './MyProfilePage'
 import DigitalIdCard from '../components/DigitalIdCard'
 import './StaffPortal.css'
-import RequisitionsPage from './RequisitionsPage'
-import {useRequisitionsAccess} from '../utils/requisitions'
+import RequisitionsPage, {MortuaryBookUpload} from './SimpleRequisitionsPage'
+import {useRequisitionsAccess,useMortuaryAccess} from '../utils/requisitions'
 
-const titles={home:'Home',claim:'Claim',commissions:'Commissions',leave:'Leave Days','leave-apply':'Leave Application','leave-approved':'Leave Approved','leave-rejected':'Leave Rejected','leave-pending':'Pending Requests',payslips:'Payslips',irp5:'IRP5',more:'More',attendance:'Sign In / Out',history:'Attendance History','id-card':'My ID',profile:'My Profile',upload:'Upload Documents',team:'My Team','team-commissions':'Team Commissions',approvals:'Approvals','attendance-approvals':'Attendance Requests','leave-requests':'Leave Requests','manage-payslips':'Manage Payslips','manage-irp5':'Manage IRP5'}
+const titles={mortuary:'Mortuary book',home:'Home',claim:'Claim',commissions:'Commissions',leave:'Leave Days','leave-apply':'Leave Application','leave-approved':'Leave Approved','leave-rejected':'Leave Rejected','leave-pending':'Pending Requests',payslips:'Payslips',irp5:'IRP5',more:'More',attendance:'Sign In / Out',history:'Attendance History','id-card':'My ID',profile:'My Profile',upload:'Upload Documents',team:'My Team','team-commissions':'Team Commissions',approvals:'Approvals','attendance-approvals':'Attendance Requests','leave-requests':'Leave Requests','manage-payslips':'Manage Payslips','manage-irp5':'Manage IRP5'}
 const homeButtons=[['attendance','Sign In / Out'],['claim','Claim'],['commissions','Commissions'],['leave','Leave Days'],['payslips','Payslips'],['irp5','IRP5'],['more','More']]
 const money=value=>`R ${Number(value || 0).toLocaleString('en-ZA',{minimumFractionDigits:2,maximumFractionDigits:2})}`
 
@@ -49,6 +49,7 @@ function StaffCommissionAmounts({me}) {
 
 export default function StaffPortal({me,onLogout,embedded=false}) {
   const canRequisition=useRequisitionsAccess(me.id)
+  const canUploadMortuary=useMortuaryAccess(me.id)
   const [page,setPage]=useState(()=>staffRoute(window.location.search)),[sent,setSent]=useState('')
   const [canImport,setCanImport]=useState(null)
   const manager=me.roles.includes('ManagerUser'),finance=(me.employee_role||'').toLowerCase().includes('finance')
@@ -69,12 +70,11 @@ export default function StaffPortal({me,onLogout,embedded=false}) {
   const tools=[['history','Attendance History'],['id-card','My ID'],['profile','My Profile'],...(canImport?[['upload','Upload Documents']]:[]),...(manager?[['approvals','Approvals'],['team','My Team']]:[]),...(finance?[['manage-payslips','Manage Payslips'],['manage-irp5','Manage IRP5']]:[])]
   return <div className={`staff-portal${embedded?' staff-portal-embedded':''}`}>
     <header className="staff-portal-header">{current!=='home'&&<button type="button" onClick={()=>navigate('home',{replace:true})}>Home</button>}<span>{me.full_name || me.username || me.email}</span><button type="button" onClick={onLogout}>Logout</button></header>
-    <div className="req-staff-layout">
-    {canRequisition&&<aside className="req-staff-sidebar"><nav aria-label="Staff sections"><button type="button" onClick={()=>navigate('home')}>Home</button><button type="button" onClick={()=>navigate('requisitions')}>Requisitions</button></nav></aside>}
     <main className="staff-portal-main" key={current}>
       {current!=='requisitions'&&<h1>{titles[current]||'Home'}</h1>}
-      {current==='home'&&<nav className="staff-button-grid" aria-label="Home">{homeButtons.map(([id,label])=><button type="button" key={id} onClick={()=>navigate(id)}>{label}</button>)}</nav>}
+      {current==='home'&&<nav className="staff-button-grid" aria-label="Home">{[...homeButtons,...(canRequisition?[['requisitions','Requisitions']]:[]),...(canUploadMortuary&&!canRequisition?[['mortuary','Mortuary book']]:[])].map(([id,label])=><button type="button" key={id} onClick={()=>navigate(id)}>{label}</button>)}</nav>}
       {current==='requisitions'&&(canRequisition?<RequisitionsPage me={me}/>:<p>Requisitions are available to selected staff in the desktop web system.</p>)}
+      {current==='mortuary'&&(canUploadMortuary?<div className="requisitions-page req-simple"><MortuaryBookUpload commissionOnly/></div>:<p>Mortuary uploads require active commissions or requisition access.</p>)}
       {current==='claim'&&<ServiceClaimPanel me={me} simple onSaved={submitted}/>}
       {current==='commissions'&&<StaffCommissionAmounts me={me}/>}
       {(current==='leave'||current.startsWith('leave-'))&&<StaffLeave me={me} page={current} navigate={navigate} onSubmitted={submitted}/>}
@@ -92,7 +92,6 @@ export default function StaffPortal({me,onLogout,embedded=false}) {
       {current==='manage-payslips'&&finance&&<PayrollPage me={me}/>}
       {current==='manage-irp5'&&finance&&<Irp5DocumentsPage me={me}/>}
     </main>
-    </div>
     {sent&&<StaffPopup title={sent} onClose={()=>setSent('')}/>}
     <StaffNotificationPopup key={me.id} me={me} paused={Boolean(sent)||!['home','commissions','leave','leave-approved','leave-rejected','leave-pending','more'].includes(current)}/>
   </div>
